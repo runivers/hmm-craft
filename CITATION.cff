@@ -20,7 +20,7 @@ authors:
   - given-names: Matthew
     family-names: Danielson
   - alias: rudolfmleziva
-repository-code: "https://github.com/rudolfmleziva/hmm-craft"
+repository-code: "https://github.com/runivers/hmm-craft"
 license: BSD-3-Clause
 keywords:
   - hidden Markov models

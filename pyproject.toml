@@ -57,9 +57,9 @@ dependencies = [
 dynamic = ["version"]
 
 [project.urls]
-Repository = "https://github.com/rudolfmleziva/hmm-craft"
-Issues = "https://github.com/rudolfmleziva/hmm-craft/issues"
-Changelog = "https://github.com/rudolfmleziva/hmm-craft/blob/main/CHANGES.rst"
+Repository = "https://github.com/runivers/hmm-craft"
+Issues = "https://github.com/runivers/hmm-craft/issues"
+Changelog = "https://github.com/runivers/hmm-craft/blob/main/CHANGES.rst"
 Upstream = "https://github.com/hmmlearn/hmmlearn"
 
 [project.optional-dependencies]
