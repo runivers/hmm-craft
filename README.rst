@@ -88,6 +88,8 @@ To install from a checkout of this repository::
 
 The tutorial, the API reference and the examples are in ``doc/`` and
 ``examples/``. There is no hosted documentation site.
+``ARCHITECTURE.md`` describes how the package is built, from the Python API
+to the C++ kernel.
 
 Maintenance
 ===========

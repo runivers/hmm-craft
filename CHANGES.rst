@@ -16,8 +16,8 @@ Unreleased
   fits; see DIFFERENCES.md (Matthew Danielson).
 - Added: ``state_occupancy_`` after ``fit``; ``GaussianHMM(covars_floor=)``, off by default, floors
   covariances after each M-step and changes fits then (Moussa Ouallaf).
-- Documented: version numbers (first release 0.4.0), deprecations and supported versions in
-  RELEASING.md; CITATION.cff.
+- Documented: the package's architecture in ARCHITECTURE.md; version numbers (first release
+  0.4.0), deprecations and supported versions in RELEASING.md; CITATION.cff.
 - Corrected: an earlier commit message overstated how closely one intermediate commit matched 0.3.3;
   see DIFFERENCES.md.
 
