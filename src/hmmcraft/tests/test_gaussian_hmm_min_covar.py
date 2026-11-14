@@ -55,7 +55,7 @@ def test_covars_floor_holds_after_every_m_step(covariance_type):
     assert min(smallest) <= 1e-3 * (1 + 1e-9)
 
 
-def _fixed_start(covariance_type, **kwargs):
+def _fixed_start(covariance_type, variances=(0.1, 1.0), **kwargs):
     """A model with explicit starting parameters, so a fit does not depend
     on the k-means start, which varies with the number of threads."""
     h = hmm.GaussianHMM(2, covariance_type, init_params="", random_state=0,
@@ -63,11 +63,11 @@ def _fixed_start(covariance_type, **kwargs):
     h.startprob_ = np.array([0.5, 0.5])
     h.transmat_ = np.array([[0.9, 0.1], [0.1, 0.9]])
     h.means_ = np.array([[0.0], [1.5]])
-    variances = np.array([0.1, 1.0])
+    variances = np.array(variances)
     h.covars_ = {"spherical": variances,
                  "diag": variances[:, None],
                  "full": variances[:, None, None],
-                 "tied": np.array([[1.0]])}[covariance_type]
+                 "tied": variances[:1, None]}[covariance_type]
     return h
 
 
@@ -88,13 +88,34 @@ def test_covars_floor_off_by_default(covariance_type):
 
 
 @pytest.mark.parametrize("covariance_type", COVARIANCE_TYPES)
-def test_covars_floor_leaves_the_start_alone(covariance_type):
+def test_covars_floor_leaves_an_explicit_start_below_it_alone(
+        covariance_type):
     X, lengths = _rounded_sequences()
     starts = []
     for floor in (None, 1e-3):
-        h = _fixed_start(covariance_type, covars_floor=floor, n_iter=0)
-        starts.append(h.fit(X, lengths)._covars_.tobytes())
-    assert starts[0] == starts[1]
+        h = _fixed_start(covariance_type, variances=(1e-5, 2e-5),
+                         covars_floor=floor, n_iter=0)
+        starts.append(h.fit(X, lengths)._covars_)
+    assert starts[0].tobytes() == starts[1].tobytes()
+    assert starts[1].max() < 1e-3
+
+
+@pytest.mark.parametrize("covariance_type", COVARIANCE_TYPES)
+def test_covars_floor_leaves_a_computed_start_below_it_alone(covariance_type):
+    # init_params with "c": the start covariance is computed from the data
+    # (here far below the floor), and the floor applies from the first M-step.
+    X = np.random.RandomState(3).normal(0, 1e-3, (200, 2))
+    starts = []
+    for floor in (None, 1e-3):
+        h = hmm.GaussianHMM(2, covariance_type, covars_floor=floor,
+                            min_covar=1e-9, init_params="c", n_iter=0,
+                            random_state=0)
+        h.startprob_ = np.array([0.5, 0.5])
+        h.transmat_ = np.array([[0.9, 0.1], [0.1, 0.9]])
+        h.means_ = np.zeros((2, 2))
+        starts.append(h.fit(X)._covars_)
+    assert starts[0].tobytes() == starts[1].tobytes()
+    assert starts[1].max() < 1e-3
 
 
 @pytest.mark.parametrize("covariance_type", COVARIANCE_TYPES)
