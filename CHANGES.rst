@@ -15,6 +15,8 @@ Unreleased
   those fits (Matthew Danielson).
 - Added: ``state_occupancy_`` after ``fit``; ``GaussianHMM(covars_floor=)``, off by default, floors
   covariances after each M-step and changes fits then (Moussa Ouallaf).
+- Corrected: merge 2ee7c48 called every commit bit-equal to 0.3.3 apart from the entries above;
+  commit e3e09b2 differed by one ulp in two spherical ``fill_covars`` cases until 5754321.
 
 Version 0.3.3
 ~~~~~~~~~~~~~

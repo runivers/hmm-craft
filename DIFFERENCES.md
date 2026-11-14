@@ -9,7 +9,7 @@ check that finds them.
 
 | Item | What changes | Option |
 |---|---|---|
-| Spherical covariances | `GaussianHMM(covariance_type="spherical").covars_` has one matrix per state, as documented; 0.3.3 returned one per state and feature. `sample()` draws each state with its own variance; 0.3.3 drew every state after the first with the variance of the first. No fit moves, and the stored variances are unchanged. | none |
+| Spherical covariances | `GaussianHMM(covariance_type="spherical").covars_` has one matrix per state, as documented; 0.3.3 returned one per state and feature. `sample()` draws each state with its own variance; in a fitted model 0.3.3 drew state `k` with the variance of state `k // n_features`, which is right with one feature and, with at least as many features as states, uses the variance of the first state for every state. No fit moves, and the stored variances are unchanged. | none |
 | MAP decode | `decode(algorithm="map")` returns the sum of the log of the posterior probability of each chosen state. 0.3.3 returned the sum of the probabilities, a number between 0 and the number of samples. The states are unchanged. | none |
 | `normalize(a, axis=0)` | A slice that sums to zero gives zeros. 0.3.3 gave NaN and a `RuntimeWarning`. | none |
 | Covariances without means | A `GaussianHMM` with `"c"` but not `"m"` in `params` accumulates the state mass it needs. 0.3.3 raised `ValueError` for `"full"` and `"tied"`; for `"spherical"` and `"diag"` it returned a finite fit whose variances were very large (a division by a floor of 1e-5, with no mass accumulated), not an estimate. This is the one change to a fit that has no option. | none |
@@ -84,16 +84,28 @@ when the dumps cannot be compared. The tests of the check run with
 
 ### Result
 
-Synthetic data as above, Python 3.12.3, Linux x86_64, one thread, 374 fits and
-the utility arrays, the tree at version `0.3.3.post17+g2ee7c4852`, every
-exception listed above allowed:
+Synthetic data as above (`RandomState(10)`, model seed 0, sample seed 1),
+Python 3.12.3, Linux x86_64, one thread, 374 fits and the utility arrays, the
+tree at version `0.3.3.post21+gc0c07f0fc` (the last commit that changes code;
+later commits change documents only), every exception listed above allowed:
 
 | Environment | numpy | scipy | scikit-learn | Result |
 |---|---|---|---|---|
-| minimum versions | 1.26.0 | 1.11.2 | 1.3.1 | bit-equal |
-| newest versions | 2.5.4 | 1.18.1 | 1.9.1 | bit-equal |
+| minimum versions | 1.26.0 | 1.11.2 | 1.3.1 | equal apart from E1 to E6 |
+| newest versions | 2.5.4 | 1.18.1 | 1.9.1 | equal apart from E1 to E6 |
+
+This is the whole claim: no result is stated for other data, other versions,
+other thread counts or another platform.
 
 With `covars_floor` left at `None`, the fits where a floor would bind
 (`collapse` and `flat` families) are equal to 0.3.3's. With hmmlearn pull
 request 588 applied alone, without the option, the check fails on exactly
 those fits.
+
+## A correction
+
+The message of the merge `2ee7c48` says every commit of that branch is
+bit-equal to hmmlearn 0.3.3 apart from the named exceptions. That was wrong
+for `e3e09b2`: two spherical `fill_covars` cases differed from 0.3.3 by one ulp
+until `5754321` restored the exact values. The check at the tree above, which
+includes `5754321`, shows no such difference.

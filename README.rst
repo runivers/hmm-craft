@@ -69,11 +69,13 @@ What differs from hmmlearn 0.3.3
 * ``normalize(a, axis=0)`` gives zeros, not NaN, for a slice that sums to
   zero.
 
-Every other fit equals hmmlearn 0.3.3's to the bit. A change to a fit that
-hmmlearn 0.3.3 computes correctly is made only behind an option whose default
-is hmmlearn 0.3.3's behaviour. ``DIFFERENCES.md`` lists each difference and
-describes the check that compares the two packages. Every change is listed in
-``CHANGES.rst``.
+Apart from these, the fits of this package are checked to equal hmmlearn
+0.3.3's to the bit, on the synthetic data, with the versions, the seeds and the
+single thread given in the result table of ``DIFFERENCES.md``; nothing is
+claimed beyond that check. A change to a fit that hmmlearn 0.3.3 computes
+correctly is made only behind an option whose default is hmmlearn 0.3.3's
+behaviour. ``DIFFERENCES.md`` lists each difference and describes the check
+that compares the two packages. Every change is listed in ``CHANGES.rst``.
 
 Installation
 ============

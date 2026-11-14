@@ -20,9 +20,11 @@ Report a security problem as described in `SECURITY.md`, not in an issue.
 
 ## Sending a pull request
 
-1. Describe the change and say whether it changes the result of a fit. A change
-   that does is accepted only behind an option whose default is hmmlearn
-   0.3.3's behaviour. Add a test that fails without the change.
+1. Describe the change and say whether it changes the result of a fit. Fits are
+   checked to equal hmmlearn 0.3.3's to the bit, apart from the differences
+   listed in `DIFFERENCES.md`. A change to a fit outside that list is accepted
+   only behind an option whose default is hmmlearn 0.3.3's behaviour. Add a
+   test that fails without the change.
 2. Build and run the tests from a checkout:
 
        pip install ".[tests]"
