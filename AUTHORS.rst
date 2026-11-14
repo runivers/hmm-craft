@@ -26,3 +26,7 @@ Authors and contributors, in no particular order:
 * Antony Lee
 * Matthew Danielson
 * Alex Rockhill
+
+Authors and contributors of the hmm-craft fork, from 2026:
+
+* rudolfmleziva (maintainer)

@@ -1,61 +1,90 @@
-hmmlearn
-========
+hmm-craft
+=========
 
-| |GitHub| |PyPI|
-| |Read the Docs| |Build| |CodeCov|
+hmm-craft is a fork of hmmlearn_, a set of algorithms for **unsupervised**
+learning and inference of Hidden Markov Models. It is an independent project
+and is not endorsed by the hmmlearn maintainers. The licence and the list of
+authors are hmmlearn's, kept, with a line for this fork added.
 
-.. |GitHub|
-   image:: https://img.shields.io/badge/github-hmmlearn%2Fhmmlearn-brightgreen
-   :target: https://github.com/hmmlearn/hmmlearn
-.. |PyPI|
-   image:: https://img.shields.io/pypi/v/hmmlearn.svg?color=brightgreen
-   :target: https://pypi.python.org/pypi/hmmlearn
-.. |Read the Docs|
-   image:: https://readthedocs.org/projects/hmmlearn/badge/?version=latest
-   :target: http://hmmlearn.readthedocs.io/en/latest/?badge=latest
-.. |Build|
-   image:: https://img.shields.io/github/actions/workflow/status/hmmlearn/hmmlearn/build.yml?branch=main
-   :target: https://github.com/hmmlearn/hmmlearn/actions
-.. |CodeCov|
-   image:: https://img.shields.io/codecov/c/github/hmmlearn/hmmlearn
-   :target: https://codecov.io/gh/hmmlearn/hmmlearn
+.. _hmmlearn: https://github.com/hmmlearn/hmmlearn
 
-hmmlearn is a set of algorithms for **unsupervised** learning and inference
-of Hidden Markov Models. For supervised learning learning of HMMs and similar
-models see seqlearn_.
+For supervised learning of HMMs and similar models see seqlearn_.
 
 .. _seqlearn: https://github.com/larsmans/seqlearn
 
-**Note**: This package is under limited-maintenance mode.
+The names
+=========
 
-Important links
-===============
+The distribution is ``hmm-craft``. The package you import is ``hmmcraft``::
 
-* Official source code repo: https://github.com/hmmlearn/hmmlearn
-* HTML documentation (stable release): https://hmmlearn.readthedocs.org/en/stable
-* HTML documentation (development version): https://hmmlearn.readthedocs.org/en/latest
+    pip install hmm-craft
 
-Dependencies
-============
+and in Python::
 
-The required dependencies to use hmmlearn are
+    from hmmcraft import hmm
 
-* Python >= 3.6
-* NumPy >= 1.10
-* scikit-learn >= 0.16
+``pip install hmmcraft`` finds nothing: the hyphen belongs to the
+distribution name only.
 
-You also need Matplotlib >= 1.1.1 to run the examples and pytest >= 2.6.0 to run
-the tests.
+hmm-craft and hmmlearn share no file, so both can be installed in one
+environment and imported in one process. A package that requires hmmlearn by
+name keeps using hmmlearn.
+
+To move code over from hmmlearn, change the import. ``from hmmlearn import
+hmm`` becomes ``from hmmcraft import hmm``.
+
+Stored models
+=============
+
+A file pickled or dumped with joblib by hmmlearn records module paths that
+begin with ``hmmlearn.``. It does not load under hmm-craft: Python raises
+``ModuleNotFoundError``. Loading it needs a mapping from ``hmmlearn.*`` to
+``hmmcraft.*`` for the length of the load, and hmm-craft does not ship one.
+
+A file saved with hmm-craft records ``hmmcraft.*`` and does not load in an
+environment that has only hmmlearn.
+
+What differs from hmmlearn 0.3.3
+================================
+
+* The package and distribution names above.
+* The supported versions: Python 3.12 or newer, NumPy 1.26.0, SciPy 1.11.2 and
+  scikit-learn 1.3.1, or newer. hmmlearn 0.3.3 declares older minimums
+  (NumPy 1.10, SciPy 0.19, scikit-learn 0.16) that cannot be installed on any
+  Python it supports.
+* Nothing else yet. A change that alters the result of a fit is made only
+  behind an option whose default is hmmlearn 0.3.3's behaviour.
+
+Every change is listed in ``CHANGES.rst``.
 
 Installation
 ============
 
-Requires a C compiler and Python headers.
+Requires Python 3.12 or newer and, to build from source, a C++ compiler.
 
-To install from PyPI::
+To install from a checkout of this repository::
 
-    pip install --upgrade --user hmmlearn
+    pip install .
 
-To install from the repo::
+The tutorial, the API reference and the examples are in ``doc/`` and
+``examples/``. There is no hosted documentation site.
 
-    pip install --user git+https://github.com/hmmlearn/hmmlearn
+Maintenance
+===========
+
+This fork has one maintainer and exists first for that maintainer's own use. It
+is published so that others can install the same fixes. Issues and pull
+requests are read as time allows; there is no response time. A bug with a short
+example that runs as posted is looked at first. A feature request without a
+pull request may be closed. Questions about using hidden Markov models are not
+answered here.
+
+See ``CONTRIBUTING.md`` before opening an issue or a pull request, and
+``CODE_OF_CONDUCT.md`` for the rules of the project's spaces.
+
+Licence
+=======
+
+BSD 3-Clause, see ``LICENSE.txt``. Copyright belongs to the hmmlearn authors
+and contributors and, for the changes made here, to the hmm-craft authors and
+contributors, both listed in ``AUTHORS.rst``.
