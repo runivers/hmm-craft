@@ -42,20 +42,58 @@ on a machine with Python 3.12 and a network connection.
   it. Dependabot does not touch the build requirements, which are updated by
   hand.
 
+## Version numbers
+
+Versions are `MAJOR.MINOR.PATCH`. The first release of hmm-craft is `0.4.0`:
+hmmlearn's last release is `0.3.3`, and `0.3.4` would read as a patch of it.
+
+- A **patch** release (`0.4.1`) changes no fit and adds no public name: it
+  fixes a crash, a wrong error, the packaging or the documentation.
+- A **minor** release (`0.5.0`) may add an option, a parameter or a function,
+  or change a fit. Each changed fit is named in `CHANGES.rst` and
+  `DIFFERENCES.md`.
+
+Whatever the version of hmm-craft, the fits are compared with hmmlearn 0.3.3's.
+
+## Deprecations
+
+A public name, a parameter or a default is removed or changed only after one
+minor release in which using it raises a `DeprecationWarning` that says what
+replaces it, with a line in `CHANGES.rst`. A model saved with pickle or joblib
+by one minor release is not promised to load in another.
+
+## Supported versions
+
+A Python version is supported until its end of life and dropped in the next
+minor release after it; Python 3.12 reaches its end of life in October 2028.
+The minimum versions of NumPy, SciPy and scikit-learn rise only then, or when
+a fix needs an API that the minimum does not have. A new CPython version gets
+wheels once NumPy, SciPy and scikit-learn all publish wheels for it.
+
 ## Making a release
 
 1. Move the entries under "Unreleased" in `CHANGES.rst` to a heading for the
    version, in a commit on `main`, and wait for its checks to pass.
-2. Tag that commit `v<version>` (for example `v0.4.0`) and push the tag. The
+2. Run `wheels.yml` by hand on `main` while that commit is its head, and wait
+   until every cell has passed. Only then is the commit tagged.
+3. Tag that commit `v<version>` (for example `v0.4.0`) and push the tag. The
    version of every file comes from the tag, and the publish job refuses files
    that carry another one, or a count other than 20 wheels and one sdist.
-3. Approve the `pypi` environment when the build jobs have passed. The upload
+4. Approve the `pypi` environment when the build jobs have passed. The upload
    follows; a file uploaded to PyPI cannot be replaced, so a mistake is corrected
-   by the next version.
+   by the next version. A release found to be broken is yanked on PyPI, never
+   deleted, so that an install pinned to it still finds it.
 
 The PyPI project needs a trusted publisher for this repository, the workflow
 `release.yml` and the environment `pypi`; the environment needs the maintainer
 as its required reviewer.
+
+## Where a file came from
+
+The publish step uploads each file with an attestation (PEP 740), made through
+trusted publishing, that names this repository and the workflow run that built
+the file. PyPI shows it on the file's page. Tags are not signed: the attestation
+is the record of where a published file came from.
 
 macOS x86_64 is the first platform dropped when its cell breaks or GitHub retires
 the runner.
