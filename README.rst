@@ -62,9 +62,10 @@ What differs from hmmlearn 0.3.3
 * ``GaussianHMM(covars_floor=...)``: a floor on the covariances after every
   M-step. The default, ``None``, applies none and gives hmmlearn 0.3.3's fit.
 * A ``GaussianHMM`` that updates covariances but not means (``params``
-  containing ``"c"`` without ``"m"``) now fits. hmmlearn 0.3.3 raised for
-  "full" and "tied", and for "spherical" and "diag" returned a finite result
-  that was not an estimate. This is the one change to a fit that is made
+  containing ``"c"`` without ``"m"``) now fits. For "spherical" and "diag",
+  hmmlearn 0.3.3 gave variances (``covars_prior`` + the posterior-weighted sum
+  of squares) / 1e-5: a division by the 1e-5 floor with no posterior mass. It
+  raised for "full" and "tied". This is the one change to a fit that is made
   without an option.
 * ``normalize(a, axis=0)`` gives zeros, not NaN, for a slice that sums to
   zero.
