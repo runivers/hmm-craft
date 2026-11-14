@@ -666,7 +666,11 @@ def _environment(package, modules):
         "threadpoolctl": threadpoolctl.__version__,
         "machine": f"{platform.system()} {platform.machine()}",
         "thread_variables": {v: os.environ.get(v) for v in THREAD_VARIABLES},
-        "threadpool_info": threadpoolctl.threadpool_info()}
+        # threadpoolctl lists the libraries in the order they were found,
+        # which changes between runs.
+        "threadpool_info": sorted(
+            threadpoolctl.threadpool_info(),
+            key=lambda lib: (lib["filepath"], lib["internal_api"]))}
 
 
 def dump(package, out, load_pickles=None):

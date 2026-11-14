@@ -13,6 +13,8 @@ Run with ``python -m pytest scripts/test_bit_equality.py``.
 
 import copy
 import json
+import sys
+import types
 
 import bit_equality as be
 import numpy as np
@@ -503,3 +505,30 @@ def test_cases_have_unique_names_and_cover_the_table():
         assert f"GaussianHMM|gauss3|{cov}|fixed|log|stc" in names
     assert any(n.startswith("VariationalCategoricalHMM") for n in names)
     assert json.dumps(be.build_cases())
+
+
+def test_threadpool_info_is_recorded_in_a_fixed_order(monkeypatch, tmp_path):
+    # threadpoolctl lists the loaded libraries in the order they were found,
+    # which changes between runs; two dumps of the same code must not.
+    import threadpoolctl
+
+    libraries = [
+        {"filepath": path, "internal_api": api, "num_threads": 1}
+        for path, api in [("/lib/b.so", "openblas"), ("/lib/a.so", "openmp"),
+                          ("/lib/c.so", "openblas")]]
+    extension = tmp_path / "_hmmc.so"
+    extension.write_bytes(b"x")
+    package = types.ModuleType("fakepackage")
+    package._hmmc = types.ModuleType("fakepackage._hmmc")
+    package._hmmc.__file__ = str(extension)
+    monkeypatch.setitem(sys.modules, "fakepackage", package)
+    monkeypatch.setitem(sys.modules, "fakepackage._hmmc", package._hmmc)
+    monkeypatch.setitem(be.DISTRIBUTIONS, "fakepackage", "numpy")
+    recorded = []
+    for order in (libraries, libraries[::-1], libraries[1:] + libraries[:1]):
+        monkeypatch.setattr(threadpoolctl, "threadpool_info",
+                            lambda order=order: list(order))
+        recorded.append(be._environment("fakepackage", {})["threadpool_info"])
+    assert recorded[0] == recorded[1] == recorded[2]
+    assert sorted(lib["filepath"] for lib in libraries) == [
+        lib["filepath"] for lib in recorded[0]]
