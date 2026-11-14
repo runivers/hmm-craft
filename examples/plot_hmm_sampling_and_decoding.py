@@ -15,7 +15,7 @@ Then, we decode our model to recover the input parameters.
 import numpy as np
 import matplotlib.pyplot as plt
 
-from hmmlearn import hmm
+from hmmcraft import hmm
 
 # Prepare parameters for a 4-components HMM
 # Initial population probability

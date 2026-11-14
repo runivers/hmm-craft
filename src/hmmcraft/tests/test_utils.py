@@ -1,7 +1,7 @@
 import numpy as np
 from numpy.testing import assert_allclose
 
-from hmmlearn.utils import normalize, fill_covars
+from hmmcraft.utils import normalize, fill_covars
 
 
 def test_normalize():

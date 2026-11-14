@@ -18,7 +18,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.utils import check_random_state
 
-from hmmlearn.hmm import GaussianHMM
+from hmmcraft.hmm import GaussianHMM
 
 rs = check_random_state(546)
 # %%

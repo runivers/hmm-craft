@@ -3,7 +3,7 @@ from numpy.testing import assert_allclose
 import pytest
 from sklearn.utils import check_random_state
 
-from hmmlearn import hmm
+from hmmcraft import hmm
 
 from . import assert_log_likelihood_increasing, normalized
 

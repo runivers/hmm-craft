@@ -7,7 +7,7 @@ import collections
 import logging
 import time
 
-import hmmlearn.hmm
+import hmmcraft.hmm
 
 import numpy as np
 
@@ -47,7 +47,7 @@ class Benchmark:
         for implementation in ["scaling", "log"]:
             model = self.new_model(implementation)
             LOG.info(f"{model.__class__.__name__}: testing {implementation}")
-            key = f"{model.__class__.__name__}|EM|hmmlearn-{implementation}"
+            key = f"{model.__class__.__name__}|EM|hmmcraft-{implementation}"
             elapsed = self.benchmark(sequences, lengths, model, key)
             runtimes[key]["mean"] = elapsed.mean()
             runtimes[key]["std"] = elapsed.std()
@@ -67,7 +67,7 @@ class Benchmark:
 class GaussianBenchmark(Benchmark):
 
     def new_model(self, implementation):
-        return hmmlearn.hmm.GaussianHMM(
+        return hmmcraft.hmm.GaussianHMM(
             n_components=4,
             n_iter=self.n_iter,
             covariance_type="full",
@@ -76,7 +76,7 @@ class GaussianBenchmark(Benchmark):
         )
 
     def generate_training_sequences(self):
-        sampler = hmmlearn.hmm.GaussianHMM(
+        sampler = hmmcraft.hmm.GaussianHMM(
             n_components=4,
             covariance_type="full",
             init_params="",
@@ -116,7 +116,7 @@ class GaussianBenchmark(Benchmark):
 class MultinomialBenchmark(Benchmark):
 
     def new_model(self, implementation):
-        return hmmlearn.hmm.MultinomialHMM(
+        return hmmcraft.hmm.MultinomialHMM(
                 n_components=3,
                 n_iter=self.n_iter,
                 verbose=self.verbose,
@@ -125,7 +125,7 @@ class MultinomialBenchmark(Benchmark):
 
     def generate_training_sequences(self):
 
-        sampler = hmmlearn.hmm.MultinomialHMM(n_components=3)
+        sampler = hmmcraft.hmm.MultinomialHMM(n_components=3)
         sampler.startprob_ = np.array([0.6, 0.3, 0.1])
         sampler.transmat_ = np.array([[0.6, 0.2, 0.2],
                              [0.3, 0.5, 0.2],
@@ -148,7 +148,7 @@ class MultinomialBenchmark(Benchmark):
 
 class MultivariateGaussianBenchmark(GaussianBenchmark):
     def generate_training_sequences(self):
-        sampler = hmmlearn.hmm.GaussianHMM(
+        sampler = hmmcraft.hmm.GaussianHMM(
             n_components=4,
             covariance_type="full",
             init_params=""
@@ -186,7 +186,7 @@ class MultivariateGaussianBenchmark(GaussianBenchmark):
 
 class GMMBenchmark(GaussianBenchmark):
     def generate_training_sequences(self):
-        sampler = hmmlearn.hmm.GMMHMM(
+        sampler = hmmcraft.hmm.GMMHMM(
             n_components=4,
             n_mix=3,
             covariance_type="full",
@@ -228,7 +228,7 @@ class GMMBenchmark(GaussianBenchmark):
         return np.concatenate(sequences), [length] * n_sequences
 
     def new_model(self, implementation):
-        return hmmlearn.hmm.GMMHMM(
+        return hmmcraft.hmm.GMMHMM(
             n_components=4,
             n_mix=3,
             n_iter=self.n_iter,

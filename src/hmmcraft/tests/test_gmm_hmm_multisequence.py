@@ -4,8 +4,8 @@ import numpy as np
 from numpy.testing import assert_allclose
 import pytest
 
-from hmmlearn import hmm
-from hmmlearn.base import ConvergenceMonitor
+from hmmcraft import hmm
+from hmmcraft.base import ConvergenceMonitor
 
 
 # Example multi-sequence data, arranged as shape

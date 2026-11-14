@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from sklearn.utils import check_random_state
 
-from hmmlearn import hmm, vhmm
+from hmmcraft import hmm, vhmm
 from . import (
     assert_log_likelihood_increasing, compare_variational_and_em_models,
     make_covar_matrix, normalized, vi_uniform_startprob_and_transmat)

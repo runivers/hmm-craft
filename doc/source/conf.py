@@ -1,4 +1,4 @@
-import hmmlearn
+import hmmcraft
 
 needs_sphinx = '2.0'
 extensions = [
@@ -9,9 +9,10 @@ extensions = [
     'sphinx_gallery.gen_gallery',
 ]
 
-project = 'hmmlearn'
-copyright = '2010-present, hmmlearn developers (BSD License)'
-version = release = hmmlearn.__version__
+project = 'hmm-craft'
+copyright = ('2010-present, hmmlearn developers; '
+             '2026-present, hmm-craft developers (BSD License)')
+version = release = hmmcraft.__version__
 default_role = 'py:obj'
 pygments_style = 'sphinx'
 language = 'en'
@@ -44,9 +45,9 @@ html_theme_options = {
 }
 html_css_files = ['hide_some_gallery_elements.css']
 html_static_path = ['_static']
-htmlhelp_basename = 'hmmlearn_doc'
+htmlhelp_basename = 'hmmcraft_doc'
 
 # -- Options for LaTeX output ------------------------------------------------
 
-latex_documents = [('index', 'user_guide.tex', 'hmmlearn user guide',
-                    'hmmlearn developers', 'manual'), ]
+latex_documents = [('index', 'user_guide.tex', 'hmm-craft user guide',
+                    'hmmlearn and hmm-craft developers', 'manual'), ]

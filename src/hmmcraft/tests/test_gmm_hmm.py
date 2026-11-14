@@ -4,7 +4,7 @@ import pytest
 from sklearn.mixture import GaussianMixture
 from sklearn.utils import check_random_state
 
-from hmmlearn import hmm
+from hmmcraft import hmm
 from . import assert_log_likelihood_increasing, make_covar_matrix, normalized
 
 pytestmark = pytest.mark.xfail()

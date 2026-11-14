@@ -1,5 +1,5 @@
 """
-The :mod:`hmmlearn.hmm` module implements hidden Markov models.
+The :mod:`hmmcraft.hmm` module implements hidden Markov models.
 """
 
 import logging
@@ -46,7 +46,7 @@ class CategoricalHMM(_emissions.BaseCategoricalHMM, BaseHMM):
 
     Examples
     --------
-    >>> from hmmlearn.hmm import CategoricalHMM
+    >>> from hmmcraft.hmm import CategoricalHMM
     >>> CategoricalHMM(n_components=2)  #doctest: +ELLIPSIS
     CategoricalHMM(algorithm='viterbi',...
     """
@@ -188,7 +188,7 @@ class GaussianHMM(_emissions.BaseGaussianHMM, BaseHMM):
 
     Examples
     --------
-    >>> from hmmlearn.hmm import GaussianHMM
+    >>> from hmmcraft.hmm import GaussianHMM
     >>> GaussianHMM(n_components=2)  #doctest: +ELLIPSIS
     GaussianHMM(algorithm='viterbi',...
     """
@@ -832,7 +832,7 @@ class MultinomialHMM(_emissions.BaseMultinomialHMM):
 
     Examples
     --------
-    >>> from hmmlearn.hmm import MultinomialHMM
+    >>> from hmmcraft.hmm import MultinomialHMM
     """
 
     def __init__(self, n_components=1, n_trials=None,

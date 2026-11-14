@@ -38,8 +38,8 @@ class ConvergenceMonitor:
     be used by creating an instance and pointing a model's ``monitor_``
     attribute to it prior to fitting.
 
-    >>> from hmmlearn.base import ConvergenceMonitor
-    >>> from hmmlearn import hmm
+    >>> from hmmcraft.base import ConvergenceMonitor
+    >>> from hmmcraft import hmm
     >>>
     >>> class ThresholdMonitor(ConvergenceMonitor):
     ...     @property

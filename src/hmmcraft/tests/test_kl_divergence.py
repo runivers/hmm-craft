@@ -1,6 +1,6 @@
 import numpy as np
 
-from hmmlearn import _kl_divergence as _kl
+from hmmcraft import _kl_divergence as _kl
 
 
 class TestKLDivergence:

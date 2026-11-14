@@ -14,7 +14,7 @@ requires = [
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "hmmlearn"
+name = "hmm-craft"
 description = "Hidden Markov Models in Python with scikit-learn like API"
 readme = "README.rst"
 authors = [
@@ -62,13 +62,13 @@ fallback_version = "0+unknown"
 
 [tool.coverage.run]
 branch = true
-source_pkgs = ["hmmlearn"]
+source_pkgs = ["hmmcraft"]
 
 [tool.pytest.ini_options]
 addopts = "--doctest-glob=src/**/*.py --doctest-glob=*.rst"
 filterwarnings = [
     "error",
     "ignore::DeprecationWarning",
-    "error::DeprecationWarning:hmmlearn",
+    "error::DeprecationWarning:hmmcraft",
     "ignore:underflow",
 ]

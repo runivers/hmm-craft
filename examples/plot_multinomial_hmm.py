@@ -31,7 +31,7 @@ __ https://en.wikipedia.org/wiki/Multinomial_distribution
 
 
 import numpy as np
-from hmmlearn import hmm
+from hmmcraft import hmm
 
 # For this example, we will model the stages of a conversation,
 # where each sentence is "generated" with an underlying topic, "cat" or "dog"

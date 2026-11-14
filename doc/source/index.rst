@@ -1,4 +1,4 @@
-hmmlearn
+hmmcraft
 ========
 
 Unsupervised learning and inference of Hidden Markov Models:

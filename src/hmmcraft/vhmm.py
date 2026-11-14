@@ -52,7 +52,7 @@ class VariationalCategoricalHMM(BaseCategoricalHMM, VariationalBaseHMM):
 
     Examples
     --------
-    >>> from hmmlearn.hmm import VariationalCategoricalHMM
+    >>> from hmmcraft.hmm import VariationalCategoricalHMM
     >>> VariationalCategoricalHMM(n_components=2)  #doctest: +ELLIPSIS
     VariationalCategoricalHMM(algorithm='viterbi',...
     """
@@ -329,7 +329,7 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
 
     Examples
     --------
-    >>> from hmmlearn.hmm import VariationalGaussianHMM
+    >>> from hmmcraft.hmm import VariationalGaussianHMM
     >>> VariationalGaussianHMM(n_components=2)  #doctest: +ELLIPSIS
     VariationalGaussianHMM(algorithm='viterbi',...
     """

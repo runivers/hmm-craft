@@ -34,7 +34,7 @@ jobs:
         CIBW_ARCHS_MACOS: 'x86_64 universal2'
         CIBW_ARCHS_WINDOWS: 'AMD64'
         CIBW_TEST_REQUIRES: pytest
-        CIBW_TEST_COMMAND: python -I -mpytest --pyargs hmmlearn.tests {project}/doc
+        CIBW_TEST_COMMAND: python -I -mpytest --pyargs hmmcraft.tests {project}/doc
     - uses: actions/upload-artifact@v4
       with:
         name: wheel-${{ matrix.os }}-${{ matrix.pytag }}

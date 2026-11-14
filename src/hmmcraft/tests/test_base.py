@@ -3,8 +3,8 @@ from numpy.testing import assert_allclose
 import pytest
 from scipy import special
 
-from hmmlearn.base import BaseHMM, ConvergenceMonitor
-from hmmlearn import _hmmc
+from hmmcraft.base import BaseHMM, ConvergenceMonitor
+from hmmcraft import _hmmc
 
 
 class TestMonitor:

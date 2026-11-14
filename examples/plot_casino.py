@@ -21,7 +21,7 @@ often the loaded die is used (i.e. the transition probabilities) and
 import numpy as np
 import matplotlib.pyplot as plt
 
-from hmmlearn import hmm
+from hmmcraft import hmm
 
 # %%
 # Now, let's act as the casino and exchange a fair die for a loaded one

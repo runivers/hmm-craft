@@ -17,7 +17,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from scipy.stats import poisson
-from hmmlearn import hmm
+from hmmcraft import hmm
 
 # earthquake data from http://earthquake.usgs.gov/
 earthquakes = np.array([

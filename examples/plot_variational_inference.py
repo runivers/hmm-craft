@@ -19,7 +19,7 @@ import scipy.stats
 
 from sklearn.utils import check_random_state
 
-from hmmlearn import hmm, vhmm
+from hmmcraft import hmm, vhmm
 import matplotlib
 
 

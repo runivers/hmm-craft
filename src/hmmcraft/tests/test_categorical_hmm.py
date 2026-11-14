@@ -2,7 +2,7 @@ import numpy as np
 from numpy.testing import assert_allclose
 import pytest
 
-from hmmlearn import hmm
+from hmmcraft import hmm
 
 from . import assert_log_likelihood_increasing, normalized
 

@@ -1,25 +1,25 @@
 API Reference
 =============
 
-This is the class and function reference of ``hmmlearn``.
+This is the class and function reference of ``hmmcraft``.
 
 Please refer to the :ref:`full user guide <user_guide>` for further details, as
 the class and function raw specifications may not be enough to give full
 guidelines on their uses.
 
 
-hmmlearn.base
+hmmcraft.base
 -------------
 
 ConvergenceMonitor
 ~~~~~~~~~~~~~~~~~~
 
-.. autoclass:: hmmlearn.base.ConvergenceMonitor
+.. autoclass:: hmmcraft.base.ConvergenceMonitor
 
 _AbstractHMM
 ~~~~~~~~~~~~
 
-.. autoclass:: hmmlearn.base._AbstractHMM
+.. autoclass:: hmmcraft.base._AbstractHMM
    :exclude-members: set_params, get_params, _get_param_names
    :private-members:
    :no-inherited-members:
@@ -27,7 +27,7 @@ _AbstractHMM
 BaseHMM
 ~~~~~~~
 
-.. autoclass:: hmmlearn.base.BaseHMM
+.. autoclass:: hmmcraft.base.BaseHMM
    :exclude-members: set_params, get_params, _get_param_names
    :private-members:
    :no-inherited-members:
@@ -35,56 +35,56 @@ BaseHMM
 VariationalBaseHMM
 ~~~~~~~~~~~~~~~~~~
 
-.. autoclass:: hmmlearn.base.VariationalBaseHMM
+.. autoclass:: hmmcraft.base.VariationalBaseHMM
    :exclude-members: set_params, get_params, _get_param_names
    :private-members:
    :no-inherited-members:
 
-hmmlearn.hmm
+hmmcraft.hmm
 ------------
 
 GaussianHMM
 ~~~~~~~~~~~
 
-.. autoclass:: hmmlearn.hmm.GaussianHMM
+.. autoclass:: hmmcraft.hmm.GaussianHMM
    :exclude-members: covars_, set_params, get_params
 
 GMMHMM
 ~~~~~~
 
-.. autoclass:: hmmlearn.hmm.GMMHMM
+.. autoclass:: hmmcraft.hmm.GMMHMM
    :exclude-members: set_params, get_params
 
 MultinomialHMM
 ~~~~~~~~~~~~~~
 
-.. autoclass:: hmmlearn.hmm.MultinomialHMM
+.. autoclass:: hmmcraft.hmm.MultinomialHMM
    :exclude-members: set_params, get_params
 
 CategoricalHMM
 ~~~~~~~~~~~~~~
 
-.. autoclass:: hmmlearn.hmm.CategoricalHMM
+.. autoclass:: hmmcraft.hmm.CategoricalHMM
    :exclude-members: set_params, get_params
 
 PoissonHMM
 ~~~~~~~~~~
 
-.. autoclass:: hmmlearn.hmm.PoissonHMM
+.. autoclass:: hmmcraft.hmm.PoissonHMM
    :exclude-members: set_params, get_params
 
 
-hmmlearn.vhmm
+hmmcraft.vhmm
 -------------
 
 VariationalCategoricalHMM
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. autoclass:: hmmlearn.vhmm.VariationalCategoricalHMM
+.. autoclass:: hmmcraft.vhmm.VariationalCategoricalHMM
    :exclude-members: set_params, get_params
 
 VariationalGaussianHMM
 ~~~~~~~~~~~~~~~~~~~~~~
 
-.. autoclass:: hmmlearn.vhmm.VariationalGaussianHMM
+.. autoclass:: hmmcraft.vhmm.VariationalGaussianHMM
    :exclude-members: set_params, get_params
