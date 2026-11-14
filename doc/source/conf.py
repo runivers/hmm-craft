@@ -41,7 +41,7 @@ sphinx_gallery_conf = {
 
 html_theme = 'pydata_sphinx_theme'
 html_theme_options = {
-    'github_url': 'https://github.com/hmmlearn/hmmlearn',
+    'github_url': 'https://github.com/rudolfmleziva/hmm-craft',
 }
 html_css_files = ['hide_some_gallery_elements.css']
 html_static_path = ['_static']
