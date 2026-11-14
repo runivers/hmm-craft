@@ -52,10 +52,28 @@ What differs from hmmlearn 0.3.3
   scikit-learn 1.3.1, or newer. hmmlearn 0.3.3 declares older minimums
   (NumPy 1.10, SciPy 0.19, scikit-learn 0.16) that cannot be installed on any
   Python it supports.
-* Nothing else yet. A change that alters the result of a fit is made only
-  behind an option whose default is hmmlearn 0.3.3's behaviour.
+* The covariances of a spherical ``GaussianHMM``: ``covars_`` has one matrix
+  per state, as documented, and ``sample()`` draws each state with its own
+  variance.
+* ``decode(algorithm="map")`` returns the sum of the log of the posterior
+  probability of each chosen state, not the sum of the probabilities.
+* ``state_occupancy_``: after ``fit``, the expected number of samples in each
+  state, for every model.
+* ``GaussianHMM(covars_floor=...)``: a floor on the covariances after every
+  M-step. The default, ``None``, applies none and gives hmmlearn 0.3.3's fit.
+* A ``GaussianHMM`` that updates covariances but not means (``params``
+  containing ``"c"`` without ``"m"``) now fits. hmmlearn 0.3.3 raised for
+  "full" and "tied", and for "spherical" and "diag" returned a finite result
+  that was not an estimate. This is the one change to a fit that is made
+  without an option.
+* ``normalize(a, axis=0)`` gives zeros, not NaN, for a slice that sums to
+  zero.
 
-Every change is listed in ``CHANGES.rst``.
+Every other fit equals hmmlearn 0.3.3's to the bit. A change to a fit that
+hmmlearn 0.3.3 computes correctly is made only behind an option whose default
+is hmmlearn 0.3.3's behaviour. ``DIFFERENCES.md`` lists each difference and
+describes the check that compares the two packages. Every change is listed in
+``CHANGES.rst``.
 
 Installation
 ============

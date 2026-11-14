@@ -9,6 +9,12 @@ Unreleased
 
 - Forked from hmmlearn 0.3.3. The package is now ``hmmcraft``, the distribution ``hmm-craft``.
 - Requires Python 3.12, numpy 1.26.0, scipy 1.11.2 and scikit-learn 1.3.1, or newer.
+- Fixed: spherical ``GaussianHMM`` ``covars_`` has one matrix per state and ``sample()`` uses it
+  (Moussa Ouallaf); MAP ``decode`` log-probability; ``normalize`` on axis 0 (ktz03); no shape set.
+- Changed: ``GaussianHMM`` with ``params`` having ``"c"`` but not ``"m"`` now fits, which changes
+  those fits (Matthew Danielson).
+- Added: ``state_occupancy_`` after ``fit``; ``GaussianHMM(covars_floor=)``, off by default, floors
+  covariances after each M-step and changes fits then (Moussa Ouallaf).
 
 Version 0.3.3
 ~~~~~~~~~~~~~
