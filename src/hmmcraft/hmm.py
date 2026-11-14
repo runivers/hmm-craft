@@ -35,7 +35,8 @@ def _covars_floor_value(covars_floor):
                f"got {covars_floor!r}")
     if not isinstance(covars_floor, numbers.Real) or isinstance(
             covars_floor, (bool, np.bool_)):
-        raise ValueError(message)
+        # ValueError for every invalid value, as the parameter documents.
+        raise ValueError(message)  # noqa: TRY004
     try:
         value = float(covars_floor)
     except (TypeError, OverflowError) as exc:
