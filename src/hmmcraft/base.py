@@ -478,6 +478,8 @@ class _AbstractHMM(BaseEstimator):
         if lengths is None:
             lengths = np.asarray([X.shape[0]])
 
+        # A fit that runs no EM iteration must not keep an earlier fit's value.
+        vars(self).pop("state_occupancy_", None)
         self._init(X, lengths)
         self._check()
         self.monitor_._reset()
@@ -761,8 +763,10 @@ class _AbstractHMM(BaseEstimator):
         stats = self._initialize_sufficient_statistics()
         self._estep_begin()
         curr_logprob = 0
+        occupancy = np.zeros(self.n_components)
         for sub_X in _utils.split_X_lengths(X, lengths):
             lattice, logprob, posteriors, fwdlattice, bwdlattice = impl(sub_X)
+            occupancy += posteriors.sum(axis=0)
             # Derived HMM classes will implement the following method to
             # update their probability distributions, so keep
             # a single call to this method for simplicity.
@@ -770,6 +774,7 @@ class _AbstractHMM(BaseEstimator):
                 stats, sub_X, lattice, posteriors, fwdlattice,
                 bwdlattice)
             curr_logprob += logprob
+        self.state_occupancy_ = occupancy
         return stats, curr_logprob
 
     def _estep_begin(self):
@@ -794,6 +799,9 @@ class BaseHMM(_AbstractHMM):
         Initial state occupation distribution.
     transmat_ : array, shape (n_components, n_components)
         Matrix of transition probabilities between states.
+    state_occupancy_ : array, shape (n_components, )
+        Expected number of samples in each state: the posteriors of the last
+        E-step of :meth:`fit`, summed over all samples.
 
     Notes
     -----

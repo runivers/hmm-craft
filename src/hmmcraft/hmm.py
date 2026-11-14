@@ -41,6 +41,10 @@ class CategoricalHMM(_emissions.BaseCategoricalHMM, BaseHMM):
     transmat_ : array, shape (n_components, n_components)
         Matrix of transition probabilities between states.
 
+    state_occupancy_ : array, shape (n_components, )
+        Expected number of samples in each state: the posteriors of the last
+        E-step of :meth:`fit`, summed over all samples.
+
     emissionprob_ : array, shape (n_components, n_features)
         Probability of emitting a given symbol when in each state.
 
@@ -172,6 +176,10 @@ class GaussianHMM(_emissions.BaseGaussianHMM, BaseHMM):
 
     transmat_ : array, shape (n_components, n_components)
         Matrix of transition probabilities between states.
+
+    state_occupancy_ : array, shape (n_components, )
+        Expected number of samples in each state: the posteriors of the last
+        E-step of :meth:`fit`, summed over all samples.
 
     means_ : array, shape (n_components, n_features)
         Mean parameters for each state.
@@ -402,6 +410,10 @@ class GMMHMM(_emissions.BaseGMMHMM):
 
     transmat_ : array, shape (n_components, n_components)
         Matrix of transition probabilities between states.
+
+    state_occupancy_ : array, shape (n_components, )
+        Expected number of samples in each state: the posteriors of the last
+        E-step of :meth:`fit`, summed over all samples.
 
     weights_ : array, shape (n_components, n_mix)
         Mixture weights for each state.
@@ -828,6 +840,10 @@ class MultinomialHMM(_emissions.BaseMultinomialHMM):
     transmat_ : array, shape (n_components, n_components)
         Matrix of transition probabilities between states.
 
+    state_occupancy_ : array, shape (n_components, )
+        Expected number of samples in each state: the posteriors of the last
+        E-step of :meth:`fit`, summed over all samples.
+
     emissionprob_ : array, shape (n_components, n_features)
         Probability of emitting a given symbol when in each state.
 
@@ -957,6 +973,10 @@ class PoissonHMM(_emissions.BasePoissonHMM):
 
     transmat_ : array, shape (n_components, n_components)
         Matrix of transition probabilities between states.
+
+    state_occupancy_ : array, shape (n_components, )
+        Expected number of samples in each state: the posteriors of the last
+        E-step of :meth:`fit`, summed over all samples.
 
     lambdas_ : array, shape (n_components, n_features)
         The expectation value of the waiting time parameters for each

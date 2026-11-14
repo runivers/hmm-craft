@@ -4,7 +4,7 @@ import pytest
 from scipy import special
 
 from hmmcraft.base import BaseHMM, ConvergenceMonitor
-from hmmcraft import _hmmc, hmm
+from hmmcraft import _hmmc, hmm, vhmm
 
 
 class TestMonitor:
@@ -285,3 +285,111 @@ def test_map_log_prob_sums_the_log_of_the_largest_posteriors(implementation):
     assert_allclose(log_prob, expected, rtol=1e-12)
     assert log_prob < 0
     assert_allclose(states, h.predict_proba(X, lengths).argmax(axis=1))
+
+
+def _occupancy_cases():
+    """(id, factory, X, statistic of the class holding the state mass)."""
+    rs = np.random.RandomState(7)
+    continuous = rs.normal(size=(40, 2)) + 3 * rs.randint(0, 2, (40, 1))
+    symbols = rs.randint(0, 3, (40, 1))
+    counts = rs.poisson(4, (40, 3))
+    multinomial = rs.multinomial(5, [0.2, 0.3, 0.5], size=40)
+    cases = [(f"GaussianHMM-{cov}",
+              lambda cls=hmm.GaussianHMM, cov=cov: cls(
+                  2, cov, n_iter=4, random_state=0),
+              continuous, "post")
+             for cov in ("spherical", "diag", "full", "tied")]
+    cases += [
+        ("GMMHMM", lambda: hmm.GMMHMM(2, 2, n_iter=4, random_state=0),
+         continuous, "post_sum"),
+        ("PoissonHMM", lambda: hmm.PoissonHMM(2, n_iter=4, random_state=0),
+         counts, "post"),
+        ("VariationalGaussianHMM",
+         lambda: vhmm.VariationalGaussianHMM(2, n_iter=4, random_state=0),
+         continuous, "post"),
+        ("CategoricalHMM",
+         lambda: hmm.CategoricalHMM(2, n_iter=4, random_state=0),
+         symbols, None),
+        ("MultinomialHMM",
+         lambda: hmm.MultinomialHMM(2, 5, n_iter=4, random_state=0),
+         multinomial, None),
+        ("VariationalCategoricalHMM",
+         lambda: vhmm.VariationalCategoricalHMM(2, n_iter=4, random_state=0),
+         symbols, None),
+    ]
+    return cases
+
+
+OCCUPANCY_CASES = _occupancy_cases()
+OCCUPANCY_IDS = [case[0] for case in OCCUPANCY_CASES]
+LENGTHS = [25, 15]
+
+
+def _recording(model, statistic):
+    """
+    Make ``model`` keep what its last M-step was given: the class's own state
+    mass (``statistic``) and a sum of the posteriors of the E-step.
+    """
+    cls = type(model)
+
+    class Recorder(cls):
+        def _accumulate_sufficient_statistics(
+                self, stats, X, lattice, posteriors, fwdlattice, bwdlattice):
+            if getattr(self, "recorded_sum", None) is None:
+                self.recorded_sum = np.zeros(self.n_components)
+            self.recorded_sum += posteriors.sum(axis=0)
+            super()._accumulate_sufficient_statistics(
+                stats, X, lattice, posteriors, fwdlattice, bwdlattice)
+
+        def _do_mstep(self, stats):
+            self.recorded_stat = None if statistic is None else (
+                stats[statistic].copy())
+            self.recorded_posterior_sum, self.recorded_sum = (
+                self.recorded_sum, None)
+            super()._do_mstep(stats)
+
+    model.__class__ = Recorder
+    return model
+
+
+def _fitted_arrays(model):
+    return {k: np.asarray(v) for k, v in vars(model).items()
+            if k.endswith("_") and k not in (
+                "monitor_", "state_occupancy_")}
+
+
+@pytest.mark.parametrize("case", [c for c in OCCUPANCY_CASES if c[3]],
+                         ids=[c[0] for c in OCCUPANCY_CASES if c[3]])
+def test_state_occupancy_equals_the_last_m_step_statistic(case):
+    _, factory, X, statistic = case
+    model = _recording(factory(), statistic).fit(X, LENGTHS)
+    assert model.state_occupancy_.tobytes() == (
+        model.recorded_stat.tobytes())
+
+
+@pytest.mark.parametrize("case", OCCUPANCY_CASES, ids=OCCUPANCY_IDS)
+def test_state_occupancy_is_the_posterior_sum_for_every_model(case):
+    _, factory, X, statistic = case
+    model = _recording(factory(), statistic).fit(X, LENGTHS)
+    assert model.state_occupancy_.shape == (2,)
+    assert model.state_occupancy_.tobytes() == (
+        model.recorded_posterior_sum.tobytes())
+    assert_allclose(model.state_occupancy_.sum(), len(X), rtol=1e-9)
+
+
+@pytest.mark.parametrize("case", OCCUPANCY_CASES, ids=OCCUPANCY_IDS)
+def test_state_occupancy_leaves_the_fit_unchanged(case):
+    _, factory, X, statistic = case
+    plain = factory().fit(X, LENGTHS)
+    recorded = _recording(factory(), statistic).fit(X, LENGTHS)
+    for name, value in _fitted_arrays(plain).items():
+        assert value.tobytes() == _fitted_arrays(recorded)[name].tobytes()
+
+
+def test_state_occupancy_absent_after_a_fit_without_iterations():
+    _, factory, X, _ = OCCUPANCY_CASES[1]
+    model = factory().fit(X, LENGTHS)
+    assert hasattr(model, "state_occupancy_")
+    model.n_iter = 0
+    model.fit(X, LENGTHS)
+    assert not hasattr(model, "state_occupancy_")

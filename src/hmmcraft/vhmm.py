@@ -44,6 +44,10 @@ class VariationalCategoricalHMM(BaseCategoricalHMM, VariationalBaseHMM):
     transmat_posterior_ : array, shape (n_components, n_components)
         Posterior estimate of the transition probabilities between states.
 
+    state_occupancy_ : array, shape (n_components, )
+        Expected number of samples in each state: the posteriors of the last
+        E-step of :meth:`fit`, summed over all samples.
+
     emissionprob_prior_ : array, shape (n_components, n_features)
         Prior estimatate of emitting a given symbol when in each state.
 
@@ -259,6 +263,10 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
 
     transmat_posterior_ : array, shape (n_components, n_components)
         Posterior estimate of the transition probabilities between states.
+
+    state_occupancy_ : array, shape (n_components, )
+        Expected number of samples in each state: the posteriors of the last
+        E-step of :meth:`fit`, summed over all samples.
 
     means_prior_: array, shape (n_components, n_features)
         Prior estimates for the mean of each state.
