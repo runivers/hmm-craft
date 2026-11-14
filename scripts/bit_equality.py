@@ -1117,7 +1117,9 @@ def format_result(result):
                 f"case(s), e.g. {result.examples[exception][0]}")
     for diff in result.differences:
         lines.append(f"DIFFERENCE {diff.case} | {diff.key} | {diff.text}")
-    verdict = {0: "bit-equal", 1: f"{len(result.differences)} difference(s)",
+    equal = ("equal apart from the named exceptions" if result.fired
+             else "bit-equal")
+    verdict = {0: equal, 1: f"{len(result.differences)} difference(s)",
                2: "not comparable"}[result.code]
     lines.append(f"result: {verdict} (exit {result.code})")
     return "\n".join(lines)

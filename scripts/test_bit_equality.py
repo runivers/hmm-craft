@@ -532,3 +532,16 @@ def test_threadpool_info_is_recorded_in_a_fixed_order(monkeypatch, tmp_path):
     assert recorded[0] == recorded[1] == recorded[2]
     assert sorted(lib["filepath"] for lib in libraries) == [
         lib["filepath"] for lib in recorded[0]]
+
+
+def test_verdict_says_bit_equal_only_when_no_exception_fired(tmp_path):
+    ref, fork = pair()
+    result = run(tmp_path / "none", [ref], [fork], allow=("E3",))
+    assert result.code == 0 and not result.fired
+    assert be.format_result(result).endswith("result: bit-equal (exit 0)")
+    fork["arrays"]["decode_map_logprob"] = _map_logprob(
+        ref["arrays"]["predict_proba"], logged=True)
+    result = run(tmp_path / "fired", [ref], [fork], allow=("E3",))
+    assert result.code == 0 and result.fired["E3"] == 1
+    last = be.format_result(result).splitlines()[-1]
+    assert last == "result: equal apart from the named exceptions (exit 0)"
