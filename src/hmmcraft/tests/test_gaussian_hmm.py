@@ -364,3 +364,56 @@ class TestGaussianHMMWithTiedCovars(GaussianHMMTestMixin):
 
 class TestGaussianHMMWithFullCovars(GaussianHMMTestMixin):
     covariance_type = 'full'
+
+
+def _weighted_covariance(model, X, lengths):
+    """
+    The covariance the M-step formula gives when only covariances are fitted:
+    the state posteriors of the start weight the deviations from its means.
+    """
+    gamma = model.predict_proba(X, lengths)
+    centred = X[:, None, :] - model.means_[None]
+    mass = gamma.sum(axis=0)
+    prior = model.covars_prior
+    if model.covariance_type in ("spherical", "diag"):
+        spread = np.einsum("tk,tki->ki", gamma, centred ** 2)
+        diag = (prior + spread) / mass[:, None]
+        return diag.mean(axis=1) if (
+            model.covariance_type == "spherical") else diag
+    outer = np.einsum("tk,tki,tkj->kij", gamma, centred, centred)
+    if model.covariance_type == "full":
+        return (prior + outer) / mass[:, None, None]
+    return (prior + outer.sum(axis=0)) / mass.sum()
+
+
+@pytest.mark.parametrize("implementation", ["scaling", "log"])
+@pytest.mark.parametrize("covariance_type",
+                         ["spherical", "diag", "full", "tied"])
+def test_covariance_only_fit_is_the_weighted_covariance(
+        covariance_type, implementation):
+    rs = np.random.RandomState(3)
+    nc, nf = 2, 2
+    lengths = [30, 20]
+    X = rs.normal(size=(sum(lengths), nf)) + rs.randint(0, 2, (50, 1)) * 3
+    model = hmm.GaussianHMM(nc, covariance_type, params="c", init_params="",
+                            n_iter=1, implementation=implementation)
+    model.startprob_ = np.array([0.6, 0.4])
+    model.transmat_ = np.array([[0.7, 0.3], [0.2, 0.8]])
+    model.means_ = np.array([[0.0, 0.5], [3.0, 3.5]])
+    model.covars_ = {
+        "spherical": np.array([1.5, 2.0]),
+        "diag": np.array([[1.5, 1.0], [2.0, 0.5]]),
+        "full": np.array([[[1.5, 0.2], [0.2, 1.0]],
+                          [[2.0, -0.3], [-0.3, 0.5]]]),
+        "tied": np.array([[1.5, 0.2], [0.2, 1.0]]),
+    }[covariance_type]
+    expected = _weighted_covariance(model, X, lengths)
+
+    model.fit(X, lengths)
+
+    fitted = model._covars_
+    if covariance_type == "spherical" and fitted.ndim == 2:
+        # One variance per state, repeated over the features.
+        expected = expected[:, None]
+    assert_allclose(fitted, np.broadcast_to(expected, fitted.shape),
+                    rtol=1e-10)
