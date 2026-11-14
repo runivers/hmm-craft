@@ -69,7 +69,12 @@ def fill_covars(covars, covariance_type='full', n_components=1, n_features=1):
         # the result has n_components * n_features matrices.
         covars = np.asarray(covars)
         if covars.ndim == 2:
-            covars = covars.mean(axis=1)
+            if (covars == covars[:, :1]).all():
+                # The copies are equal: take one. Their mean can differ
+                # from it in the last bit.
+                covars = covars[:, 0]
+            else:
+                covars = covars.mean(axis=1)
         # Regardless of what is passed in, we flatten in
         # and then expand it to the correct shape
         covars = np.ravel(covars)

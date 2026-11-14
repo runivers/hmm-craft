@@ -91,3 +91,20 @@ def test_fill_covars():
                          [[3, 0], [0, 3]]])
     np.testing.assert_equal(
         fill_covars(spherical, 'spherical', 3, 2), expected)
+
+
+def test_fill_covars_spherical_start_layout_is_exact():
+    # One variance repeated over the features is that variance, not the mean
+    # of the copies, which can differ from it in the last bit.
+    variance = np.full((2, 3), 0.1)
+    assert variance.mean(axis=1)[0] != 0.1
+    expected = np.array([0.1 * np.eye(3), 0.1 * np.eye(3)])
+    np.testing.assert_array_equal(
+        fill_covars(variance, 'spherical', 2, 3), expected)
+
+
+def test_fill_covars_spherical_rows_that_differ_are_averaged():
+    covars = np.array([[1., 2., 3.], [4., 5., 6.]])
+    expected = fill_covars(np.array([2., 5.]), 'spherical', 2, 3)
+    np.testing.assert_array_equal(
+        fill_covars(covars, 'spherical', 2, 3), expected)
