@@ -99,8 +99,9 @@ example that runs as posted is looked at first. A feature request without a
 pull request may be closed. Questions about using hidden Markov models are not
 answered here.
 
-See ``CONTRIBUTING.md`` before opening an issue or a pull request, and
-``CODE_OF_CONDUCT.md`` for the rules of the project's spaces.
+See ``CONTRIBUTING.md`` before opening an issue or a pull request,
+``SECURITY.md`` to report a security problem, and ``CODE_OF_CONDUCT.md`` for
+the rules of the project's spaces.
 
 Licence
 =======

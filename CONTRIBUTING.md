@@ -37,10 +37,29 @@ Report a security problem as described in `SECURITY.md`, not in an issue.
    wrote the change or have the right to submit it under the project's licence.
 5. Whoever opens a pull request answers for every line of it: can explain it,
    has run the tests it names, and certifies the right to submit it by the
-   sign-off. How a change was written is not asked.
+   sign-off. If an AI tool helped, say so as described in "Use of AI tools".
 
 Your contribution is licensed under the project's BSD 3-Clause licence
 (`LICENSE.txt`).
+
+## Use of AI tools
+
+Everyone says when an AI tool helped write a change, the maintainer
+included.
+
+A commit that an AI tool helped write ends with a trailer naming the tool,
+placed before the sign-off:
+
+    Assisted-by: Claude Code (Anthropic)
+
+Name the tool, without a model name or version. Use this trailer instead of
+the co-author line or the footer that some tools add. The pull request
+template asks whether an AI tool helped with the pull request as a whole.
+
+The maintainer's commits from cec8d68 to fff5707 were written with Claude
+Code (Anthropic) before this rule existed, and carry no trailer. Every later
+commit written with AI help carries it. Commits taken from pull requests to
+hmmlearn keep their authors' messages as written.
 
 ## How a change is merged
 

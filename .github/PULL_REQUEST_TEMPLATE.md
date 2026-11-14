@@ -5,6 +5,12 @@
 - [ ] No.
 - [ ] Yes. It is behind an option whose default is hmmlearn 0.3.3's behaviour.
 
+## Use of AI tools
+
+- [ ] No AI tool helped write this change.
+- [ ] An AI tool helped: name it here. Each commit it helped write ends with
+      `Assisted-by: <tool>` (see `CONTRIBUTING.md`).
+
 ## Checklist
 
 - [ ] A test that fails without the change.
