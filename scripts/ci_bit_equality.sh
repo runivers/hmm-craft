@@ -95,9 +95,10 @@ cd "$root"
 echo "== suite"
 "$work/fork/bin/python" -I -m pytest -p no:cacheprovider -q \
     --pyargs hmmcraft.tests doc
-echo "== the check's own tests, and the floor declaration"
+echo "== the checks' own tests, and the floor declaration"
 "$work/fork/bin/python" -I -m pytest -p no:cacheprovider -q \
-    scripts/test_bit_equality.py scripts/test_floor_constraints.py
+    scripts/test_bit_equality.py scripts/test_floor_constraints.py \
+    scripts/test_check_signoff.py
 
 echo "== bit equality"
 "$work/ref/bin/python" -I scripts/bit_equality.py dump \

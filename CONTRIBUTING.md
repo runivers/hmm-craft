@@ -35,6 +35,8 @@ Report a security problem as described in `SECURITY.md`, not in an issue.
    Name <you@example.com>` certifies the
    [Developer Certificate of Origin](https://developercertificate.org/): you
    wrote the change or have the right to submit it under the project's licence.
+   A check on every pull request fails if a commit other than a merge has no
+   sign-off with its author's or its committer's address.
 5. Whoever opens a pull request answers for every line of it: can explain it,
    has run the tests it names, and certifies the right to submit it by the
    sign-off. If an AI tool helped, say so as described in "Use of AI tools".

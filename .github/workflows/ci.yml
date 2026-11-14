@@ -2,13 +2,19 @@ name: ci
 
 # The suite and the bit-equality check against hmmlearn 0.3.3, in two cells:
 # the declared minimums ("floor") and the newest wheels ("latest"). Wheels and
-# the sdist are built and tested by wheels.yml.
+# the sdist are built and tested by wheels.yml. The weekly run shows within a
+# week a new numpy, scipy or scikit-learn release that breaks the suite, or
+# under which this package's fits differ from hmmlearn 0.3.3's (both are
+# installed at the same versions). On a pull request, every commit must be
+# signed off.
 
 on:
   pull_request:
   push:
     branches: [main]
   workflow_dispatch:
+  schedule:
+    - cron: "47 3 * * 1"
 
 permissions:
   contents: read
@@ -29,6 +35,25 @@ jobs:
       run: |
         shopt -s globstar &&
         ! grep -E '.{80}' -- **/*.py
+
+  sign-off:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+    - name: Every commit signed off (DCO)
+      env:
+        BASE: ${{ github.event.pull_request.base.sha }}
+        HEAD: ${{ github.event.pull_request.head.sha }}
+      # The base branch's copy of the script, so a pull request that edits
+      # the script is checked by the copy it does not change.
+      run: |
+        git show "$BASE:scripts/check_signoff.py" > "$RUNNER_TEMP/check_signoff.py"
+        python3 -I "$RUNNER_TEMP/check_signoff.py" "$BASE" "$HEAD"
 
   bit-equality:
     name: bit equality (${{ matrix.cell }})
