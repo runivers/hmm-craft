@@ -113,7 +113,9 @@ def test_one_ulp_in_one_array_fails(tmp_path):
     result = run(tmp_path, [ref], [fork])
     assert result.code == 1
     assert [(d.case, d.key) for d in result.differences] == [("c", "means_")]
-    assert "(1, 0)" in result.differences[0].text
+    text = result.differences[0].text
+    assert "(1, 0)" in text
+    assert "np." not in text
 
 
 def test_one_flipped_state_fails(tmp_path):

@@ -777,8 +777,9 @@ def _describe(ref, fork):
     rb = np.ascontiguousarray(ref).view(np.uint8).reshape(-1, size)
     fb = np.ascontiguousarray(fork).view(np.uint8).reshape(-1, size)
     first = int((rb != fb).any(axis=1).argmax())
-    index = np.unravel_index(first, ref.shape)
-    a, b = ref.reshape(-1)[first], fork.reshape(-1)[first]
+    # Plain Python values: numpy 2 prints a scalar as np.float64(...).
+    index = tuple(int(i) for i in np.unravel_index(first, ref.shape))
+    a, b = ref.reshape(-1)[first].item(), fork.reshape(-1)[first].item()
     return (f"{ref.dtype} {ref.shape}: first difference at {index}: "
             f"reference {a!r}, fork {b!r}")
 
