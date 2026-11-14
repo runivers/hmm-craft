@@ -1,0 +1,43 @@
+name: Bug report
+description: Something gives a wrong result, raises, or crashes.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This fork has one maintainer and no response time. A report with a
+        short example that runs as posted is looked at first. Questions about
+        using hidden Markov models are not answered here.
+  - type: textarea
+    id: example
+    attributes:
+      label: Example
+      description: >
+        A short, self-contained example that fails when pasted into a new empty
+        file. Generate the data with a seeded random number generator inside
+        the example; do not attach data files.
+      render: python
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: What happens, and what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: versions
+    attributes:
+      label: Versions
+      description: hmm-craft, Python, NumPy, SciPy, scikit-learn, and the operating system.
+    validations:
+      required: true
+  - type: dropdown
+    id: upstream
+    attributes:
+      label: Does the same example also fail on hmmlearn 0.3.3?
+      options:
+        - "Yes"
+        - "No"
+        - Not tried
+    validations:
+      required: true

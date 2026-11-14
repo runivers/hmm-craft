@@ -1,0 +1,22 @@
+name: Feature request
+description: Ask for something hmm-craft does not do.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A feature request without a pull request may be closed.
+  - type: textarea
+    id: request
+    attributes:
+      label: What you want, and why
+    validations:
+      required: true
+  - type: dropdown
+    id: pr
+    attributes:
+      label: Will you send a pull request?
+      options:
+        - "Yes"
+        - "No"
+    validations:
+      required: true
