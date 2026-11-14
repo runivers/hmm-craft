@@ -53,13 +53,29 @@ def test_covars_floor_holds_after_every_m_step(covariance_type):
     assert min(smallest) <= 1e-3 * (1 + 1e-9)
 
 
+def _fixed_start(covariance_type, **kwargs):
+    """A model with explicit starting parameters, so a fit does not depend
+    on the k-means start, which varies with the number of threads."""
+    h = hmm.GaussianHMM(2, covariance_type, init_params="", random_state=0,
+                        **kwargs)
+    h.startprob_ = np.array([0.5, 0.5])
+    h.transmat_ = np.array([[0.9, 0.1], [0.1, 0.9]])
+    h.means_ = np.array([[0.0], [1.5]])
+    variances = np.array([0.1, 1.0])
+    h.covars_ = {"spherical": variances,
+                 "diag": variances[:, None],
+                 "full": variances[:, None, None],
+                 "tied": np.array([[1.0]])}[covariance_type]
+    return h
+
+
 @pytest.mark.parametrize("covariance_type", ["spherical", "diag"])
 def test_covars_floor_off_by_default(covariance_type):
     X, lengths = _rounded_sequences()
-    kwargs = {"n_iter": 100, "tol": 1e-4, "random_state": 0}
-    default = hmm.GaussianHMM(2, covariance_type, **kwargs).fit(X, lengths)
-    explicit = hmm.GaussianHMM(
-        2, covariance_type, covars_floor=None, **kwargs).fit(X, lengths)
+    kwargs = {"n_iter": 100, "tol": 1e-4}
+    default = _fixed_start(covariance_type, **kwargs).fit(X, lengths)
+    explicit = _fixed_start(
+        covariance_type, covars_floor=None, **kwargs).fit(X, lengths)
     # Without a floor the variance of the "zeros" state ends far below
     # min_covar.
     assert default._covars_.min() < 1e-3
@@ -74,8 +90,7 @@ def test_covars_floor_leaves_the_start_alone(covariance_type):
     X, lengths = _rounded_sequences()
     starts = []
     for floor in (None, 1e-3):
-        h = hmm.GaussianHMM(covariance_type=covariance_type, n_components=2,
-                            covars_floor=floor, n_iter=0, random_state=0)
+        h = _fixed_start(covariance_type, covars_floor=floor, n_iter=0)
         starts.append(h.fit(X, lengths)._covars_.tobytes())
     assert starts[0] == starts[1]
 
