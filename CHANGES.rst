@@ -11,12 +11,12 @@ Unreleased
 - Requires Python 3.12, numpy 1.26.0, scipy 1.11.2 and scikit-learn 1.3.1, or newer.
 - Fixed: spherical ``GaussianHMM`` ``covars_`` has one matrix per state and ``sample()`` uses it
   (Moussa Ouallaf); MAP ``decode`` log-probability; ``normalize`` on axis 0 (ktz03); no shape set.
-- Changed: ``GaussianHMM`` with ``"c"`` but not ``"m"`` in ``params`` now fits; 0.3.3 gave variances
-  (``covars_prior`` + the posterior-weighted sum of squares) / 1e-5, or raised (Matthew Danielson).
+- Changed: ``GaussianHMM`` with ``"c"`` but not ``"m"`` in ``params`` now fits, which changes those
+  fits; see DIFFERENCES.md (Matthew Danielson).
 - Added: ``state_occupancy_`` after ``fit``; ``GaussianHMM(covars_floor=)``, off by default, floors
   covariances after each M-step and changes fits then (Moussa Ouallaf).
-- Corrected: merge 2ee7c48 called every commit bit-equal to 0.3.3 apart from the entries above;
-  commit e3e09b2 differed by one ulp in two spherical ``fill_covars`` cases until 5754321.
+- Corrected: an earlier commit message overstated how closely one intermediate commit matched 0.3.3;
+  see DIFFERENCES.md.
 
 Version 0.3.3
 ~~~~~~~~~~~~~

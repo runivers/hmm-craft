@@ -86,7 +86,7 @@ when the dumps cannot be compared. The tests of the check run with
 
 Synthetic data as above (`RandomState(10)`, model seed 0, sample seed 1),
 Python 3.12.3, Linux x86_64, one thread, 374 fits and the utility arrays, the
-tree at version `0.3.3.post24+g538affd39` (the last commit that changes code;
+tree at version `0.3.3.post30+g0a5238ebe` (the last commit that changes code;
 later commits change documents only), every exception listed above allowed:
 
 | Environment | numpy | scipy | scikit-learn | Result |
@@ -104,8 +104,10 @@ those fits.
 
 ## A correction
 
-The message of the merge `2ee7c48` says every commit of that branch is
-bit-equal to hmmlearn 0.3.3 apart from the named exceptions. That was wrong
-for `e3e09b2`: two spherical `fill_covars` cases differed from 0.3.3 by one ulp
-until `5754321` restored the exact values. The check at the tree above, which
-includes `5754321`, shows no such difference.
+The message of the merge `2ee7c48` says the side branch keeps the one commit
+that changes fits off the first-parent history, "where every commit is
+bit-equal to hmmlearn 0.3.3 apart from the named exceptions". That was wrong
+for `e3e09b2`, which is on the first-parent history: two spherical
+`fill_covars` cases differed from 0.3.3 by one ulp until `5754321` restored the
+exact values. The check at the tree above, which includes `5754321`, shows no
+such difference.
