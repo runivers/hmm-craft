@@ -1,0 +1,55 @@
+name: release
+
+# Publishes to PyPI by trusted publishing: no stored credential exists in this
+# repository. A tag "v<version>" builds the 20 wheels and the sdist through
+# wheels.yml; the publish job then waits for the maintainer's approval of the
+# "pypi" environment before it uploads. setuptools-scm takes the version from
+# the tag, and the publish job checks that every file carries it.
+
+on:
+  push:
+    tags:
+      - "v[0-9]*"
+
+permissions: {}
+
+jobs:
+  build:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/wheels.yml
+    with:
+      full: true
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment:
+      name: pypi
+      url: https://pypi.org/project/hmm-craft/
+    permissions:
+      id-token: write
+    steps:
+    - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+      with:
+        pattern: dist-*
+        path: dist
+        merge-multiple: true
+    - name: Check what is about to be uploaded
+      env:
+        TAG: ${{ github.ref_name }}
+      run: |
+        version="${TAG#v}"
+        find dist -type f -print
+        test "$(find dist -type f -name '*.whl' | wc -l)" -eq 20
+        test "$(find dist -type f -name '*.tar.gz' | wc -l)" -eq 1
+        for f in dist/*; do
+          case "$(basename "$f")" in
+            "hmm_craft-$version-"*.whl | "hmm_craft-$version.tar.gz") ;;
+            *) echo "$f does not carry version $version" >&2; exit 1 ;;
+          esac
+        done
+    - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
+      with:
+        packages-dir: dist/

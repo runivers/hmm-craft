@@ -9,6 +9,7 @@
 .ipynb_checkpoints/
 .pytest_cache/
 build/
+wheelhouse/
 dist/
 htmlcov/
 oprofile_data/

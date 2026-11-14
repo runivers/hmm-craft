@@ -1,0 +1,55 @@
+name: ci
+
+# The suite and the bit-equality check against hmmlearn 0.3.3, in two cells:
+# the declared minimums ("floor") and the newest wheels ("latest"). Wheels and
+# the sdist are built and tested by wheels.yml.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  style:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      with:
+        persist-credentials: false
+    - name: No Python line of 80 characters or more
+      run: |
+        shopt -s globstar &&
+        ! grep -E '.{80}' -- **/*.py
+
+  bit-equality:
+    name: bit equality (${{ matrix.cell }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        cell: [floor, latest]
+    env:
+      HMMCRAFT_SEED: "0"
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+      with:
+        python-version: "3.12"
+    - name: Suite and bit equality against hmmlearn 0.3.3
+      run: scripts/ci_bit_equality.sh "${{ matrix.cell }}" "$RUNNER_TEMP/check"

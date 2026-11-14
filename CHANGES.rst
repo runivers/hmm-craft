@@ -9,6 +9,7 @@ Unreleased
 
 - Forked from hmmlearn 0.3.3. The package is now ``hmmcraft``, the distribution ``hmm-craft``.
 - Requires Python 3.12, numpy 1.26.0, scipy 1.11.2 and scikit-learn 1.3.1, or newer.
+- Wheels for CPython 3.12 to 3.15 on Linux (x86_64, aarch64), macOS (arm64, x86_64) and Windows.
 - Fixed: spherical ``GaussianHMM`` ``covars_`` has one matrix per state and ``sample()`` uses it
   (Moussa Ouallaf); MAP ``decode`` log-probability; ``normalize`` on axis 0 (ktz03); no shape set.
 - Changed: ``GaussianHMM`` with ``"c"`` but not ``"m"`` in ``params`` now fits, which changes those
