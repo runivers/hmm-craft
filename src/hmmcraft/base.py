@@ -293,7 +293,7 @@ class _AbstractHMM(BaseEstimator):
 
     def _decode_map(self, X):
         _, posteriors = self.score_samples(X)
-        log_prob = np.max(posteriors, axis=1).sum()
+        log_prob = np.log(np.max(posteriors, axis=1)).sum()
         state_sequence = np.argmax(posteriors, axis=1)
         return log_prob, state_sequence
 
@@ -321,7 +321,8 @@ class _AbstractHMM(BaseEstimator):
         Returns
         -------
         log_prob : float
-            Log probability of the produced state sequence.
+            Log probability of the produced state sequence. For "map", the
+            sum of the log of the posterior probability of each chosen state.
         state_sequence : array, shape (n_samples, )
             Labels for each sample from ``X`` obtained via a given
             decoder ``algorithm``.

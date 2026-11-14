@@ -4,7 +4,7 @@ import pytest
 from scipy import special
 
 from hmmcraft.base import BaseHMM, ConvergenceMonitor
-from hmmcraft import _hmmc
+from hmmcraft import _hmmc, hmm
 
 
 class TestMonitor:
@@ -243,3 +243,45 @@ def test_stationary_distribution():
     assert stationary.dtype == float
     assert (h.get_stationary_distribution().T @ h.transmat_
             == pytest.approx(stationary))
+
+
+class EqualEmissionsHMM(BaseHMM):
+    """An HMM whose states emit every observation with the same probability."""
+    def _compute_log_likelihood(self, X):
+        return np.zeros((len(X), self.n_components))
+
+
+@pytest.mark.parametrize("lengths", [None, [3, 2]])
+@pytest.mark.parametrize("implementation", ["scaling", "log"])
+def test_map_log_prob_is_the_log_of_the_chosen_posteriors(
+        implementation, lengths):
+    h = EqualEmissionsHMM(2, implementation=implementation)
+    h.startprob_ = np.full(2, 0.5)
+    h.transmat_ = np.full((2, 2), 0.5)
+
+    log_prob, _ = h.decode(np.zeros((5, 1)), lengths, algorithm="map")
+
+    # Every posterior is one half.
+    assert log_prob <= 0
+    assert_allclose(log_prob, 5 * np.log(0.5), rtol=1e-12)
+
+
+@pytest.mark.parametrize("implementation", ["scaling", "log"])
+def test_map_log_prob_sums_the_log_of_the_largest_posteriors(implementation):
+    rs = np.random.RandomState(1)
+    lengths = [6, 4]
+    X = rs.normal(size=(10, 2)) + 2 * rs.randint(0, 2, (10, 1))
+    h = hmm.GaussianHMM(2, "diag", init_params="",
+                        implementation=implementation)
+    h.startprob_ = np.array([0.6, 0.4])
+    h.transmat_ = np.array([[0.7, 0.3], [0.2, 0.8]])
+    h.means_ = np.array([[0.0, 0.0], [2.0, 2.0]])
+    h.covars_ = np.ones((2, 2))
+
+    log_prob, states = h.decode(X, lengths, algorithm="map")
+
+    posteriors = np.split(h.predict_proba(X, lengths), [6])
+    expected = sum(np.log(p.max(axis=1)).sum() for p in posteriors)
+    assert_allclose(log_prob, expected, rtol=1e-12)
+    assert log_prob < 0
+    assert_allclose(states, h.predict_proba(X, lengths).argmax(axis=1))
