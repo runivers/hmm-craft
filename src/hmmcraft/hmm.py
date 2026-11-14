@@ -235,7 +235,7 @@ class GaussianHMM(_emissions.BaseGaussianHMM, BaseHMM):
                  algorithm="viterbi", random_state=None,
                  n_iter=10, tol=1e-2, verbose=False,
                  params="stmc", init_params="stmc",
-                 implementation="log"):
+                 implementation="log", covars_floor=None):
         """
         Parameters
         ----------
@@ -253,9 +253,8 @@ class GaussianHMM(_emissions.BaseGaussianHMM, BaseHMM):
             * "tied" --- all states use **the same** full covariance matrix.
 
         min_covar : float, optional
-            Floor on the covariance to prevent overfitting, applied at
-            initialisation and after every M-step: variances (spherical,
-            diag) and eigenvalues (full, tied) never fall below it.
+            Added to the diagonal of the covariance of the data that starts
+            the fit. It is not a floor during the fit: see ``covars_floor``.
             Defaults to 1e-3.
 
         startprob_prior : array, shape (n_components, ), optional
@@ -312,6 +311,15 @@ class GaussianHMM(_emissions.BaseGaussianHMM, BaseHMM):
             Determines if the forward-backward algorithm is implemented with
             logarithms ("log"), or using scaling ("scaling").  The default is
             to use logarithms for backwards compatability.
+
+        covars_floor : float or None, optional
+            If a positive number, the covariances are floored after every
+            M-step that updates them: variances ("spherical", "diag") and
+            eigenvalues ("full", "tied") below it are raised to it. A state
+            that explains a few repeated values would otherwise shrink its
+            variance towards zero. The default, None, applies no floor,
+            and this changes a fit only if a floor binds. It is independent
+            of ``min_covar``.
         """
         super().__init__(n_components,
                          startprob_prior=startprob_prior,
@@ -326,6 +334,12 @@ class GaussianHMM(_emissions.BaseGaussianHMM, BaseHMM):
         self.means_weight = means_weight
         self.covars_prior = covars_prior
         self.covars_weight = covars_weight
+        self.covars_floor = covars_floor
+
+    def __setstate__(self, state):
+        # A model pickled before covars_floor existed has no such entry.
+        state.setdefault("covars_floor", None)
+        super().__setstate__(state)
 
     @property
     def covars_(self):
@@ -366,6 +380,11 @@ class GaussianHMM(_emissions.BaseGaussianHMM, BaseHMM):
         if self.covariance_type not in COVARIANCE_TYPES:
             raise ValueError(
                 f"covariance_type must be one of {COVARIANCE_TYPES}")
+        if self.covars_floor is not None and not (
+                np.isfinite(self.covars_floor) and self.covars_floor > 0):
+            raise ValueError(
+                "covars_floor must be None or a finite number above 0, "
+                f"got {self.covars_floor!r}")
 
     def _needs_sufficient_statistics_for_mean(self):
         return 'm' in self.params
@@ -423,11 +442,11 @@ class GaussianHMM(_emissions.BaseGaussianHMM, BaseHMM):
                     self._covars_ = ((covars_prior + c_n) /
                                      (cvweight + stats['post'][:, None, None]))
 
-            # Keep the documented floor after every update, not only at
-            # initialisation: a state that captures exactly repeated values
-            # would otherwise shrink its variance towards zero.
-            self._covars_ = _floor_covars(
-                self._covars_, self.covariance_type, self.min_covar)
+            # A state that captures exactly repeated values would otherwise
+            # shrink its variance towards zero.
+            if self.covars_floor is not None:
+                self._covars_ = _floor_covars(
+                    self._covars_, self.covariance_type, self.covars_floor)
 
 
 class GMMHMM(_emissions.BaseGMMHMM):
