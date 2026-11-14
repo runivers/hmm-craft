@@ -86,8 +86,9 @@ when the dumps cannot be compared. The tests of the check run with
 
 Synthetic data as above (`RandomState(10)`, model seed 0, sample seed 1),
 Python 3.12.3, Linux x86_64, one thread, 374 fits and the utility arrays, the
-tree at version `0.3.3.post30+g0a5238ebe` (the last commit that changes code;
-later commits change documents only), every exception listed above allowed:
+tree at version `0.3.3.post30+g0a5238ebe` (the last commit that changes the
+package or the check; later commits change documentation, docstrings
+included, or add the probe only), every exception listed above allowed:
 
 | Environment | numpy | scipy | scikit-learn | Result |
 |---|---|---|---|---|

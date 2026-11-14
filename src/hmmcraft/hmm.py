@@ -342,7 +342,8 @@ class GaussianHMM(_emissions.BaseGaussianHMM, BaseHMM):
             that explains a few repeated values would otherwise shrink its
             variance towards zero. The default, None, applies no floor,
             and this changes a fit only if a floor binds. It is independent
-            of ``min_covar``.
+            of ``min_covar``. Any other value (not a finite number above 0,
+            or a boolean) raises ValueError when the model is checked.
         """
         super().__init__(n_components,
                          startprob_prior=startprob_prior,

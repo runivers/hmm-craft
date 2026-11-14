@@ -64,8 +64,8 @@ What differs from hmmlearn 0.3.3
 * A ``GaussianHMM`` that updates covariances but not means (``params``
   containing ``"c"`` without ``"m"``) now estimates its covariances. What
   hmmlearn 0.3.3 returned there was not an estimate, or raised; the exact
-  result is in ``DIFFERENCES.md``. This is the one change to a fit that is made
-  without an option.
+  result, for the default priors, is in ``DIFFERENCES.md``. This is the one
+  change to a fit that is made without an option.
 * ``normalize(a, axis=0)`` gives zeros, not NaN, for a slice that sums to
   zero.
 
