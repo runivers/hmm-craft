@@ -20,6 +20,7 @@ ME = ("Ann Example", "ann@example.org")
 OTHER = ("Bob Example", "bob@example.org")
 BOT = ("dependabot[bot]",
        "49699333+dependabot[bot]@users.noreply.github.com")
+GITHUB = ("GitHub", "noreply@github.com")
 
 
 def _env():
@@ -167,10 +168,18 @@ def test_signoff_line_must_be_a_whole_line(repo):
 
 def test_dependabot_commit_exempt(repo):
     base = _branch(repo)
-    _commit(repo, "a", "chore: bump an action", author=BOT, committer=OTHER)
+    _commit(repo, "a", "chore: bump an action", author=BOT, committer=GITHUB)
     result = _check(repo, base)
     assert result.returncode == 0, result.stdout
     assert "exempt" in result.stdout
+
+
+def test_dependabot_author_with_another_committer_not_exempt(repo):
+    # Anyone can set the author; GitHub as committer is what Dependabot's
+    # own commits carry, so both are required.
+    base = _branch(repo)
+    _commit(repo, "a", "chore: bump an action", author=BOT, committer=OTHER)
+    assert _check(repo, base).returncode == 1
 
 
 def test_dependabot_name_with_another_address_not_exempt(repo):
