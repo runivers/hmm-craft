@@ -115,8 +115,11 @@ def test_monotone_em_with_covars_floor(covariance_type):
     assert (np.diff(history) >= -1e-8 * np.abs(history[1:])).all()
 
 
-@pytest.mark.parametrize("floor", [0, -1, np.nan, np.inf])
-def test_covars_floor_rejects_non_positive(floor):
+@pytest.mark.parametrize(
+    "floor", [0, -1, np.nan, np.inf, True, False, np.True_, "1e-3", [1e-3]],
+    ids=["zero", "negative", "nan", "inf", "True", "False", "np.True_",
+         "string", "list"])
+def test_covars_floor_rejects_non_positive_and_non_numeric(floor):
     X, lengths = _rounded_sequences()
     h = hmm.GaussianHMM(2, covars_floor=floor, random_state=0)
     with pytest.raises(ValueError, match="covars_floor"):

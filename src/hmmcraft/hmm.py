@@ -3,6 +3,7 @@ The :mod:`hmmcraft.hmm` module implements hidden Markov models.
 """
 
 import logging
+import numbers
 
 import numpy as np
 from scipy import linalg
@@ -380,8 +381,11 @@ class GaussianHMM(_emissions.BaseGaussianHMM, BaseHMM):
         if self.covariance_type not in COVARIANCE_TYPES:
             raise ValueError(
                 f"covariance_type must be one of {COVARIANCE_TYPES}")
-        if self.covars_floor is not None and not (
-                np.isfinite(self.covars_floor) and self.covars_floor > 0):
+        floor = self.covars_floor
+        if floor is not None and not (
+                isinstance(floor, numbers.Real)
+                and not isinstance(floor, (bool, np.bool_))
+                and np.isfinite(floor) and floor > 0):
             raise ValueError(
                 "covars_floor must be None or a finite number above 0, "
                 f"got {self.covars_floor!r}")
