@@ -1,3 +1,5 @@
+from fractions import Fraction
+
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose
@@ -131,14 +133,24 @@ def test_monotone_em_with_covars_floor(covariance_type):
 
 
 @pytest.mark.parametrize(
-    "floor", [0, -1, np.nan, np.inf, True, False, np.True_, "1e-3", [1e-3]],
+    "floor", [0, -1, np.nan, np.inf, True, False, np.True_, "1e-3", [1e-3],
+              10 ** 400],
     ids=["zero", "negative", "nan", "inf", "True", "False", "np.True_",
-         "string", "list"])
+         "string", "list", "int_beyond_float"])
 def test_covars_floor_rejects_non_positive_and_non_numeric(floor):
     X, lengths = _rounded_sequences()
     h = hmm.GaussianHMM(2, covars_floor=floor, random_state=0)
     with pytest.raises(ValueError, match="covars_floor"):
         h.fit(X, lengths)
+
+
+def test_covars_floor_accepts_any_real_number_as_its_float_value():
+    # A Fraction is a real number: it floors exactly as its float does.
+    X, lengths = _rounded_sequences()
+    fits = [_fixed_start("diag", covars_floor=floor, n_iter=10).fit(X, lengths)
+            for floor in (Fraction(1, 1000), 1e-3)]
+    assert fits[0]._covars_.min() >= 1e-3
+    assert fits[0]._covars_.tobytes() == fits[1]._covars_.tobytes()
 
 
 def test_model_pickled_without_covars_floor_loads():

@@ -24,6 +24,27 @@ _log = logging.getLogger(__name__)
 COVARIANCE_TYPES = frozenset(("spherical", "diag", "full", "tied"))
 
 
+def _covars_floor_value(covars_floor):
+    """
+    Return ``covars_floor`` as a float, or None; raise ValueError if it is
+    neither None nor a finite real number above 0 (a boolean is not one).
+    """
+    if covars_floor is None:
+        return None
+    message = ("covars_floor must be None or a finite number above 0, "
+               f"got {covars_floor!r}")
+    if not isinstance(covars_floor, numbers.Real) or isinstance(
+            covars_floor, (bool, np.bool_)):
+        raise ValueError(message)
+    try:
+        value = float(covars_floor)
+    except (TypeError, OverflowError) as exc:
+        raise ValueError(message) from exc
+    if not (np.isfinite(value) and value > 0):
+        raise ValueError(message)
+    return value
+
+
 def _floor_covars(covars, covariance_type, min_covar):
     """
     Apply the ``min_covar`` floor to covariances in their compact layout.
@@ -381,14 +402,7 @@ class GaussianHMM(_emissions.BaseGaussianHMM, BaseHMM):
         if self.covariance_type not in COVARIANCE_TYPES:
             raise ValueError(
                 f"covariance_type must be one of {COVARIANCE_TYPES}")
-        floor = self.covars_floor
-        if floor is not None and not (
-                isinstance(floor, numbers.Real)
-                and not isinstance(floor, (bool, np.bool_))
-                and np.isfinite(floor) and floor > 0):
-            raise ValueError(
-                "covars_floor must be None or a finite number above 0, "
-                f"got {self.covars_floor!r}")
+        _covars_floor_value(self.covars_floor)
 
     def _needs_sufficient_statistics_for_mean(self):
         return 'm' in self.params
@@ -448,9 +462,10 @@ class GaussianHMM(_emissions.BaseGaussianHMM, BaseHMM):
 
             # A state that captures exactly repeated values would otherwise
             # shrink its variance towards zero.
-            if self.covars_floor is not None:
+            floor = _covars_floor_value(self.covars_floor)
+            if floor is not None:
                 self._covars_ = _floor_covars(
-                    self._covars_, self.covariance_type, self.covars_floor)
+                    self._covars_, self.covariance_type, floor)
 
 
 class GMMHMM(_emissions.BaseGMMHMM):
