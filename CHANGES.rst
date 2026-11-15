@@ -7,6 +7,7 @@ The changes of hmm-craft, a fork of hmmlearn, come first. The entries from
 Unreleased
 ~~~~~~~~~~
 
+- Fixed: a ``GaussianHMM`` test with priors no longer fails for some random seeds.
 - Changed: ``full`` and ``tied`` fits with numpy older than 2.0.2 and AVX-512 no longer depend on
   memory placement; their last bits can differ from 0.3.3's; see DIFFERENCES.md.
 

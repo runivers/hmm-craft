@@ -224,7 +224,8 @@ class GaussianHMMTestMixin:
         # the original parameter values.
         h_learn = hmm.GaussianHMM(self.n_components, self.covariance_type,
                                   init_params=init_params, params=params,
-                                  implementation=implementation,)
+                                  implementation=implementation,
+                                  random_state=self.prng)
         # don't use random parameters for testing
         init = 1. / h_learn.n_components
         h_learn.startprob_ = np.full(h_learn.n_components, init)
