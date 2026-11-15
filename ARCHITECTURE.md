@@ -57,7 +57,10 @@ emission classes derive from `BaseHMM` directly.
 ## The fit loop
 
 `_AbstractHMM.fit(X, lengths)` is the only fit loop. `X` holds every
-sequence, one after another; `lengths` gives the length of each.
+sequence, one after another; `lengths` gives the length of each, a positive
+integer. `fit` first passes both to `_utils.split_X_lengths`, which raises
+`ValueError` for any other entry and for a total that is not the number of
+samples, so no start is computed from invalid `lengths`.
 
 ```mermaid
 flowchart TD
@@ -127,9 +130,12 @@ float64 array.
 | `compute_scaling_xi_sum` | forward lattice, transition matrix, backward lattice, emission probabilities | the expected transition counts |
 | `viterbi` | start probabilities, transition matrix, emission log-probabilities | the log-probability of the best path and the path |
 
-A shape that does not match raises `ValueError`. Each function releases the
-GIL while it loops. The kernel's source is hmmlearn 0.3.3's, unchanged; only
-the module's package name differs.
+A shape that does not match raises `ValueError`, and so does a matrix with no
+rows (a sequence without samples) or no columns (a model without states): the
+recursions use unchecked accessors, and hmmlearn 0.3.3's kernel indexed
+outside its arrays there. Each function releases the GIL while it loops. The
+kernel's source is hmmlearn 0.3.3's apart from that check and the module's
+package name.
 
 ## What the package promises
 
