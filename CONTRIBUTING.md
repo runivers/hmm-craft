@@ -58,7 +58,7 @@ Name the tool, without a model name or version. Use this trailer instead of
 the co-author line or the footer that some tools add. The pull request
 template asks whether an AI tool helped with the pull request as a whole.
 
-The maintainer's commits from cec8d68 to fff5707 were written with Claude
+The maintainer's commits from ea4e856 to fff5707 were written with Claude
 Code (Anthropic) before this rule existed, and carry no trailer. Every later
 commit written with AI help carries it. Commits taken from pull requests to
 hmmlearn keep their authors' messages as written.
