@@ -474,6 +474,9 @@ class _AbstractHMM(BaseEstimator):
             Returns self.
         """
         X = check_array(X)
+        # Refuse invalid lengths before the start uses them, whatever
+        # n_iter is; the split itself happens in each E-step.
+        _utils.split_X_lengths(X, lengths)
 
         if lengths is None:
             lengths = np.asarray([X.shape[0]])

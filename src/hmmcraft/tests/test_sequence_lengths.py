@@ -3,6 +3,8 @@ from numpy.testing import assert_allclose, assert_array_equal
 import pytest
 
 from hmmcraft.hmm import CategoricalHMM
+from hmmcraft.vhmm import (
+    VariationalCategoricalHMM, VariationalGaussianHMM)
 from hmmcraft import _hmmc, _utils
 
 
@@ -77,3 +79,18 @@ def test_overflow_lengths_rejected_before_inference(
     lengths = np.array([2**64 - 1, 3], dtype=np.uint64)
     with pytest.raises(ValueError, match="doesn't sum to 2 samples"):
         getattr(h, method)(np.array([[0], [1]]), lengths)
+
+
+@pytest.mark.parametrize("model", [
+    lambda: CategoricalHMM(2, n_features=2, n_iter=0, random_state=0),
+    lambda: VariationalCategoricalHMM(2, n_features=2, random_state=0),
+    lambda: VariationalGaussianHMM(2, random_state=0),
+], ids=["categorical-n_iter-0", "variational-categorical",
+        "variational-gaussian"])
+@pytest.mark.parametrize("lengths", [
+    [0, 4], [5, -1], [2.0, 2.0], [[2, 2]], 4,
+])
+def test_fit_refuses_invalid_lengths_before_its_start(model, lengths):
+    """``fit`` checks ``lengths`` before it computes a start or iterates."""
+    with pytest.raises(ValueError, match="positive integers"):
+        model().fit(np.array([[0], [1], [1], [0]]), lengths)
