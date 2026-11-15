@@ -4,8 +4,10 @@ hmm-craft Changelog
 The changes of hmm-craft, a fork of hmmlearn, come first. The entries from
 "Version 0.3.3" down are hmmlearn's own history, kept as written.
 
-Unreleased
-~~~~~~~~~~
+Version 0.4.0
+~~~~~~~~~~~~~
+
+Released on November 15, 2026.
 
 - Forked from hmmlearn 0.3.3. The package is now ``hmmcraft``, the distribution ``hmm-craft``.
 - Requires Python 3.12, numpy 1.26.0, scipy 1.11.2 and scikit-learn 1.3.1, or newer.
