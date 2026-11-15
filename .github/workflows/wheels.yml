@@ -40,7 +40,7 @@ jobs:
         cells='{"name":"linux-x86_64","os":"ubuntu-24.04","archs":"x86_64"}'
         if [ "$FULL" = true ]; then
           cells="$cells"',{"name":"linux-aarch64","os":"ubuntu-24.04-arm","archs":"aarch64"}'
-          cells="$cells"',{"name":"macos-arm64","os":"macos-14","archs":"arm64"}'
+          cells="$cells"',{"name":"macos-arm64","os":"macos-15","archs":"arm64"}'
           cells="$cells"',{"name":"macos-x86_64","os":"macos-15-intel","archs":"x86_64"}'
           cells="$cells"',{"name":"windows-amd64","os":"windows-2025","archs":"AMD64"}'
         fi
