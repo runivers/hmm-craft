@@ -33,11 +33,13 @@ case $cell in floor | latest) ;; *) echo "unknown cell: $cell" >&2; exit 2 ;; es
 case $work in /*) ;; *) work=$PWD/$work ;; esac
 
 # On a CPU with AVX-512, numpy before 2.0.2 picks its vector or its scalar
-# float64 log loop for a strided input by where the output lands in memory.
-# The two are different code; read from it, their last bits can differ, which
-# is consistent with this cell's failures at random, and hmmlearn 0.3.3 would
-# then have no single result to compare with. Not yet observed: no run of
-# this cell has yet recorded a CPU with AVX-512.
+# float64 log loop for a strided input by where the output lands in memory,
+# as read from its code. On numpy 1.26.0, on the AVX-512 runners this script
+# has run on, the probe below has found values whose strided log, output
+# right after the input, differs from the log in place, and none with the
+# targets below turned off. The difference is consistent with this cell's
+# failures at random: hmmlearn 0.3.3 would then have no single result to
+# compare with.
 # Off in the floor cell only: the latest cell's numpy has the fix and names its
 # targets otherwise. Drop this, the guard and the probe's second run once the
 # floor is numpy 2.0.2 or later.

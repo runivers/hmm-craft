@@ -68,8 +68,8 @@ What differs from hmmlearn 0.3.3
   item are the two changes to a fit made without an option.
 * The ``full`` and ``tied`` Gaussian log-densities no longer depend on where
   memory is placed. With NumPy before 2.0.2 on a CPU with AVX-512, hmmlearn
-  0.3.3's last bits there depended on it, as read from NumPy's code; this
-  package's can differ from them. ``DIFFERENCES.md`` gives the details.
+  0.3.3's last bits there could depend on it; this package's can differ from
+  them. ``DIFFERENCES.md`` gives the details, and which of them were observed.
 * ``normalize(a, axis=0)`` gives zeros, not NaN, for a slice that sums to
   zero.
 * ``lengths`` must be a one-dimensional array of positive integers; anything
