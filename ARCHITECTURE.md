@@ -156,14 +156,19 @@ The fork changes fits in two steps.
 
 **Step 1** is the fork as first published: hmmlearn 0.3.3 under a new name,
 with newer minimum versions, wheels, CI, and the changes listed in
-`DIFFERENCES.md`. Only one of them changes a fit with every option at its
-default, and it replaces a result that hmmlearn 0.3.3 computed wrongly or
-failed to compute (the Gaussian fit of covariances without means).
+`DIFFERENCES.md`. Two of them change a fit with every option at its default.
+One replaces a result that hmmlearn 0.3.3 computed wrongly or failed to
+compute (the Gaussian fit of covariances without means). The other makes
+repeatable a result that hmmlearn 0.3.3 left to memory placement on CPUs
+with AVX-512 and numpy before 2.0.2: the log-determinant of the `full` and
+`tied` log-densities is taken in place on a contiguous copy, which, as read
+from numpy's code, always gets numpy's vector loop there, whatever the
+allocator; its last bits can then differ from 0.3.3's.
 `GaussianHMM(covars_floor=...)` changes fits only when it is set. In the check
 above, every other fit equals 0.3.3's.
 
 **Step 2** holds the later changes that move a fit hmmlearn 0.3.3 computes
-correctly. Each one comes behind an option whose default keeps 0.3.3's result,
+correctly and repeatably. Each one comes behind an option whose default keeps 0.3.3's result,
 is listed in `DIFFERENCES.md` with an exception of its own in the check, is
 named in `CHANGES.rst`, and ships in a minor release (`RELEASING.md`).
 Equality is always checked against hmmlearn 0.3.3, with every option at its

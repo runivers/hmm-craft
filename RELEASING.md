@@ -35,7 +35,9 @@ on a machine with Python 3.12 and a network connection.
   those versions from binary wheels and checks that `numpy`, `scipy` and
   `scikit-learn` are the declared minimums. `scripts/test_floor_constraints.py`
   fails if a minimum in `pyproject.toml`, the file's pin or a build requirement
-  drifts apart.
+  drifts apart. The cell also turns numpy's AVX-512 loops off
+  (`NPY_DISABLE_CPU_FEATURES`, see `DIFFERENCES.md`). Once the numpy floor is
+  2.0.2 or later, that setting is removed from `scripts/ci_bit_equality.sh`.
 - **Actions** are pinned by commit, with the release in a comment. Dependabot
   opens one pull request a month with the newer releases
   (`.github/dependabot.yml`); the maintainer reads their changes before merging

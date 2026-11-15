@@ -5,7 +5,8 @@
 # usage: scripts/ci_bit_equality.sh floor|latest WORKDIR
 #
 # floor:  the three declared minimums and everything else in
-#         ci/floor_constraints.txt, binary wheels only.
+#         ci/floor_constraints.txt, binary wheels only, with numpy's AVX-512
+#         loops turned off (NPY_DISABLE_CPU_FEATURES).
 # latest: the newest binary wheels of numpy, scipy and scikit-learn.
 #
 # The reference is built from the upstream tag, with the same compiler and
@@ -30,6 +31,21 @@ allow=E1,E2,E3,E4,E5,E6
 root=$(cd "$(dirname "$0")/.." && pwd)
 case $cell in floor | latest) ;; *) echo "unknown cell: $cell" >&2; exit 2 ;; esac
 case $work in /*) ;; *) work=$PWD/$work ;; esac
+
+# On a CPU with AVX-512, numpy before 2.0.2 picks its vector or its scalar
+# float64 log loop for a strided input by where the output lands in memory.
+# The two are different code; read from it, their last bits can differ, which
+# is consistent with this cell's failures at random, and hmmlearn 0.3.3 would
+# then have no single result to compare with. Not yet observed: no run of
+# this cell has yet recorded a CPU with AVX-512.
+# Off in the floor cell only: the latest cell's numpy has the fix and names its
+# targets otherwise. Drop this, the guard and the probe's second run once the
+# floor is numpy 2.0.2 or later.
+avx512="AVX512F AVX512CD AVX512_KNL AVX512_KNM AVX512_SKX AVX512_CLX"
+avx512="$avx512 AVX512_CNL AVX512_ICL"
+if [ "$cell" = floor ]; then
+    export NPY_DISABLE_CPU_FEATURES="$avx512"
+fi
 
 # One thread and one seed: where a start is seeded, the k-means partial sums
 # depend on the order in which threads finish.
@@ -79,6 +95,41 @@ grep -iE '^(numpy|scipy|scikit-learn|threadpoolctl)==' \
 "$work/ref/bin/python" -m pip install -q --only-binary :all: \
     -c "$work/pins.txt" numpy scipy scikit-learn threadpoolctl
 cat "$work/pins.txt"
+
+echo "== machine"
+grep -m1 '^model name' /proc/cpuinfo || true
+if grep -qw avx512f /proc/cpuinfo; then
+    echo "avx512f: yes"
+else
+    echo "avx512f: no"
+fi
+for env in fork ref; do
+    echo "-- numpy runtime ($env), as the machine offers it"
+    (unset NPY_DISABLE_CPU_FEATURES
+     "$work/$env/bin/python" -I -c "import numpy; numpy.show_runtime()")
+done
+
+# numpy ignores a name it does not know, with an ImportWarning, and still
+# applies the others: a misspelt name would leave its target on unnoticed.
+# The guard fails the cell if any AVX-512 dispatch target is still on.
+if [ "$cell" = floor ]; then
+    for env in fork ref; do
+        "$work/$env/bin/python" -I -c "
+from numpy.core._multiarray_umath import __cpu_dispatch__, __cpu_features__
+on = [k for k in __cpu_dispatch__
+      if k.startswith('AVX512') and __cpu_features__[k]]
+print('AVX-512 dispatch targets still on ($env):', ' '.join(on) or 'none')
+raise SystemExit(1 if on else 0)"
+    done
+fi
+
+echo "== numpy's float64 log loops"
+if [ "$cell" = floor ]; then
+    (unset NPY_DISABLE_CPU_FEATURES
+     "$work/fork/bin/python" -I "$root/scripts/probe_log_loops.py")
+    echo "-- with NPY_DISABLE_CPU_FEATURES=$NPY_DISABLE_CPU_FEATURES"
+fi
+"$work/fork/bin/python" -I "$root/scripts/probe_log_loops.py"
 
 echo "== build and install"
 SETUPTOOLS_SCM_PRETEND_VERSION=$tag "$work/ref/bin/python" -m pip install -q \
