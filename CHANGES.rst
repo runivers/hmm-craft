@@ -4,6 +4,12 @@ hmm-craft Changelog
 The changes of hmm-craft, a fork of hmmlearn, come first. The entries from
 "Version 0.3.3" down are hmmlearn's own history, kept as written.
 
+Unreleased
+~~~~~~~~~~
+
+- Changed: ``full`` and ``tied`` fits with numpy older than 2.0.2 and AVX-512 no longer depend on
+  memory placement; their last bits can differ from 0.3.3's; see DIFFERENCES.md.
+
 Version 0.4.0
 ~~~~~~~~~~~~~
 

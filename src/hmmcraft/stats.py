@@ -89,7 +89,10 @@ def _log_multivariate_normal_density_full(X, means, covars, min_covar=1.e-7):
                 raise ValueError("'covars' must be symmetric, "
                                  "positive-definite")
 
-        cv_log_det = 2 * np.sum(np.log(np.diagonal(cv_chol)))
+        # In place on a copy: numpy < 2.0.2 with AVX-512 picks its log loop by
+        # where the output lies near the input, unless the two coincide.
+        cv_diag = np.diagonal(cv_chol).copy()
+        cv_log_det = 2 * np.sum(np.log(cv_diag, out=cv_diag))
         cv_sol = linalg.solve_triangular(cv_chol, (X - mu).T, lower=True).T
         log_prob.append(-.5 * (nf * np.log(2 * np.pi)
                                + (cv_sol ** 2).sum(axis=1)

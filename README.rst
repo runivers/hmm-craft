@@ -64,8 +64,12 @@ What differs from hmmlearn 0.3.3
 * A ``GaussianHMM`` that updates covariances but not means (``params``
   containing ``"c"`` without ``"m"``) now estimates its covariances. What
   hmmlearn 0.3.3 returned there was not an estimate, or raised; the exact
-  result, for the default priors, is in ``DIFFERENCES.md``. This is the one
-  change to a fit that is made without an option.
+  result, for the default priors, is in ``DIFFERENCES.md``. This and the next
+  item are the two changes to a fit made without an option.
+* The ``full`` and ``tied`` Gaussian log-densities no longer depend on where
+  memory is placed. With NumPy before 2.0.2 on a CPU with AVX-512, hmmlearn
+  0.3.3's last bits there could depend on it; this package's can differ from
+  them. ``DIFFERENCES.md`` gives the details, and which of them were observed.
 * ``normalize(a, axis=0)`` gives zeros, not NaN, for a slice that sums to
   zero.
 * ``lengths`` must be a one-dimensional array of positive integers; anything
@@ -79,8 +83,8 @@ Apart from these, the fits of this package are checked to equal hmmlearn
 0.3.3's to the bit, on the synthetic data, with the versions, the seeds and the
 single thread given in the result table of ``DIFFERENCES.md``; nothing is
 claimed beyond that check. A change to a fit that hmmlearn 0.3.3 computes
-correctly is made only behind an option whose default is hmmlearn 0.3.3's
-behaviour. ``DIFFERENCES.md`` lists each difference and describes the check
+correctly and repeatably is made only behind an option whose default is
+hmmlearn 0.3.3's behaviour. ``DIFFERENCES.md`` lists each difference and describes the check
 that compares the two packages. Every change is listed in ``CHANGES.rst``.
 
 Installation
