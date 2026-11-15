@@ -19,7 +19,7 @@ def make_covar_matrix(covariance_type, n_components, n_features,
     if covariance_type == 'spherical':
         return (mincv + mincv * prng.random_sample((n_components,))) ** 2
     elif covariance_type == 'tied':
-        return (make_spd_matrix(n_features)
+        return (make_spd_matrix(n_features, random_state=prng)
                 + mincv * np.eye(n_features))
     elif covariance_type == 'diag':
         return (mincv + mincv *

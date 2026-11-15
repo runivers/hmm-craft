@@ -30,6 +30,11 @@ Report a security problem as described in `SECURITY.md`, not in an issue.
        pip install ".[tests]"
        python -m pytest --pyargs hmmcraft.tests doc
 
+   Each test run seeds the global random number generators of NumPy and of
+   Python's `random` module and prints the seed before the tests
+   (`set RNG seed to <n>`). The seed is random unless `HMMCRAFT_SEED=<n>` is
+   set, which reruns the same tests with that seed; CI sets `HMMCRAFT_SEED=0`.
+
 3. Keep every Python line under 80 characters, as upstream does.
 4. Sign off every commit with `git commit -s`. The line `Signed-off-by: Your
    Name <you@example.com>` certifies the
