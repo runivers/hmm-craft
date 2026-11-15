@@ -68,6 +68,12 @@ What differs from hmmlearn 0.3.3
   change to a fit that is made without an option.
 * ``normalize(a, axis=0)`` gives zeros, not NaN, for a slice that sums to
   zero.
+* ``lengths`` must be a one-dimensional array of positive integers; anything
+  else raises ``ValueError``, including a two-dimensional array and a single
+  integer, which hmmlearn 0.3.3 accepted. hmmlearn 0.3.3 also accepted zero
+  and negative entries when the total matched; a zero entry, and some negative
+  ones, gave its kernel a sequence without samples, and it then indexed outside
+  its arrays.
 
 Apart from these, the fits of this package are checked to equal hmmlearn
 0.3.3's to the bit, on the synthetic data, with the versions, the seeds and the

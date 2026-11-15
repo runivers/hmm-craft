@@ -43,6 +43,21 @@ py::array_t<double> log(
   return log.reshape(std::vector<ssize_t>(x_.shape(), x_.shape() + x_.ndim()));
 }
 
+// Most recursions start at row 0 or row ns - 1 of a lattice, and the
+// log-space ones take a maximum over the states, through unchecked
+// accessors: with no rows, or no states, they read or write outside the
+// arrays. Every function checks, so none depends on how its caller built
+// the input.
+void check_not_empty(ssize_t ns, ssize_t nc)
+{
+  if (ns < 1) {
+    throw std::invalid_argument{"a sequence needs at least one sample"};
+  }
+  if (nc < 1) {
+    throw std::invalid_argument{"a model needs at least one state"};
+  }
+}
+
 std::tuple<double, py::array_t<double>, py::array_t<double>> forward_scaling(
   py::array_t<double> startprob_,
   py::array_t<double> transmat_,
@@ -58,6 +73,7 @@ std::tuple<double, py::array_t<double>, py::array_t<double>> forward_scaling(
       || transmat.shape(0) != nc || transmat.shape(1) != nc) {
     throw std::invalid_argument{"shape mismatch"};
   }
+  check_not_empty(ns, nc);
   auto fwdlattice_ = py::array_t<double>{{ns, nc}};
   auto fwd = fwdlattice_.mutable_unchecked<2>();
   auto scaling_ = py::array_t<double>{{ns}};
@@ -116,6 +132,7 @@ std::tuple<double, py::array_t<double>> forward_log(
       || log_transmat.shape(0) != nc || log_transmat.shape(1) != nc) {
     throw std::invalid_argument{"shape mismatch"};
   }
+  check_not_empty(ns, nc);
   auto buf = std::vector<double>(nc);
   auto fwdlattice_ = py::array_t<double>{{ns, nc}};
   auto fwd = fwdlattice_.mutable_unchecked<2>();
@@ -153,6 +170,7 @@ py::array_t<double> backward_scaling(
       || scaling.shape(0) != ns) {
     throw std::invalid_argument{"shape mismatch"};
   }
+  check_not_empty(ns, nc);
   auto bwdlattice_ = py::array_t<double>{{ns, nc}};
   auto bwd = bwdlattice_.mutable_unchecked<2>();
   py::gil_scoped_release nogil;
@@ -186,6 +204,7 @@ py::array_t<double> backward_log(
       || log_transmat.shape(0) != nc || log_transmat.shape(1) != nc) {
     throw std::invalid_argument{"shape mismatch"};
   }
+  check_not_empty(ns, nc);
   auto buf = std::vector<double>(nc);
   auto bwdlattice_ = py::array_t<double>{{ns, nc}};
   auto bwd = bwdlattice_.mutable_unchecked<2>();
@@ -220,6 +239,7 @@ py::array_t<double> compute_scaling_xi_sum(
       || bwd.shape(0) != ns || bwd.shape(1) != nc) {
     throw std::invalid_argument{"shape mismatch"};
   }
+  check_not_empty(ns, nc);
   auto xi_sum_ = py::array_t<double>{{nc, nc}};
   auto xi_sum = xi_sum_.mutable_unchecked<2>();
   std::fill_n(xi_sum.mutable_data(0, 0), xi_sum.size(), 0);
@@ -254,6 +274,7 @@ py::array_t<double> compute_log_xi_sum(
       || bwd.shape(0) != ns || bwd.shape(1) != nc) {
     throw std::invalid_argument{"shape mismatch"};
   }
+  check_not_empty(ns, nc);
   auto log_prob = logsumexp(&fwd(ns - 1, 0), nc);
   auto log_xi_sum_ = py::array_t<double>{{nc, nc}};
   auto log_xi_sum = log_xi_sum_.mutable_unchecked<2>();
@@ -290,6 +311,7 @@ std::tuple<double, py::array_t<ssize_t>> viterbi(
       || log_transmat.shape(0) != nc || log_transmat.shape(1) != nc) {
     throw std::invalid_argument{"shape mismatch"};
   }
+  check_not_empty(ns, nc);
   auto state_sequence_ = py::array_t<ssize_t>{{ns}};
   auto viterbi_lattice_ = py::array_t<double>{{ns, nc}};
   auto state_sequence = state_sequence_.mutable_unchecked<1>();

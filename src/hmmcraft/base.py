@@ -189,7 +189,7 @@ class _AbstractHMM(BaseEstimator):
         X : array-like, shape (n_samples, n_features)
             Feature matrix of individual samples.
         lengths : array-like of integers, shape (n_sequences, ), optional
-            Lengths of the individual sequences in ``X``. The sum of
+            Positive integer lengths of the sequences in ``X``. The sum of
             these should be ``n_samples``.
 
         Returns
@@ -215,7 +215,7 @@ class _AbstractHMM(BaseEstimator):
         X : array-like, shape (n_samples, n_features)
             Feature matrix of individual samples.
         lengths : array-like of integers, shape (n_sequences, ), optional
-            Lengths of the individual sequences in ``X``. The sum of
+            Positive integer lengths of the sequences in ``X``. The sum of
             these should be ``n_samples``.
 
         Returns
@@ -306,7 +306,7 @@ class _AbstractHMM(BaseEstimator):
         X : array-like, shape (n_samples, n_features)
             Feature matrix of individual samples.
         lengths : array-like of integers, shape (n_sequences, ), optional
-            Lengths of the individual sequences in ``X``. The sum of
+            Positive integer lengths of the sequences in ``X``. The sum of
             these should be ``n_samples``.
         algorithm : {"viterbi", "map"}, optional
             Decoder algorithm.
@@ -365,7 +365,7 @@ class _AbstractHMM(BaseEstimator):
         X : array-like, shape (n_samples, n_features)
             Feature matrix of individual samples.
         lengths : array-like of integers, shape (n_sequences, ), optional
-            Lengths of the individual sequences in ``X``. The sum of
+            Positive integer lengths of the sequences in ``X``. The sum of
             these should be ``n_samples``.
 
         Returns
@@ -385,7 +385,7 @@ class _AbstractHMM(BaseEstimator):
         X : array-like, shape (n_samples, n_features)
             Feature matrix of individual samples.
         lengths : array-like of integers, shape (n_sequences, ), optional
-            Lengths of the individual sequences in ``X``. The sum of
+            Positive integer lengths of the sequences in ``X``. The sum of
             these should be ``n_samples``.
 
         Returns
@@ -465,7 +465,7 @@ class _AbstractHMM(BaseEstimator):
         X : array-like, shape (n_samples, n_features)
             Feature matrix of individual samples.
         lengths : array-like of integers, shape (n_sequences, )
-            Lengths of the individual sequences in ``X``. The sum of
+            Positive integer lengths of the sequences in ``X``. The sum of
             these should be ``n_samples``.
 
         Returns
@@ -474,6 +474,9 @@ class _AbstractHMM(BaseEstimator):
             Returns self.
         """
         X = check_array(X)
+        # Refuse invalid lengths before the start uses them, whatever
+        # n_iter is; the split itself happens in each E-step.
+        _utils.split_X_lengths(X, lengths)
 
         if lengths is None:
             lengths = np.asarray([X.shape[0]])
