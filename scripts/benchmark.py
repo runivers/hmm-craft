@@ -113,10 +113,10 @@ class GaussianBenchmark(Benchmark):
         LOG.info(f"covars={model.covars_}")
 
 
-class MultinomialBenchmark(Benchmark):
+class CategoricalBenchmark(Benchmark):
 
     def new_model(self, implementation):
-        return hmmcraft.hmm.MultinomialHMM(
+        return hmmcraft.hmm.CategoricalHMM(
                 n_components=3,
                 n_iter=self.n_iter,
                 verbose=self.verbose,
@@ -125,7 +125,7 @@ class MultinomialBenchmark(Benchmark):
 
     def generate_training_sequences(self):
 
-        sampler = hmmcraft.hmm.MultinomialHMM(n_components=3)
+        sampler = hmmcraft.hmm.CategoricalHMM(n_components=3)
         sampler.startprob_ = np.array([0.6, 0.3, 0.1])
         sampler.transmat_ = np.array([[0.6, 0.2, 0.2],
                              [0.3, 0.5, 0.2],
@@ -261,7 +261,7 @@ def main():
         args.gaussian_mixture = True
 
     if args.categorical:
-        bench = MultinomialBenchmark(
+        bench = CategoricalBenchmark(
             repeat=args.repeat,
             n_iter=args.n_iter,
             verbose=args.verbose,
