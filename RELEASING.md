@@ -10,9 +10,10 @@ repository, through [trusted publishing](https://docs.pypi.org/trusted-publisher
 | Workflow | Runs on | Does |
 |---|---|---|
 | `ci.yml` | pull request, push to `main`, manual, weekly | The style rule (no Python line of 80 characters or more), then the suite and the bit-equality check against hmmlearn 0.3.3 in two cells: `floor` (the declared minimum versions) and `latest` (the newest wheels). On a pull request, `sign-off` checks that every commit except a merge carries a `Signed-off-by` line with its author's or its committer's address (`scripts/check_signoff.py`, the base branch's copy); Dependabot's commits are exempt. The weekly run shows a new release of NumPy, SciPy or scikit-learn that breaks the suite, or under which the fits differ from hmmlearn 0.3.3's; both packages are installed at the same versions, so a release that changes both fits alike is not seen. |
+| `instrumented.yml` | pull request, push to `main`, manual, weekly | Two jobs, both with the newest NumPy, SciPy and scikit-learn wheels; nothing they build is published. `coverage` builds the C++ kernel with `--coverage` and without optimisation, runs the suite under coverage.py, and reports line and branch coverage of the Python package (tests left out) and of `ext/` (gcovr). It fails when the Python total or the kernel's line coverage is below its floor in `pyproject.toml` (`[tool.coverage.report]`, `[tool.gcovr]`); the kernel's branch coverage has no floor. A floor is raised by hand and lowered only in a commit that says why. Reports: the log and the run's `coverage-reports` artifact. `sanitizers` builds the kernel with AddressSanitizer and UndefinedBehaviorSanitizer and runs the suite; an invalid memory access or undefined behaviour in the kernel that the sanitizers detect stops the suite and fails the job, with the report in the log. Floating-point checks are off: the kernel takes the logarithm of zero on purpose. |
 | `wheels.yml` | pull request, manual, weekly, and called by `release.yml` | cibuildwheel builds the wheels and tests each one from the installed wheel; one job builds the sdist, installs it and runs the suite. A pull request builds the Linux x86_64 wheels only; the other runs build all 20. |
 | `release.yml` | a pushed tag `v<version>` | Calls `wheels.yml` for everything, then publishes after the maintainer approves the `pypi` environment. |
-| `pins.yml` | manual, weekly | `scripts/check_pins.py` compares each pin of `ci/build_requirements.txt` and `ci/tool_requirements.txt` with the newest final, unyanked release on PyPI and fails naming each older pin, with the command that updates it; `ci/floor_constraints.txt` is not read. It does not run on a pull request, which a release elsewhere must not turn red; its unit tests run in `ci.yml`. |
+| `pins.yml` | manual, weekly | `scripts/check_pins.py` compares each pin of `ci/build_requirements.txt`, `ci/tool_requirements.txt` and `ci/coverage_requirements.txt` with the newest final, unyanked release on PyPI and fails naming each older pin, with the command that updates it; `ci/floor_constraints.txt` is not read. It does not run on a pull request, which a release elsewhere must not turn red; its unit tests run in `ci.yml`. |
 
 The wheels are CPython 3.12 to 3.15 (GIL builds) for Linux x86_64 and aarch64
 (`manylinux_2_28`, built on native runners), macOS arm64 and x86_64, and Windows
@@ -30,12 +31,14 @@ on a machine with Python 3.12 and a network connection.
 
 - **Build requirements** are in `ci/build_requirements.txt`, pinned with hashes
   and installed before every build, which then runs without build isolation.
-  `ci/tool_requirements.txt` pins `build`, which makes the sdist. Both are
+  `ci/tool_requirements.txt` pins `build`, which makes the sdist.
+  `ci/coverage_requirements.txt` pins coverage.py and gcovr for the `coverage`
+  job; neither the release build nor the sdist job installs it. All three are
   regenerated from their `.in` files with the command in their first lines.
   The command's `--no-header` drops those lines, so they are put back by hand.
   It keeps the versions already in the file, so a pin that is not in the `.in`
   file moves only when `--upgrade-package <name>` is added. `pins.yml` fails
-  each week while a pin of either file is older than the newest release on
+  each week while a pin of any of them is older than the newest release on
   PyPI, and prints the command that updates it. A pin that another pin caps
   is compared with the newest release below the cap, and reported as held
   while a newer release exists above it (`HOLDS` in `scripts/check_pins.py`,

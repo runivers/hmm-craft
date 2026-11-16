@@ -27,14 +27,20 @@ BUILD_COMMAND = (
     " -o build_requirements.txt"
 )
 TOOL_COMMAND = BUILD_COMMAND.replace("build_requirements", "tool_requirements")
+COVERAGE_COMMAND = BUILD_COMMAND.replace(
+    "build_requirements", "coverage_requirements"
+)
 HASH = "    --hash=sha256:" + "0" * 64
 BUILD_TXT = ("alpha-pkg==1.0", "packaging==26.3")
 BUILD_IN = ("alpha-pkg==1.0",)
 TOOL_TXT = ("build==1.6.1", "packaging==26.3")
 TOOL_IN = ("build==1.6.1",)
+COVERAGE_TXT = ("cov-pkg==2.0", "packaging==26.3")
+COVERAGE_IN = ("cov-pkg==2.0",)
 CURRENT = {
     "alpha-pkg": ["1.0"],
     "build": ["1.6.1"],
+    "cov-pkg": ["2.0"],
     "packaging": ["26.3"],
 }
 
@@ -64,6 +70,8 @@ def _tree(
     build_in=BUILD_IN,
     tool=TOOL_TXT,
     tool_in=TOOL_IN,
+    coverage=COVERAGE_TXT,
+    coverage_in=COVERAGE_IN,
     header=True,
 ):
     """Write ``ci/`` under ``root`` and return ``root``."""
@@ -75,10 +83,17 @@ def _tree(
     (ci / "tool_requirements.txt").write_text(
         _txt("tool_requirements", tool, header)
     )
+    (ci / "coverage_requirements.txt").write_text(
+        _txt("coverage_requirements", coverage, header)
+    )
     if build_in is not None:
         (ci / "build_requirements.in").write_text("\n".join(build_in) + "\n")
     if tool_in is not None:
         (ci / "tool_requirements.in").write_text("\n".join(tool_in) + "\n")
+    if coverage_in is not None:
+        (ci / "coverage_requirements.in").write_text(
+            "\n".join(coverage_in) + "\n"
+        )
     return root
 
 
@@ -125,9 +140,9 @@ def test_current_pins_pass(tmp_path, capsys):
     """Pins equal to the newest final release pass, one line each."""
     status, out, _ = _run(tmp_path, capsys)
     assert status == 0, out
-    assert len(_lines(out, "ok")) == 4
+    assert len(_lines(out, "ok")) == 6
     assert not _lines(out, "stale")
-    assert "4 pin(s) checked: 0 stale, 0 held, 0 lookup failure(s)." in out
+    assert "6 pin(s) checked: 0 stale, 0 held, 0 lookup failure(s)." in out
 
 
 def test_stale_pin_names_file_package_pin_and_newest(tmp_path, capsys):
@@ -161,6 +176,17 @@ def test_stale_direct_pin_remedy_edits_the_in_file(tmp_path, capsys):
     assert "--no-header drops" in out
 
 
+def test_stale_pin_in_the_coverage_lock_names_its_remedy(tmp_path, capsys):
+    """A stale pin of the coverage lock is named with its remedy."""
+    status, out, _ = _run(tmp_path, capsys, world={"cov-pkg": ["2.0", "2.1"]})
+    assert status == 1
+    (line,) = _lines(out, "stale")
+    for text in ("ci/coverage_requirements.txt", "cov-pkg==2.0", "2.1"):
+        assert text in line
+    assert "set cov-pkg==2.1 in ci/coverage_requirements.in" in out
+    assert COVERAGE_COMMAND in out
+
+
 def test_stale_transitive_pin_remedy_adds_upgrade_package(tmp_path, capsys):
     """A pin absent from the .in file needs --upgrade-package."""
     status, out, _ = _run(
@@ -169,6 +195,7 @@ def test_stale_transitive_pin_remedy_adds_upgrade_package(tmp_path, capsys):
     assert status == 1
     assert TOOL_COMMAND + " --upgrade-package packaging" in out
     assert BUILD_COMMAND + " --upgrade-package packaging" in out
+    assert COVERAGE_COMMAND + " --upgrade-package packaging" in out
     assert "set packaging" not in out
 
 
@@ -421,6 +448,7 @@ def test_files_exclude_the_floor_file():
     assert check_pins.FILES == (
         "ci/build_requirements.txt",
         "ci/tool_requirements.txt",
+        "ci/coverage_requirements.txt",
     )
 
 
@@ -433,7 +461,7 @@ def test_lookup_failure_has_its_own_message_and_status(tmp_path, capsys):
     assert "PyPI lookup failed: boom" in line
     assert "alpha-pkg==1.0" in line
     assert not _lines(out, "stale")
-    assert len(_lines(out, "ok")) == 3
+    assert len(_lines(out, "ok")) == 5
     assert "1 lookup failure(s)" in out
 
 
@@ -454,11 +482,16 @@ def test_no_final_release_is_a_lookup_error(tmp_path, capsys):
     assert "no final, unyanked release" in line
 
 
-def test_package_in_both_files_is_asked_once(tmp_path, capsys):
-    """One lookup per package, though both files pin it."""
+def test_package_in_several_files_is_asked_once(tmp_path, capsys):
+    """One lookup per package, though three files pin it."""
     _, _, fake = _run(tmp_path, capsys)
     assert fake.asked.count("packaging") == 1
-    assert sorted(fake.asked) == ["alpha-pkg", "build", "packaging"]
+    assert sorted(fake.asked) == [
+        "alpha-pkg",
+        "build",
+        "cov-pkg",
+        "packaging",
+    ]
 
 
 HOLD = Hold(

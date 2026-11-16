@@ -35,6 +35,14 @@ Report a security problem as described in `SECURITY.md`, not in an issue.
    (`set RNG seed to <n>`). The seed is random unless `HMMCRAFT_SEED=<n>` is
    set, which reruns the same tests with that seed; CI sets `HMMCRAFT_SEED=0`.
 
+   CI also measures how much of the Python code and of the C++ kernel the
+   tests run, and fails below the floors in `pyproject.toml`. To see the
+   Python figure:
+
+       pip install coverage
+       python -m coverage run -m pytest --pyargs hmmcraft.tests doc
+       python -m coverage report
+
 3. Keep every Python line under 80 characters, as upstream does.
 4. Sign off every commit with `git commit -s`. The line `Signed-off-by: Your
    Name <you@example.com>` certifies the

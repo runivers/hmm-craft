@@ -3,11 +3,12 @@ Check that each hashed pin under ``ci/`` is the newest release on PyPI.
 
 usage: python3 -I scripts/check_pins.py [--root DIR]
 
-Reads ``ci/build_requirements.txt`` and ``ci/tool_requirements.txt`` under DIR
-(default: the repository) and compares each pin with the newest final,
-unyanked release that PyPI lists. A pin that is older is named with the
-command that updates it. ``ci/floor_constraints.txt`` pins the declared
-minimums on purpose and is never read.
+Reads ``ci/build_requirements.txt``, ``ci/tool_requirements.txt`` and
+``ci/coverage_requirements.txt`` under DIR (default: the repository) and
+compares each pin with the newest final, unyanked release that PyPI lists.
+A pin that is older is named with the command that updates it.
+``ci/floor_constraints.txt`` pins the declared minimums on purpose and is
+never read.
 
 Exit status: 0 when every pin is the newest, 1 when a pin is stale or a hold
 is out of date, 2 when a file cannot be read or a lookup fails (an error
@@ -27,7 +28,11 @@ import urllib.request
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 # The floor file, ci/floor_constraints.txt, is not in this list on purpose,
 # and no argument names a file, so it cannot be reached.
-FILES = ("ci/build_requirements.txt", "ci/tool_requirements.txt")
+FILES = (
+    "ci/build_requirements.txt",
+    "ci/tool_requirements.txt",
+    "ci/coverage_requirements.txt",
+)
 PYPI = "https://pypi.org/pypi/{}/json"
 TIMEOUT = 30
 USER_AGENT = "hmm-craft check_pins.py"
@@ -266,7 +271,7 @@ def _hold_findings(files, holds):
         if not seen:
             out.append(
                 f"hold    {name}: written for {hold.by} {hold.by_version}, "
-                f"but {name} is not pinned in either file{redo}"
+                f"but {name} is not pinned in any file{redo}"
             )
     return out
 
