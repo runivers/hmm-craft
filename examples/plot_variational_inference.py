@@ -12,11 +12,11 @@ test data, could be used to select the correct number of hidden states.
 """
 
 import collections
-import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.gridspec as gs
-import scipy.stats
 
+import matplotlib.gridspec as gs
+import matplotlib.pyplot as plt
+import numpy as np
+import scipy.stats
 from sklearn.utils import check_random_state
 
 from hmmcraft import hmm, vhmm
@@ -45,9 +45,9 @@ def gaussian_hinton_diagram(startprob, transmat, means,
     ax = f.add_subplot(grid[1:, 1:])
     for i in range(num_states):
         keep = True
-        if infer_hidden:
-            if np.all(np.abs(transmat[i] - transmat[i][0]) < 1e-4):
-                keep = False
+        if infer_hidden and np.all(
+                np.abs(transmat[i] - transmat[i][0]) < 1e-4):
+            keep = False
         if keep:
             s_min = means[i] - 10 * variances[i]
             s_max = means[i] + 10 * variances[i]
@@ -55,7 +55,7 @@ def gaussian_hinton_diagram(startprob, transmat, means,
             norm = scipy.stats.norm(means[i], np.sqrt(variances[i]))
             yy = norm.pdf(xx)
             keep = yy > .01
-            ax.plot(xx[keep], yy[keep], label="State: {}".format(i))
+            ax.plot(xx[keep], yy[keep], label=f"State: {i}")
     ax.set_title("Emissions Probabilities", size=14)
     ax.legend(loc="best")
     f.tight_layout()

@@ -1,36 +1,4 @@
 {
-  "examples/plot_casino.py": {
-    "I001": 1
-  },
-  "examples/plot_gaussian_model_selection.py": {
-    "I001": 1
-  },
-  "examples/plot_hmm_sampling_and_decoding.py": {
-    "C408": 3,
-    "I001": 1,
-    "UP031": 1
-  },
-  "examples/plot_multinomial_hmm.py": {
-    "I001": 1,
-    "PERF102": 1
-  },
-  "examples/plot_poisson_hmm.py": {
-    "C408": 2,
-    "I001": 1
-  },
-  "examples/plot_variational_inference.py": {
-    "I001": 1,
-    "SIM102": 1,
-    "UP032": 1
-  },
-  "scripts/benchmark.py": {
-    "I001": 1,
-    "LOG002": 1,
-    "RUF059": 3
-  },
-  "setup.py": {
-    "I001": 1
-  },
   "src/hmmcraft/__init__.py": {
     "I001": 1
   },
@@ -56,52 +24,6 @@
   },
   "src/hmmcraft/stats.py": {
     "RUF059": 2
-  },
-  "src/hmmcraft/tests/__init__.py": {
-    "I001": 1
-  },
-  "src/hmmcraft/tests/test_base.py": {
-    "I001": 1,
-    "RUF059": 7
-  },
-  "src/hmmcraft/tests/test_categorical_hmm.py": {
-    "I001": 1,
-    "RUF059": 1
-  },
-  "src/hmmcraft/tests/test_gaussian_hmm.py": {
-    "I001": 1,
-    "RUF059": 3
-  },
-  "src/hmmcraft/tests/test_gmm_hmm.py": {
-    "I001": 1
-  },
-  "src/hmmcraft/tests/test_gmm_hmm_multisequence.py": {
-    "I001": 1
-  },
-  "src/hmmcraft/tests/test_gmm_hmm_new.py": {
-    "I001": 1,
-    "RUF007": 1
-  },
-  "src/hmmcraft/tests/test_multinomial_hmm.py": {
-    "I001": 1,
-    "RUF059": 1
-  },
-  "src/hmmcraft/tests/test_poisson_hmm.py": {
-    "I001": 1,
-    "RUF059": 1
-  },
-  "src/hmmcraft/tests/test_sequence_lengths.py": {
-    "I001": 1
-  },
-  "src/hmmcraft/tests/test_utils.py": {
-    "I001": 1
-  },
-  "src/hmmcraft/tests/test_variational_categorical.py": {
-    "I001": 1
-  },
-  "src/hmmcraft/tests/test_variational_gaussian.py": {
-    "C413": 1,
-    "I001": 1
   },
   "src/hmmcraft/vhmm.py": {
     "I001": 1

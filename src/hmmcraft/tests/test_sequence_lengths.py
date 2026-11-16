@@ -1,11 +1,10 @@
 import numpy as np
-from numpy.testing import assert_allclose, assert_array_equal
 import pytest
+from numpy.testing import assert_allclose, assert_array_equal
 
-from hmmcraft.hmm import CategoricalHMM
-from hmmcraft.vhmm import (
-    VariationalCategoricalHMM, VariationalGaussianHMM)
 from hmmcraft import _hmmc, _utils
+from hmmcraft.hmm import CategoricalHMM
+from hmmcraft.vhmm import VariationalCategoricalHMM, VariationalGaussianHMM
 
 
 def new_hmm(implementation):

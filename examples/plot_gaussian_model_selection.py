@@ -14,8 +14,8 @@ of components for a model.
    We also see that using the log-likelihood of the training data is not
    suitable for model selection, as it is always increasing.
 """
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 from sklearn.utils import check_random_state
 
 from hmmcraft.hmm import GaussianHMM

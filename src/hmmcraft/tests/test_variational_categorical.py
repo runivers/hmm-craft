@@ -3,9 +3,12 @@ import pytest
 from sklearn.utils import check_random_state
 
 from hmmcraft import hmm, vhmm
+
 from . import (
-    assert_log_likelihood_increasing, compare_variational_and_em_models,
-    vi_uniform_startprob_and_transmat)
+    assert_log_likelihood_increasing,
+    compare_variational_and_em_models,
+    vi_uniform_startprob_and_transmat,
+)
 
 
 class TestVariationalCategorical:

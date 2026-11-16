@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from numpy.testing import assert_allclose
 
-from hmmcraft.utils import normalize, fill_covars
+from hmmcraft.utils import fill_covars, normalize
 
 
 def test_normalize():

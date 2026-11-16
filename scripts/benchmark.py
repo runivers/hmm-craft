@@ -7,13 +7,12 @@ import collections
 import logging
 import time
 
-import hmmcraft.hmm
-
 import numpy as np
-
 import sklearn.base
 
-LOG = logging.getLogger(__file__)
+import hmmcraft.hmm
+
+LOG = logging.getLogger(__name__)
 
 
 class Benchmark:
@@ -103,7 +102,7 @@ class GaussianBenchmark(Benchmark):
             .5
         ]).reshape(4, 1, 1,)
 
-        sequences, states = sampler.sample(50000)
+        sequences, _states = sampler.sample(50000)
         lengths = [len(sequences)]
         return sequences, lengths
 
@@ -137,7 +136,7 @@ class CategoricalBenchmark(Benchmark):
             [0, .5, .5, .0],
         ])
 
-        sequences, states = sampler.sample(50000)
+        sequences, _states = sampler.sample(50000)
         lengths = [len(sequences)]
         return sequences, lengths
 
@@ -179,7 +178,7 @@ class MultivariateGaussianBenchmark(GaussianBenchmark):
              [0, 0.5]],
         ])
 
-        observed, hidden = sampler.sample(50000)
+        observed, _hidden = sampler.sample(50000)
         lengths = [len(observed)]
         return observed, lengths
 

@@ -1,6 +1,6 @@
 import numpy as np
-from numpy.testing import assert_allclose
 import pytest
+from numpy.testing import assert_allclose
 
 from hmmcraft import hmm
 
@@ -107,7 +107,7 @@ class TestCategoricalHMM:
         X = np.random.randint(self.n_features, size=(n_samples, 1))
         h = self.new_hmm(implementation)
 
-        ll, posteriors = h.score_samples(X)
+        _ll, posteriors = h.score_samples(X)
         assert posteriors.shape == (n_samples, self.n_components)
         assert_allclose(posteriors.sum(axis=1), np.ones(n_samples))
 

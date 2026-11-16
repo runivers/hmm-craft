@@ -13,10 +13,10 @@ of waiting times depending on how active it is. This might tell help us
 predict future earthquake danger, espeically on a geological time scale.
 """
 
-import numpy as np
 import matplotlib.pyplot as plt
-
+import numpy as np
 from scipy.stats import poisson
+
 from hmmcraft import hmm
 
 # earthquake data from http://earthquake.usgs.gov/
@@ -42,8 +42,8 @@ fig.show()
 # %%
 # Now, fit a Poisson Hidden Markov Model to the data.
 
-scores = list()
-models = list()
+scores = []
+models = []
 for n_components in range(1, 5):
     for idx in range(10):  # ten different random starting states
         # define our hidden Markov model

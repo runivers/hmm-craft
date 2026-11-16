@@ -1,12 +1,10 @@
 import numpy as np
-
 import pytest
-
 from sklearn.datasets import make_spd_matrix
 from sklearn.utils import check_random_state
 
-from hmmcraft.utils import normalize
 from hmmcraft.base import DECODER_ALGORITHMS, VariationalBaseHMM
+from hmmcraft.utils import normalize
 
 # Make NumPy complain about underflows/overflows etc.
 np.seterr(all="warn")

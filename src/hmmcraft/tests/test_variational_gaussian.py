@@ -3,9 +3,14 @@ import pytest
 from sklearn.utils import check_random_state
 
 from hmmcraft import hmm, vhmm
+
 from . import (
-    assert_log_likelihood_increasing, compare_variational_and_em_models,
-    make_covar_matrix, normalized, vi_uniform_startprob_and_transmat)
+    assert_log_likelihood_increasing,
+    compare_variational_and_em_models,
+    make_covar_matrix,
+    normalized,
+    vi_uniform_startprob_and_transmat,
+)
 
 
 def get_mcgrory_titterington():
@@ -74,7 +79,7 @@ class _TestGaussian:
         vi_uniform_startprob_and_transmat(model, lengths)
         model.fit(sequences, lengths)
         # Perform one check that we are converging to the right answer
-        assert (list(sorted(model.means_posterior_.ravel()))[3]
+        assert (sorted(model.means_posterior_.ravel())[3]
                 == pytest.approx(self.test_fit_mcgrory_titterington1d_mean)), \
             model.means_posterior_
 

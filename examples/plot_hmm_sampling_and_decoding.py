@@ -12,8 +12,8 @@ there are no transition between component 1 and 3.
 Then, we decode our model to recover the input parameters.
 """
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 
 from hmmcraft import hmm
 
@@ -54,17 +54,17 @@ ax.plot(X[:, 0], X[:, 1], ".-", label="observations", ms=6,
 
 # Indicate the component numbers
 for i, m in enumerate(means):
-    ax.text(m[0], m[1], 'Component %i' % (i + 1),
+    ax.text(m[0], m[1], f'Component {i + 1}',
             size=17, horizontalalignment='center',
-            bbox=dict(alpha=.7, facecolor='w'))
+            bbox={'alpha': .7, 'facecolor': 'w'})
 ax.legend(loc='best')
 fig.show()
 
 # %%
 # Now, let's ensure we can recover our parameters.
 
-scores = list()
-models = list()
+scores = []
+models = []
 for n_components in (3, 4, 5):
     for idx in range(10):
         # define our hidden Markov model
