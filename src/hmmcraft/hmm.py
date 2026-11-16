@@ -424,11 +424,17 @@ class GaussianHMM(_emissions.BaseGaussianHMM, BaseHMM):
         # for another number of features keeps working. The hook refuses a
         # means_ of the wrong shape before anything is written.
         self.n_features = self._n_features_from_emissions()
+        self._check_finite("means_", self.means_)
 
         if self.covariance_type not in COVARIANCE_TYPES:
             raise ValueError(
                 f"covariance_type must be one of {COVARIANCE_TYPES}")
         _covars_floor_value(self.covars_floor)
+        # Finiteness only, read where the M-step stores it: the setter's
+        # positive-definiteness tests are not applied to a fitted value.
+        covars = getattr(self, "_covars_", None)
+        if covars is not None:
+            self._check_finite("covars_", covars)
 
     def _needs_sufficient_statistics_for_mean(self):
         return 'm' in self.params
@@ -837,6 +843,7 @@ class GMMHMM(_emissions.BaseGMMHMM):
             raise ValueError(
                 f"means_ must have shape (n_components, n_mix, n_features), "
                 f"actual shape: {self.means_.shape}")
+        self._check_finite("means_", self.means_)
 
         # Checking covariances' shape
         self.covars_ = np.array(self.covars_)
@@ -852,6 +859,7 @@ class GMMHMM(_emissions.BaseGMMHMM):
             raise ValueError(
                 f"{self.covariance_type!r} mixture covars must have shape "
                 f"{needed_shape}, actual shape: {covars_shape}")
+        self._check_finite("covars_", self.covars_)
 
         # Checking covariances' mathematical correctness
         if (self.covariance_type == "spherical" or
@@ -1086,6 +1094,10 @@ class MultinomialHMM(_emissions.BaseMultinomialHMM):
                 "emissionprob_ must have shape (n_components, n_features)")
         else:
             self.n_features = n_features
+        # A float copy, not stored: an object array of numbers is tested by
+        # its values, as the emission density reads it.
+        self._check_sum_1(
+            "emissionprob_", np.asarray(self.emissionprob_, dtype=float))
         if self.n_trials is None:
             raise ValueError("n_trials must be set")
 
@@ -1215,6 +1227,8 @@ class PoissonHMM(_emissions.BasePoissonHMM):
             raise ValueError(
                 "lambdas_ must have shape (n_components, n_features)")
         self.n_features = n_features
+        self._check_finite("lambdas_", self.lambdas_)
+        self._check_nonnegative("lambdas_", self.lambdas_)
 
     def _do_mstep(self, stats):
         super()._do_mstep(stats)

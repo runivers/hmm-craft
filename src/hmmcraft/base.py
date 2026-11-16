@@ -660,9 +660,26 @@ class _AbstractHMM(BaseEstimator):
         """
         raise NotImplementedError("Must be overridden in subclass")
 
-    def _check_sum_1(self, name):
-        """Check that an array describes one or more distributions."""
-        s = getattr(self, name).sum(axis=-1)
+    def _check_sum_1(self, name, value=None):
+        """
+        Check that an array describes one or more distributions: each row
+        sums to 1 and has no negative entry.
+
+        Parameters
+        ----------
+        name : str
+            The parameter's name, used in the message.
+        value : array, optional
+            The values to test; by default the attribute ``name``.
+
+        Raises
+        ------
+        ValueError
+            If a row does not sum to 1, or has a negative entry.
+        """
+        if value is None:
+            value = getattr(self, name)
+        s = value.sum(axis=-1)
         if not np.allclose(s, 1):
             raise ValueError(
                 f"{name} must sum to 1 (got {s:.4f})"
@@ -670,6 +687,39 @@ class _AbstractHMM(BaseEstimator):
                 else f"{name} rows must sum to 1 (got row sums of {s})"
                     if s.ndim == 1
                     else "Expected 1D or 2D array")
+        self._check_nonnegative(name, value)
+
+    @staticmethod
+    def _check_finite(name, value):
+        """
+        Check that an array holds no NaN and no infinity.
+
+        Raises
+        ------
+        ValueError
+            If an entry of ``value`` is NaN or infinite.
+        """
+        # A comparison, not np.isfinite: it judges an array of any numeric
+        # or object dtype by its values, where np.isfinite raises TypeError
+        # on an object array.
+        if not np.all(np.abs(value) < np.inf):
+            raise ValueError(f"{name} must contain only finite values")
+
+    @staticmethod
+    def _check_nonnegative(name, value):
+        """
+        Check that an array has no negative entry; zeros, ``-0.0``
+        included, are valid.
+
+        Raises
+        ------
+        ValueError
+            If an entry of ``value`` is below 0.
+        """
+        if np.any(value < 0):
+            raise ValueError(
+                f"{name} must not have negative entries, got a minimum of "
+                f"{np.min(value):.4g}")
 
     def _check(self):
         """
@@ -678,8 +728,9 @@ class _AbstractHMM(BaseEstimator):
         Raises
         ------
         ValueError
-            If any of the parameters are invalid, e.g. if :attr:`startprob_`
-            don't sum to 1.
+            If any of the parameters are invalid, e.g. if a probability is
+            negative or the rows of :attr:`startprob_` or :attr:`transmat_`
+            do not sum to 1, or if a parameter is not finite.
         """
         raise NotImplementedError("Must be overridden in subclass")
 
@@ -1054,17 +1105,6 @@ class BaseHMM(_AbstractHMM):
                     "%d data points will result in a degenerate solution.",
                     n_fit_scalars, X.size)
 
-    def _check_sum_1(self, name):
-        """Check that an array describes one or more distributions."""
-        s = getattr(self, name).sum(axis=-1)
-        if not np.allclose(s, 1):
-            raise ValueError(
-                f"{name} must sum to 1 (got {s:.4f})"
-                if s.ndim == 0
-                else f"{name} rows must sum to 1 (got row sums of {s})"
-                    if s.ndim == 1
-                    else "Expected 1D or 2D array")
-
     def _check(self):
         """
         Validate model parameters prior to fitting.
@@ -1072,8 +1112,9 @@ class BaseHMM(_AbstractHMM):
         Raises
         ------
         ValueError
-            If any of the parameters are invalid, e.g. if :attr:`startprob_`
-            don't sum to 1.
+            If any of the parameters are invalid, e.g. if a probability is
+            negative or the rows of :attr:`startprob_` or :attr:`transmat_`
+            do not sum to 1, or if a parameter is not finite.
         """
         self.startprob_ = np.asarray(self.startprob_)
         if len(self.startprob_) != self.n_components:

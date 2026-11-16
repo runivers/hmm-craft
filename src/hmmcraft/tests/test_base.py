@@ -1,3 +1,5 @@
+import itertools
+
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose
@@ -261,6 +263,77 @@ def test_base_hmm_attributes():
     with pytest.raises(ValueError):
         h.transmat_ = np.zeros((n_components - 2, n_components))
         h._check()
+
+    # Rows that sum to 1 with a negative entry are not distributions.
+    h.transmat_ = transmat
+    negative = np.zeros(n_components)
+    negative[:2] = [1.5, -0.5]
+    h.startprob_ = negative
+    with pytest.raises(ValueError, match="startprob_"):
+        h._check()
+    h.startprob_ = startprob
+    h.transmat_ = transmat.copy()
+    h.transmat_[0] = 0
+    h.transmat_[0, :2] = [1.2, -0.2]
+    with pytest.raises(ValueError, match="transmat_"):
+        h._check()
+
+
+LEFT_RIGHT_START = np.array([1.0, 0.0, 0.0])
+LEFT_RIGHT_TRANSMAT = np.array([[0.5, 0.5, 0.0],
+                                [0.0, 0.5, 0.5],
+                                [0.0, 0.0, 1.0]])
+
+
+def _with(array, index, value):
+    array = array.copy()
+    array[index] = value
+    return array
+
+
+@pytest.mark.parametrize("implementation", ["scaling", "log"])
+@pytest.mark.parametrize("startprob, transmat", [
+    (LEFT_RIGHT_START, LEFT_RIGHT_TRANSMAT),
+    (np.array([1.0, -0.0, -0.0]),
+     np.where(LEFT_RIGHT_TRANSMAT == 0, -0.0, LEFT_RIGHT_TRANSMAT)),
+    (LEFT_RIGHT_START, _with(LEFT_RIGHT_TRANSMAT, (0, 2), 5e-324)),
+    (np.array([1 + 1e-9, 0.0, 0.0]), LEFT_RIGHT_TRANSMAT),
+], ids=["zeros", "negative-zeros", "denormal", "start-above-1"])
+def test_structural_zeros_fit_and_score(startprob, transmat, implementation):
+    """
+    A left-right model is valid: zeros (``-0.0`` too), a denormal entry and
+    a start probability above 1 within the sum's tolerance are accepted;
+    ``score`` is the log of the sum over every state path, and a fit keeps
+    every zero at zero.
+    """
+    emissionprob = np.array([[0.7, 0.2, 0.1],
+                             [0.1, 0.7, 0.2],
+                             [0.2, 0.1, 0.7]])
+    X = np.array([[0], [2], [1]])
+    # Every state is visited and left, so no row of the fit is empty.
+    X_fit = np.array([[0], [0], [1], [1], [2], [2]])
+
+    def brute_force_log_likelihood(h):
+        total = 0.0
+        for path in itertools.product(range(3), repeat=len(X)):
+            p = h.startprob_[path[0]] * h.emissionprob_[path[0], X[0, 0]]
+            for t in range(1, len(X)):
+                p *= (h.transmat_[path[t - 1], path[t]]
+                      * h.emissionprob_[path[t], X[t, 0]])
+            total += p
+        return np.log(total)
+
+    h = hmm.CategoricalHMM(3, init_params="", n_iter=5,
+                           implementation=implementation)
+    h.startprob_ = startprob
+    h.transmat_ = transmat
+    h.emissionprob_ = emissionprob
+    assert_allclose(h.score(X), brute_force_log_likelihood(h), rtol=1e-12)
+
+    h.fit(X_fit)
+    assert np.all(h.startprob_[startprob == 0] == 0)
+    assert np.all(h.transmat_[transmat == 0] == 0)
+    assert_allclose(h.score(X), brute_force_log_likelihood(h), rtol=1e-12)
 
 
 def test_stationary_distribution():

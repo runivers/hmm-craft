@@ -35,6 +35,21 @@ class TestMultinomialHMM:
             h.emissionprob_ = np.zeros((self.n_components - 2,
                                         self.n_features))
             h._check()
+        for row in ([np.nan, 0.5, 0.25, 0.25], [1.2, -0.2, 0.0, 0.0],
+                    [0.3, 0.3, 0.2, 0.1]):
+            h = self.new_hmm(implementation)
+            h.emissionprob_ = np.array([row, [.1, .1, .4, .4]])
+            with pytest.raises(ValueError, match="emissionprob_"):
+                h._check()
+
+    def test_check_accepts_object_emissionprob(self):
+        # The sum test judges the values: an object array of numbers that
+        # sum to 1 passes, and the check leaves the array as it was set.
+        h = self.new_hmm("log")
+        h.emissionprob_ = np.array([[.1, .2, .3, .4], [.4, .3, .2, .1]],
+                                   dtype=object)
+        h._check()
+        assert h.emissionprob_.dtype == object
 
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
     def test_score_samples(self, implementation):

@@ -1,6 +1,8 @@
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose
+from scipy import special
+from scipy.stats import poisson
 from sklearn.utils import check_random_state
 
 from hmmcraft import hmm
@@ -29,6 +31,29 @@ class TestPoissonHMM:
         with pytest.raises(ValueError):
             h.lambdas_ = np.zeros((self.n_components - 2, self.n_features))
             h._check()
+        for value in (np.nan, np.inf, -1.4):
+            h = self.new_hmm(implementation)
+            h.lambdas_ = np.array([[3.1, value, 4.5], [1.6, 5.3, 0.1]])
+            with pytest.raises(ValueError, match="lambdas_"):
+                h._check()
+
+    @pytest.mark.parametrize("implementation", ["scaling", "log"])
+    def test_zero_lambdas_score(self, implementation):
+        """
+        A rate of exactly 0 is valid: the score equals a forward pass over
+        the Poisson log-probabilities, where a count above 0 is impossible.
+        """
+        h = self.new_hmm(implementation)
+        h.lambdas_ = np.array([[3.1, 0.0, 4.5], [1.6, 5.3, 0.0]])
+        X = np.array([[2, 0, 5], [4, 0, 3], [1, 6, 0], [3, 4, 0]])
+        log_frameprob = poisson.logpmf(
+            X[:, None, :], h.lambdas_[None]).sum(axis=-1)
+        log_alpha = np.log(h.startprob_) + log_frameprob[0]
+        for t in range(1, len(X)):
+            log_alpha = log_frameprob[t] + special.logsumexp(
+                log_alpha[:, None] + np.log(h.transmat_), axis=0)
+        assert_allclose(h.score(X), special.logsumexp(log_alpha),
+                        rtol=1e-12)
 
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
     def test_score_samples(self, implementation, n_samples=1000):

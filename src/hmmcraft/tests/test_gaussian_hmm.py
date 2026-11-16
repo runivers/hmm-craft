@@ -85,6 +85,82 @@ class GaussianHMMTestMixin:
         h = hmm.GaussianHMM(self.n_components, self.covariance_type)
         assert not hasattr(h, "covars_")
 
+    def _built(self):
+        """A model with every parameter set by hand, started from them."""
+        h = hmm.GaussianHMM(self.n_components, self.covariance_type,
+                            init_params="")
+        h.startprob_ = self.startprob
+        h.transmat_ = self.transmat
+        h.means_ = self.means.astype(float)
+        h.covars_ = self.covars
+        return h
+
+    def _raises_naming(self, h, method, name):
+        """``method`` on ``h`` raises a ``ValueError`` naming ``name``."""
+        X = self.prng.randn(10, self.n_features)
+        call = {
+            "score": lambda: h.score(X),
+            "decode": lambda: h.decode(X),
+            "predict": lambda: h.predict(X),
+            "sample": lambda: h.sample(5, random_state=0),
+            "fit": lambda: h.fit(X),
+        }[method]
+        # Without the check the arithmetic on the parameter would warn;
+        # ignoring it lets a missing refusal show as one.
+        with np.errstate(all="ignore"), \
+                pytest.raises(ValueError, match=name):
+            call()
+
+    @pytest.mark.parametrize("method", ["score", "decode", "sample", "fit"])
+    @pytest.mark.parametrize("value", [np.nan, np.inf, -np.inf],
+                             ids=["nan", "inf", "-inf"])
+    def test_nonfinite_means_raise(self, value, method):
+        """A ``means_`` entry that is NaN or infinite is refused, naming it."""
+        h = self._built()
+        h.means_[1, 0] = value
+        self._raises_naming(h, method, "means_")
+
+    # Not inf with sample: without the check, sampling from an infinite
+    # variance can hang in the SVD (seen with NumPy 1.26), and a missing
+    # refusal must fail, not stall the suite.
+    @pytest.mark.parametrize("value, method", [
+        (np.nan, "score"), (np.nan, "decode"), (np.nan, "predict"),
+        (np.nan, "sample"), (np.nan, "fit"), (np.inf, "score"),
+        (np.inf, "decode"), (np.inf, "predict"), (np.inf, "fit"),
+    ], ids=["nan-score", "nan-decode", "nan-predict", "nan-sample",
+            "nan-fit", "inf-score", "inf-decode", "inf-predict", "inf-fit"])
+    @pytest.mark.parametrize("via", ["fitted", "setter"])
+    def test_nonfinite_covars_raise(self, via, value, method):
+        """
+        A covariance holding NaN or infinity is refused when the model is
+        used or fitted from it, naming ``covars_``, whether a fit stored it
+        or it was set.
+        """
+        h = self._built()
+        if via == "fitted":
+            # The M-step stores _covars_ directly, without the setter.
+            covars = h._covars_.astype(float)
+            covars.flat[0] = value
+            h._covars_ = covars
+        elif self.covariance_type in ("spherical", "diag"):
+            covars = self.covars.astype(float)
+            covars.flat[0] = value
+            h.covars_ = covars
+        else:
+            pytest.skip("the setter refuses a non-finite full or tied "
+                        "matrix itself")
+        self._raises_naming(h, method, "covars_")
+
+    @pytest.mark.parametrize("method", ["score", "decode", "sample", "fit"])
+    def test_negative_startprob_raises(self, method):
+        """
+        A ``startprob_`` that sums to 1 with a negative entry is refused,
+        naming it.
+        """
+        h = self._built()
+        h.startprob_ = np.array([1.5, -0.5, 0.0])
+        self._raises_naming(h, method, "startprob_")
+
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
     def test_score_samples_and_decode(self, implementation):
         h = hmm.GaussianHMM(self.n_components, self.covariance_type,
@@ -490,3 +566,39 @@ def test_means_give_n_features_on_every_check():
     assert fitted.n_features == 1
     assert fitted.score(X) == built.score(X)
     assert fitted.n_features == 2
+
+
+@pytest.mark.parametrize("covariance_type", ["spherical", "diag"])
+def test_object_means_score_as_float(covariance_type):
+    """
+    A ``means_`` of object dtype holding numbers scores as the same values
+    as floats do. (``full`` and ``tied`` pass ``means_`` to SciPy's
+    ``solve_triangular``, which deprecates object arrays.)
+    """
+    X = np.random.RandomState(10).normal(size=(10, 2))
+    h = hmm.GaussianHMM(2, covariance_type)
+    h.startprob_ = np.array([0.6, 0.4])
+    h.transmat_ = np.array([[0.7, 0.3], [0.4, 0.6]])
+    h.means_ = np.array([[0.0, 1.0], [3.0, -2.0]])
+    h.covars_ = np.ones(2) if covariance_type == "spherical" else np.ones(
+        (2, 2))
+    expected = h.score(X)
+    h.means_ = np.array([[0, 1], [3, -2]], dtype=object)
+    assert h.score(X) == expected
+
+
+@pytest.mark.parametrize("covariance_type", ["spherical", "diag"])
+def test_fit_refuses_overflowing_start_covariance(covariance_type):
+    """
+    A sample so large that its covariance overflows gives an infinite
+    starting ``covars_``: ``fit`` refuses it, naming it, as ``full`` and
+    ``tied`` refuse it in the Cholesky factorization.
+    """
+    X = np.random.RandomState(10).normal(size=(20, 2)) * 1e155
+    # means_ set, so k-means (whose distances overflow too) is not run.
+    h = hmm.GaussianHMM(2, covariance_type, init_params="stc",
+                        random_state=0)
+    h.means_ = X[:2]
+    with np.errstate(all="ignore"), \
+            pytest.raises(ValueError, match="covars_"):
+        h.fit(X)

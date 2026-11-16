@@ -66,7 +66,7 @@ computed from invalid `lengths`.
 ```mermaid
 flowchart TD
     A["fit(X, lengths)"] --> B["_init: starting parameters<br/>(named in init_params, or not yet set)"]
-    B --> C["_check: shapes and sums"]
+    B --> C["_check: shapes and values"]
     C --> D["_do_estep"]
     D --> E["_compute_lower_bound"]
     E --> F["_do_mstep: new parameters<br/>(those named in params)"]
@@ -99,7 +99,7 @@ A model class supplies these hooks; the loop never changes per class:
 | Hook | Does |
 |---|---|
 | `_init` | sets the starting parameters named in `init_params`, and any that is not yet set (k-means for Gaussian means, for instance) |
-| `_check` | validates shapes (`GaussianHMM`'s `means_` among them) and that probabilities sum to one |
+| `_check` | validates shapes (`GaussianHMM`'s `means_` among them); in the five expectation-maximization models, also that probabilities sum to one with no negative entry and that emission parameters are finite |
 | `_compute_likelihood` / `_compute_log_likelihood` | at least one implemented; the base class derives a missing one from the other |
 | `_initialize_sufficient_statistics` | the empty dictionary of statistics |
 | `_accumulate_sufficient_statistics` | adds one sequence's statistics |

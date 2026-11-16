@@ -99,6 +99,27 @@ class TestCategoricalHMM:
             h.emissionprob_ = np.zeros((self.n_components - 2,
                                         self.n_features))
             h._check()
+        for row in ([1.2, -0.2, 0.0], [np.nan, 0.5, 0.5]):
+            h = self.new_hmm(implementation)
+            h.emissionprob_ = np.array([row, [0.6, 0.3, 0.1]])
+            with pytest.raises(ValueError, match="emissionprob_"):
+                h._check()
+
+    @pytest.mark.parametrize("implementation", ["scaling", "log"])
+    @pytest.mark.parametrize("method", ["score", "predict"])
+    def test_negative_transmat_raises(self, implementation, method):
+        """
+        A ``transmat_`` row that sums to 1 with a negative entry is refused,
+        naming it, instead of scoring NaN and decoding states.
+        """
+        h = self.new_hmm(implementation)
+        h.transmat_ = np.array([[1.2, -0.2], [0.4, 0.6]])
+        X = np.array([[0, 1, 2, 0, 2]]).T
+        # Without the check the NaN arithmetic would warn; ignoring it lets
+        # a missing refusal show as one.
+        with np.errstate(all="ignore"), \
+                pytest.raises(ValueError, match="transmat_"):
+            getattr(h, method)(X)
 
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
     def test_score_samples(self, implementation):

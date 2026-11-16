@@ -113,6 +113,34 @@ class GMMHMMTestMixin:
             h._check()
 
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
+    @pytest.mark.parametrize("name", ["means_", "covars_"])
+    def test_nan_parameter_raises(self, name, implementation):
+        """A NaN in ``means_`` or ``covars_`` is refused, naming it."""
+        h = self.new_hmm(implementation)
+        X, _ = h.sample(10, random_state=0)
+        value = getattr(h, name).astype(float)
+        value.flat[0] = np.nan
+        setattr(h, name, value)
+        # Without the check the NaN arithmetic would warn; ignoring it lets
+        # a missing refusal show as one.
+        with np.errstate(all="ignore"), \
+                pytest.raises(ValueError, match=name):
+            h.score(X)
+
+    @pytest.mark.parametrize("implementation", ["scaling", "log"])
+    def test_negative_weights_raise(self, implementation):
+        """
+        ``weights_`` rows that sum to 1 with a negative entry are refused,
+        naming it.
+        """
+        h = self.new_hmm(implementation)
+        X, _ = h.sample(10, random_state=0)
+        h.weights_[0] = [1.5, -0.5]
+        with np.errstate(all="ignore"), \
+                pytest.raises(ValueError, match="weights_"):
+            h.score(X)
+
+    @pytest.mark.parametrize("implementation", ["scaling", "log"])
     def test_sample(self, implementation):
         n_samples = 1000
         h = self.new_hmm(implementation)
