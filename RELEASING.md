@@ -77,7 +77,10 @@ Versions are `MAJOR.MINOR.PATCH`. The first release of hmm-craft is `0.4.0`:
 hmmlearn's last release is `0.3.3`, and `0.3.4` would read as a patch of it.
 
 - A **patch** release (`0.4.1`) changes no fit and adds no public name: it
-  fixes a crash, a wrong error, the packaging or the documentation.
+  fixes a crash, a wrong error, the packaging or the documentation. It may
+  also make a fit that depended on where an array was placed in memory come
+  out the same on every run; that change is named in `CHANGES.rst` and
+  `DIFFERENCES.md`.
 - A **minor** release (`0.5.0`) may add an option, a parameter or a function,
   or change a fit. Each changed fit is named in `CHANGES.rst` and
   `DIFFERENCES.md`.
