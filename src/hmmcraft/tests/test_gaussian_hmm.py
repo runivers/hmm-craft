@@ -33,6 +33,165 @@ class GaussianHMMTestMixin:
             h.transmat_ = self.transmat
             h._check()
 
+    @pytest.mark.parametrize("method", ["score", "decode", "sample", "fit"])
+    @pytest.mark.parametrize("means", [
+        lambda m: m[:, 0], lambda m: m[:2], lambda m: m[:1],
+        lambda m: m[None],
+    ], ids=["1-D", "too-few-rows", "one-row", "3-D"])
+    def test_means_of_wrong_shape_raise(self, means, method):
+        """
+        A ``means_`` not of shape ``(n_components, n_features)`` is refused,
+        whatever reads it, and the message names it.
+        """
+        h = hmm.GaussianHMM(self.n_components, self.covariance_type,
+                            init_params="")
+        h.startprob_ = self.startprob
+        h.transmat_ = self.transmat
+        h.means_ = means(self.means)
+        h.covars_ = self.covars
+        X = self.prng.randn(10, self.n_features)
+        call = {
+            "score": lambda: h.score(X),
+            "decode": lambda: h.decode(X),
+            "sample": lambda: h.sample(5),
+            "fit": lambda: h.fit(X),
+        }[method]
+        with pytest.raises(
+                ValueError,
+                match=r"means_ must have shape \(n_components, n_features\)"):
+            call()
+
+    def test_covars_before_n_features(self):
+        """
+        ``covars_`` before ``n_features`` is known: ``diag``, ``full`` and
+        ``tied`` need no feature count; ``spherical`` takes it from
+        ``means_``, and without ``means_`` the message names both.
+        """
+        def new(**attrs):
+            h = hmm.GaussianHMM(self.n_components, self.covariance_type)
+            h.covars_ = self.covars
+            for name, value in attrs.items():
+                setattr(h, name, value)
+            return h
+
+        expected = new(n_features=self.n_features).covars_
+        if self.covariance_type == "spherical":
+            assert new(means_=self.means).covars_.tobytes() == (
+                expected.tobytes())
+            with pytest.raises(ValueError, match="n_features"):
+                _ = new().covars_
+        else:
+            assert new().covars_.tobytes() == expected.tobytes()
+        h = hmm.GaussianHMM(self.n_components, self.covariance_type)
+        assert not hasattr(h, "covars_")
+
+    def _built(self):
+        """A model with every parameter set by hand, started from them."""
+        h = hmm.GaussianHMM(self.n_components, self.covariance_type,
+                            init_params="")
+        h.startprob_ = self.startprob
+        h.transmat_ = self.transmat
+        h.means_ = self.means.astype(float)
+        h.covars_ = self.covars
+        return h
+
+    def _raises_naming(self, h, method, name):
+        """``method`` on ``h`` raises a ``ValueError`` naming ``name``."""
+        X = self.prng.randn(10, self.n_features)
+        call = {
+            "score": lambda: h.score(X),
+            "decode": lambda: h.decode(X),
+            "predict": lambda: h.predict(X),
+            "sample": lambda: h.sample(5, random_state=0),
+            "fit": lambda: h.fit(X),
+        }[method]
+        # Without the check the arithmetic on the parameter would warn;
+        # ignoring it lets a missing refusal show as one.
+        with np.errstate(all="ignore"), \
+                pytest.raises(ValueError, match=name):
+            call()
+
+    @pytest.mark.parametrize("method", ["score", "decode", "sample", "fit"])
+    @pytest.mark.parametrize("value", [np.nan, np.inf, -np.inf],
+                             ids=["nan", "inf", "-inf"])
+    def test_nonfinite_means_raise(self, value, method):
+        """A ``means_`` entry that is NaN or infinite is refused, naming it."""
+        h = self._built()
+        h.means_[1, 0] = value
+        self._raises_naming(h, method, "means_")
+
+    # Not inf with sample: without the check, sampling from an infinite
+    # variance can hang in the SVD (seen with NumPy 1.26), and a missing
+    # refusal must fail, not stall the suite.
+    @pytest.mark.parametrize("value, method", [
+        (np.nan, "score"), (np.nan, "decode"), (np.nan, "predict"),
+        (np.nan, "sample"), (np.nan, "fit"), (np.inf, "score"),
+        (np.inf, "decode"), (np.inf, "predict"), (np.inf, "fit"),
+    ], ids=["nan-score", "nan-decode", "nan-predict", "nan-sample",
+            "nan-fit", "inf-score", "inf-decode", "inf-predict", "inf-fit"])
+    @pytest.mark.parametrize("via", ["fitted", "setter"])
+    def test_nonfinite_covars_raise(self, via, value, method):
+        """
+        A covariance holding NaN or infinity is refused when the model is
+        used or fitted from it, naming ``covars_``, whether a fit stored it
+        or it was set.
+        """
+        h = self._built()
+        if via == "fitted":
+            # The M-step stores _covars_ directly, without the setter.
+            covars = h._covars_.astype(float)
+            covars.flat[0] = value
+            h._covars_ = covars
+        elif self.covariance_type in ("spherical", "diag"):
+            covars = self.covars.astype(float)
+            covars.flat[0] = value
+            h.covars_ = covars
+        else:
+            pytest.skip("the setter refuses a non-finite full or tied "
+                        "matrix itself")
+        self._raises_naming(h, method, "covars_")
+
+    @pytest.mark.parametrize("method", ["score", "decode", "sample", "fit"])
+    def test_negative_startprob_raises(self, method):
+        """
+        A ``startprob_`` that sums to 1 with a negative entry is refused,
+        naming it.
+        """
+        h = self._built()
+        h.startprob_ = np.array([1.5, -0.5, 0.0])
+        self._raises_naming(h, method, "startprob_")
+
+    @pytest.mark.parametrize("method", [
+        "score", "score_samples", "decode", "predict", "predict_proba"])
+    @pytest.mark.parametrize("n_columns", [1, 4])
+    def test_prediction_refuses_X_of_another_n_features(
+            self, n_columns, method):
+        """
+        ``X`` whose number of columns is not the model's number of features
+        is refused, naming ``X``, instead of being broadcast against
+        ``means_``.
+        """
+        h = self._built()
+        X = self.prng.randn(10, n_columns)
+        with np.errstate(all="ignore"), \
+                pytest.raises(ValueError, match="X must have"):
+            getattr(h, method)(X)
+
+    @pytest.mark.parametrize("n_columns", [1, 4])
+    def test_fit_refuses_X_of_another_width_than_kept_means(self, n_columns):
+        """
+        ``fit`` with ``means_`` kept (``"m"`` not in ``init_params``) and
+        ``n_features`` unset refuses ``X`` of another number of columns,
+        naming ``X``, instead of fitting ``means_`` from a broadcast.
+        """
+        h = hmm.GaussianHMM(self.n_components, self.covariance_type,
+                            init_params="stc", n_iter=3, random_state=0)
+        h.means_ = self.means.astype(float)
+        X = self.prng.randn(30, n_columns)
+        with np.errstate(all="ignore"), \
+                pytest.raises(ValueError, match="X must have"):
+            h.fit(X)
+
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
     def test_score_samples_and_decode(self, implementation):
         h = hmm.GaussianHMM(self.n_components, self.covariance_type,
@@ -267,8 +426,8 @@ class TestGaussianHMMWithSphericalCovars(GaussianHMMTestMixin):
         model.means_ = np.array([[3.0], [5.0]])
         model.covars_ = np.array([[[[4.0]]], [[[3.0]]]])
 
-        # If setting up an HMM to immediately sample from, the easiest thing is
-        # to just set n_features.  We could infer it from self.means_ perhaps.
+        # An n_features set by hand is used; without it, the count comes
+        # from means_ (test_covars_before_n_features).
         model.n_features = 1
         _ = model.covars_
         # Make sure covariance is of correct format - the spherical case would
@@ -418,3 +577,177 @@ def test_covariance_only_fit_is_the_weighted_covariance(
         expected = expected[:, None]
     assert_allclose(fitted, np.broadcast_to(expected, fitted.shape),
                     rtol=1e-10)
+
+
+def test_means_give_n_features_on_every_check():
+    """
+    ``means_`` gives the number of features on every check: a fitted model
+    whose ``means_`` and ``covars_`` are both replaced for another number of
+    features scores as a model built with them, and ``aic`` is the same
+    before and after a ``score``, which leaves ``n_features`` as it was.
+    """
+    rs = np.random.RandomState(10)
+    X = rs.normal(size=(20, 2))
+    fitted = hmm.GaussianHMM(2, "diag", random_state=0).fit(X[:, :1])
+    built = hmm.GaussianHMM(2, "diag")
+    for model in (fitted, built):
+        model.startprob_ = np.array([0.6, 0.4])
+        model.transmat_ = np.array([[0.7, 0.3], [0.4, 0.6]])
+        model.means_ = np.array([[0.0, 0.0], [3.0, 3.0]])
+        model.covars_ = np.ones((2, 2))
+    assert fitted.n_features == 1
+    aic = fitted.aic(X)
+    assert fitted.score(X) == built.score(X)
+    assert fitted.n_features == 1
+    assert fitted.aic(X) == aic
+
+
+STALE_COVARS = {
+    "spherical": np.array([1.5, 2.0]),
+    "diag": np.ones((2, 2)),
+    "full": np.array([np.eye(2), np.eye(2)]),
+    "tied": np.eye(2),
+}
+
+
+def _stale(covariance_type):
+    """
+    A model fitted on one feature whose parameters were then replaced for
+    two, and ``X`` with two features.
+    """
+    X = np.random.RandomState(10).normal(size=(20, 2))
+    model = hmm.GaussianHMM(2, covariance_type, random_state=0)
+    model.fit(X[:, :1])
+    model.startprob_ = np.array([0.6, 0.4])
+    model.transmat_ = np.array([[0.7, 0.3], [0.4, 0.6]])
+    model.means_ = np.array([[0.0, 0.0], [3.0, 3.0]])
+    model.covars_ = STALE_COVARS[covariance_type]
+    return model, X
+
+
+@pytest.mark.parametrize("read", [
+    lambda h, X: h.aic(X),
+    lambda h, X: h.bic(X),
+    lambda h, X: h.covars_.tobytes(),
+], ids=["aic", "bic", "covars_"])
+@pytest.mark.parametrize("covariance_type", list(STALE_COVARS))
+def test_means_give_n_features_before_any_prediction(covariance_type, read):
+    """
+    Once ``means_`` is set it gives the number of features, not an
+    ``n_features`` left from an earlier fit: ``aic``, ``bic`` and
+    ``covars_`` are the same before any prediction and after one, and
+    ``sample`` draws as many features as ``means_`` has.
+    """
+    model, X = _stale(covariance_type)
+    before = read(model, X)
+    model.score(X)
+    assert read(model, X) == before
+    model, X = _stale(covariance_type)
+    assert model.sample(3, random_state=0)[0].shape == (3, 2)
+
+
+@pytest.mark.parametrize("covariance_type", list(STALE_COVARS))
+def test_fit_after_a_score_refuses_a_stale_width_as_fit_alone(
+        covariance_type):
+    """
+    A ``score`` leaves nothing for a later ``fit``: a model whose
+    ``means_`` and ``covars_`` were replaced for another number of
+    features than it was fitted on refuses ``X`` of the new width in
+    ``fit``, with or without a ``score`` before it.
+    """
+    for score_first in (False, True):
+        model, X = _stale(covariance_type)
+        model.init_params = ""
+        if score_first:
+            model.score(X)
+        with pytest.raises(ValueError,
+                           match="Unexpected number of dimensions"):
+            model.fit(X)
+
+
+def test_X_check_reads_means_not_a_stale_n_features():
+    """
+    The check of ``X`` takes the number of features from ``means_``, not
+    from an ``n_features`` left from an earlier fit: without ``_check``
+    running, ``X`` as wide as ``means_`` passes and ``X`` as wide as the
+    stale ``n_features`` is refused.
+    """
+    X = np.random.RandomState(10).normal(size=(20, 2))
+    model = hmm.GaussianHMM(2, "diag")
+    model.n_features = 1
+    model.means_ = np.array([[0.0, 0.0], [3.0, 3.0]])
+    model.covars_ = np.ones((2, 2))
+    model._check_X(X)
+    with pytest.raises(ValueError, match="X must have"):
+        model._check_X(X[:, :1])
+    assert model.n_features == 1
+
+
+def test_prediction_refuses_one_column_after_a_two_feature_fit():
+    """
+    A model fitted on two features refuses ``X`` with one column, naming
+    ``X``, instead of returning states.
+    """
+    X = np.random.RandomState(10).normal(size=(100, 2))
+    model = hmm.GaussianHMM(n_components=2, random_state=0).fit(X)
+    with pytest.raises(ValueError, match="X must have n_features=2"):
+        model.predict(np.zeros((4, 1)))
+
+
+@pytest.mark.parametrize("covariance_type", ["spherical", "diag"])
+def test_object_means_score_as_float(covariance_type):
+    """
+    A ``means_`` of object dtype holding numbers scores as the same values
+    as floats do. (``full`` and ``tied`` pass ``means_`` to SciPy's
+    ``solve_triangular``, which deprecates object arrays.)
+    """
+    X = np.random.RandomState(10).normal(size=(10, 2))
+    h = hmm.GaussianHMM(2, covariance_type)
+    h.startprob_ = np.array([0.6, 0.4])
+    h.transmat_ = np.array([[0.7, 0.3], [0.4, 0.6]])
+    h.means_ = np.array([[0.0, 1.0], [3.0, -2.0]])
+    h.covars_ = np.ones(2) if covariance_type == "spherical" else np.ones(
+        (2, 2))
+    expected = h.score(X)
+    h.means_ = np.array([[0, 1], [3, -2]], dtype=object)
+    assert h.score(X) == expected
+
+
+@pytest.mark.parametrize("covariance_type", ["spherical", "diag"])
+def test_fit_refuses_overflowing_start_covariance(covariance_type):
+    """
+    A sample so large that its covariance overflows gives an infinite
+    starting ``covars_``: ``fit`` refuses it, naming it, as ``full`` and
+    ``tied`` refuse it in the Cholesky factorization.
+    """
+    X = np.random.RandomState(10).normal(size=(20, 2)) * 1e155
+    # means_ set, so k-means (whose distances overflow too) is not run.
+    h = hmm.GaussianHMM(2, covariance_type, init_params="stc",
+                        random_state=0)
+    h.means_ = X[:2]
+    with np.errstate(all="ignore"), \
+            pytest.raises(ValueError, match="covars_"):
+        h.fit(X)
+
+
+@pytest.mark.parametrize("given", [
+    lambda h, X: h.fit(X).set_params(n_components=3),
+    lambda h, X: setattr(h, "means_", np.zeros(3)) or h,
+], ids=["fitted-then-3-states", "1-D-means_"])
+@pytest.mark.parametrize("covariance_type", list(STALE_COVARS))
+def test_fit_starting_means_replaces_means_of_another_shape(
+        covariance_type, given):
+    """
+    With ``"m"`` in ``init_params``, ``fit`` replaces a ``means_`` whose
+    shape does not fit the model, as after a change of ``n_components``,
+    and fits as a model without it.
+    """
+    X = np.random.RandomState(10).normal(size=(40, 2))
+    model = given(hmm.GaussianHMM(2, covariance_type, random_state=0,
+                                  n_iter=5), X)
+    expected = hmm.GaussianHMM(model.n_components, covariance_type,
+                               random_state=0, n_iter=5).fit(X)
+    model.fit(X)
+    assert model.monitor_.history == expected.monitor_.history
+    assert model.means_.tobytes() == expected.means_.tobytes()
+    assert model._covars_.tobytes() == expected._covars_.tobytes()

@@ -11,8 +11,8 @@ from sklearn import cluster
 from sklearn.utils import check_random_state
 
 from . import _emissions, _utils
-from .base import BaseHMM
-from .utils import fill_covars, normalize
+from .base import BaseHMM, _ConvertedAttribute
+from .utils import normalize
 
 __all__ = [
     "GMMHMM", "CategoricalHMM", "GaussianHMM", "MultinomialHMM", "PoissonHMM",
@@ -177,6 +177,8 @@ class CategoricalHMM(_emissions.BaseCategoricalHMM, BaseHMM):
         self.emissionprob_prior = emissionprob_prior
         self.n_features = n_features
 
+    emissionprob_ = _ConvertedAttribute(np.atleast_2d)
+
     def _init(self, X, lengths=None):
         super()._init(X, lengths)
 
@@ -190,13 +192,11 @@ class CategoricalHMM(_emissions.BaseCategoricalHMM, BaseHMM):
     def _check(self):
         super()._check()
 
-        self.emissionprob_ = np.atleast_2d(self.emissionprob_)
-        if self.n_features is None:
-            self.n_features = self.emissionprob_.shape[1]
-        if self.emissionprob_.shape != (self.n_components, self.n_features):
+        n_features = self._get_n_features()
+        if self.emissionprob_.shape != (self.n_components, n_features):
             raise ValueError(
                 f"emissionprob_ must have shape"
-                f"({self.n_components}, {self.n_features})")
+                f"({self.n_components}, {n_features})")
         self._check_sum_1("emissionprob_")
 
     def _do_mstep(self, stats):
@@ -393,23 +393,12 @@ class GaussianHMM(_emissions.BaseGaussianHMM, BaseHMM):
         self.covars_weight = covars_weight
         self.covars_floor = covars_floor
 
+    means_ = _ConvertedAttribute(np.asarray)
+
     def __setstate__(self, state):
         # A model pickled before covars_floor existed has no such entry.
         state.setdefault("covars_floor", None)
         super().__setstate__(state)
-
-    @property
-    def covars_(self):
-        """Return covars as a full matrix."""
-        return fill_covars(self._covars_, self.covariance_type,
-                           self.n_components, self.n_features)
-
-    @covars_.setter
-    def covars_(self, covars):
-        covars = np.array(covars, copy=True)
-        _utils._validate_covars(covars, self.covariance_type,
-                                self.n_components)
-        self._covars_ = covars
 
     def _init(self, X, lengths=None):
         super()._init(X, lengths)
@@ -431,13 +420,36 @@ class GaussianHMM(_emissions.BaseGaussianHMM, BaseHMM):
     def _check(self):
         super()._check()
 
-        self.means_ = np.asarray(self.means_)
-        self.n_features = self.means_.shape[1]
+        # means_ gives the number of features, not a stale n_features, so
+        # a model whose means_ and covars_ were both replaced for another
+        # number of features keeps working. The hook refuses a means_ of
+        # the wrong shape.
+        self._n_features_from_emissions()
+        self._check_finite("means_", self.means_)
 
         if self.covariance_type not in COVARIANCE_TYPES:
             raise ValueError(
                 f"covariance_type must be one of {COVARIANCE_TYPES}")
         _covars_floor_value(self.covars_floor)
+        # Finiteness only, read where the M-step stores it: the setter's
+        # positive-definiteness tests are not applied to a fitted value.
+        covars = getattr(self, "_covars_", None)
+        if covars is not None:
+            self._check_finite("covars_", covars)
+
+    def _store_checked(self):
+        # fit leaves the number of features means_ gives.
+        self.n_features = self._n_features_from_emissions()
+
+    def _get_n_features(self):
+        # A means_ of a valid shape gives the number of features: n_features
+        # can be left from an earlier fit. Otherwise n_features, so that fit
+        # can still replace a means_ of another shape (n_components changed,
+        # "m" in init_params); without either, the means_ error stands.
+        try:
+            return self._n_features_from_emissions()
+        except ValueError:
+            return super()._get_n_features()
 
     def _needs_sufficient_statistics_for_mean(self):
         return 'm' in self.params
@@ -697,6 +709,10 @@ class GMMHMM(_emissions.BaseGMMHMM):
         self.covars_prior = covars_prior
         self.covars_weight = covars_weight
 
+    weights_ = _ConvertedAttribute(np.array)
+    means_ = _ConvertedAttribute(np.array)
+    covars_ = _ConvertedAttribute(np.array)
+
     def _init(self, X, lengths=None):
         super()._init(X, lengths=None)
         nc = self.n_components
@@ -779,58 +795,50 @@ class GMMHMM(_emissions.BaseGMMHMM):
             if self.covars_weight is None:
                 self.covars_weight = 0.0
 
-    def _fix_priors_shape(self):
+    def _prior_shapes(self, nf):
+        """
+        Return ``(name, shape)`` for each prior, in the order they are
+        broadcast: the shape :meth:`fit` stores it with.
+        """
         nc = self.n_components
-        nf = self.n_features
         nm = self.n_mix
+        shapes = [("weights_prior", (nc, nm)),
+                  ("means_prior", (nc, nm, nf)),
+                  ("means_weight", (nc, nm))]
+        covars = {
+            "full": ((nc, nm, nf, nf), (nc, nm)),
+            "tied": ((nc, nf, nf), nc),
+            "diag": ((nc, nm, nf), (nc, nm, nf)),
+            "spherical": ((nc, nm), (nc, nm)),
+        }.get(self.covariance_type)
+        if covars is not None:
+            shapes += [("covars_prior", covars[0]),
+                       ("covars_weight", covars[1])]
+        return shapes
 
+    def _fix_priors_shape(self):
         # If priors are numbers, this function will make them into a
         # matrix of proper shape
-        self.weights_prior = np.broadcast_to(
-            self.weights_prior, (nc, nm)).copy()
-        self.means_prior = np.broadcast_to(
-            self.means_prior, (nc, nm, nf)).copy()
-        self.means_weight = np.broadcast_to(
-            self.means_weight, (nc, nm)).copy()
-
-        if self.covariance_type == "full":
-            self.covars_prior = np.broadcast_to(
-                self.covars_prior, (nc, nm, nf, nf)).copy()
-            self.covars_weight = np.broadcast_to(
-                self.covars_weight, (nc, nm)).copy()
-        elif self.covariance_type == "tied":
-            self.covars_prior = np.broadcast_to(
-                self.covars_prior, (nc, nf, nf)).copy()
-            self.covars_weight = np.broadcast_to(
-                self.covars_weight, nc).copy()
-        elif self.covariance_type == "diag":
-            self.covars_prior = np.broadcast_to(
-                self.covars_prior, (nc, nm, nf)).copy()
-            self.covars_weight = np.broadcast_to(
-                self.covars_weight, (nc, nm, nf)).copy()
-        elif self.covariance_type == "spherical":
-            self.covars_prior = np.broadcast_to(
-                self.covars_prior, (nc, nm)).copy()
-            self.covars_weight = np.broadcast_to(
-                self.covars_weight, (nc, nm)).copy()
+        for name, shape in self._prior_shapes(self.n_features):
+            setattr(self, name,
+                    np.broadcast_to(getattr(self, name), shape).copy())
 
     def _check(self):
         super()._check()
-        if not hasattr(self, "n_features"):
-            self.n_features = self.means_.shape[2]
         nc = self.n_components
-        nf = self.n_features
+        nf = self._get_n_features()
         nm = self.n_mix
 
-        self._init_covar_priors()
-        self._fix_priors_shape()
+        # A prior must broadcast to the shape fit stores it with; nothing
+        # is stored here.
+        for name, shape in self._prior_shapes(nf):
+            np.broadcast_to(getattr(self, name), shape)
 
         # Checking covariance type
         if self.covariance_type not in COVARIANCE_TYPES:
             raise ValueError(
                 f"covariance_type must be one of {COVARIANCE_TYPES}")
 
-        self.weights_ = np.array(self.weights_)
         # Checking mixture weights' shape
         if self.weights_.shape != (nc, nm):
             raise ValueError(
@@ -841,14 +849,13 @@ class GMMHMM(_emissions.BaseGMMHMM):
         self._check_sum_1("weights_")
 
         # Checking means' shape
-        self.means_ = np.array(self.means_)
         if self.means_.shape != (nc, nm, nf):
             raise ValueError(
                 f"means_ must have shape (n_components, n_mix, n_features), "
                 f"actual shape: {self.means_.shape}")
+        self._check_finite("means_", self.means_)
 
         # Checking covariances' shape
-        self.covars_ = np.array(self.covars_)
         covars_shape = self.covars_.shape
         needed_shapes = {
             "spherical": (nc, nm),
@@ -861,6 +868,7 @@ class GMMHMM(_emissions.BaseGMMHMM):
             raise ValueError(
                 f"{self.covariance_type!r} mixture covars must have shape "
                 f"{needed_shape}, actual shape: {covars_shape}")
+        self._check_finite("covars_", self.covars_)
 
         # Checking covariances' mathematical correctness
         if (self.covariance_type == "spherical" or
@@ -980,6 +988,9 @@ class MultinomialHMM(_emissions.BaseMultinomialHMM):
     """
     Hidden Markov Model with multinomial emissions.
 
+    Each row of ``X`` holds the counts of the ``n_features`` symbols in
+    ``n_trials`` draws; for one symbol per sample, use `CategoricalHMM`.
+
     Attributes
     ----------
     n_features : int
@@ -1075,34 +1086,26 @@ class MultinomialHMM(_emissions.BaseMultinomialHMM):
                          implementation=implementation)
         self.n_trials = n_trials
 
-        _log.warning(
-            "MultinomialHMM has undergone major changes. "
-            "The previous version was implementing a CategoricalHMM "
-            "(a special case of MultinomialHMM). "
-            "This new implementation follows the standard definition for "
-            "a Multinomial distribution (e.g. as in "
-            "https://en.wikipedia.org/wiki/Multinomial_distribution). "
-            "See these issues for details:\n"
-            "https://github.com/hmmlearn/hmmlearn/issues/335\n"
-            "https://github.com/hmmlearn/hmmlearn/issues/340")
+    emissionprob_ = _ConvertedAttribute(np.atleast_2d)
 
     def _init(self, X, lengths=None):
         super()._init(X, lengths=None)
         self.random_state = check_random_state(self.random_state)
-        if 'e' in self.init_params:
+        if self._needs_init("e", "emissionprob_"):
             self.emissionprob_ = self.random_state \
                 .rand(self.n_components, self.n_features)
             normalize(self.emissionprob_, axis=1)
 
     def _check(self):
         super()._check()
-        self.emissionprob_ = np.atleast_2d(self.emissionprob_)
-        n_features = getattr(self, "n_features", self.emissionprob_.shape[1])
+        n_features = self._get_n_features()
         if self.emissionprob_.shape != (self.n_components, n_features):
             raise ValueError(
                 "emissionprob_ must have shape (n_components, n_features)")
-        else:
-            self.n_features = n_features
+        # A float copy, not stored: an object array of numbers is tested by
+        # its values, as the emission density reads it.
+        self._check_sum_1(
+            "emissionprob_", np.asarray(self.emissionprob_, dtype=float))
         if self.n_trials is None:
             raise ValueError("n_trials must be set")
 
@@ -1116,6 +1119,9 @@ class MultinomialHMM(_emissions.BaseMultinomialHMM):
 class PoissonHMM(_emissions.BasePoissonHMM):
     """
     Hidden Markov Model with Poisson emissions.
+
+    ``X`` holds counts, non-negative whole numbers (whole numbers stored as
+    floats included), one column per feature.
 
     Attributes
     ----------
@@ -1209,6 +1215,8 @@ class PoissonHMM(_emissions.BasePoissonHMM):
         self.lambdas_prior = lambdas_prior
         self.lambdas_weight = lambdas_weight
 
+    lambdas_ = _ConvertedAttribute(np.atleast_2d)
+
     def _init(self, X, lengths=None):
         super()._init(X, lengths)
         self.random_state = check_random_state(self.random_state)
@@ -1226,12 +1234,12 @@ class PoissonHMM(_emissions.BasePoissonHMM):
     def _check(self):
         super()._check()
 
-        self.lambdas_ = np.atleast_2d(self.lambdas_)
-        n_features = getattr(self, "n_features", self.lambdas_.shape[1])
+        n_features = self._get_n_features()
         if self.lambdas_.shape != (self.n_components, n_features):
             raise ValueError(
                 "lambdas_ must have shape (n_components, n_features)")
-        self.n_features = n_features
+        self._check_finite("lambdas_", self.lambdas_)
+        self._check_nonnegative("lambdas_", self.lambdas_)
 
     def _do_mstep(self, stats):
         super()._do_mstep(stats)

@@ -98,6 +98,62 @@ class GMMHMMTestMixin:
         h = self.new_hmm(implementation)
         h._check()  # should not raise any errors
 
+    @pytest.mark.parametrize("means", [
+        lambda m: m[:, 0], lambda m: m[:, 0, 0],
+    ], ids=["2-D", "1-D"])
+    def test_means_of_wrong_ndim_raise(self, means):
+        """
+        Without ``n_features``, a ``means_`` that is not 3-D is refused with
+        a message naming it, not read for the number of features.
+        """
+        h = self.new_hmm("log")
+        h.means_ = means(h.means_)
+        assert not hasattr(h, "n_features")
+        with pytest.raises(ValueError, match="means_ must have shape"):
+            h._check()
+
+    @pytest.mark.parametrize("implementation", ["scaling", "log"])
+    @pytest.mark.parametrize("name", ["means_", "covars_"])
+    def test_nan_parameter_raises(self, name, implementation):
+        """A NaN in ``means_`` or ``covars_`` is refused, naming it."""
+        h = self.new_hmm(implementation)
+        X, _ = h.sample(10, random_state=0)
+        value = getattr(h, name).astype(float)
+        value.flat[0] = np.nan
+        setattr(h, name, value)
+        # Without the check the NaN arithmetic would warn; ignoring it lets
+        # a missing refusal show as one.
+        with np.errstate(all="ignore"), \
+                pytest.raises(ValueError, match=name):
+            h.score(X)
+
+    @pytest.mark.parametrize("implementation", ["scaling", "log"])
+    def test_negative_weights_raise(self, implementation):
+        """
+        ``weights_`` rows that sum to 1 with a negative entry are refused,
+        naming it.
+        """
+        h = self.new_hmm(implementation)
+        X, _ = h.sample(10, random_state=0)
+        h.weights_[0] = [1.5, -0.5]
+        with np.errstate(all="ignore"), \
+                pytest.raises(ValueError, match="weights_"):
+            h.score(X)
+
+    @pytest.mark.parametrize("method", ["score", "predict"])
+    @pytest.mark.parametrize("n_columns", [1, 3])
+    def test_prediction_refuses_X_of_another_n_features(
+            self, n_columns, method):
+        """
+        ``X`` with one column fewer or one more than the model's features is
+        refused, naming ``X``.
+        """
+        h = self.new_hmm("log")
+        X = np.random.RandomState(10).normal(size=(10, n_columns))
+        with np.errstate(all="ignore"), \
+                pytest.raises(ValueError, match="X must have"):
+            getattr(h, method)(X)
+
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
     def test_sample(self, implementation):
         n_samples = 1000

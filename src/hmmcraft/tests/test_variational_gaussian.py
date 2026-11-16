@@ -63,6 +63,22 @@ class _TestGaussian:
 
         assert_log_likelihood_increasing(model, X, lengths, n_iter=10)
 
+    @pytest.mark.parametrize("method", ["score", "predict"])
+    @pytest.mark.parametrize("n_columns", [1, 3])
+    def test_prediction_refuses_X_of_another_n_features(
+            self, n_columns, method):
+        """
+        A model fitted on two features refuses ``X`` with one column fewer
+        or one more, naming ``X``.
+        """
+        rs = np.random.RandomState(10)
+        X = rs.normal(size=(30, 2)) + 3 * rs.randint(0, 2, (30, 1))
+        model = vhmm.VariationalGaussianHMM(
+            2, self.covariance_type, n_iter=5, random_state=0).fit(X)
+        with np.errstate(all="ignore"), \
+                pytest.raises(ValueError, match="X must have"):
+            getattr(model, method)(rs.normal(size=(10, n_columns)))
+
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
     def test_fit_mcgrory_titterington1d(self, implementation):
         random_state = check_random_state(234234)
@@ -517,3 +533,30 @@ class TestDiagonal(_TestGaussian):
         model.scale_prior_ = [[2], [2], [2], [2]]
         model.scale_posterior_ =[[2], [2], [2], [2]]
         assert_log_likelihood_increasing(model, sequences, lengths, 10)
+
+
+def test_covars_before_n_features():
+    """
+    ``covars_`` of a ``diag`` model is read before ``n_features`` is known:
+    the full matrices need no feature count.
+    """
+    model = vhmm.VariationalGaussianHMM(2, "diag")
+    model.covars_ = np.array([[1.0, 2.0], [3.0, 4.0]])
+    assert not hasattr(model, "n_features")
+    expected = np.array([np.diag([1.0, 2.0]), np.diag([3.0, 4.0])])
+    assert model.covars_.tobytes() == expected.tobytes()
+
+
+@pytest.mark.parametrize("means", [None, np.zeros(2)], ids=["unset", "1-D"])
+def test_spherical_covars_name_means_posterior(means):
+    """
+    ``covars_`` of a ``spherical`` model with no feature count names
+    ``means_posterior_``, the attribute to set, when that is unset or of
+    the wrong shape.
+    """
+    model = vhmm.VariationalGaussianHMM(2, "spherical")
+    model.covars_ = np.array([1.0, 2.0])
+    if means is not None:
+        model.means_posterior_ = means
+    with pytest.raises(ValueError, match="means_posterior_"):
+        _ = model.covars_

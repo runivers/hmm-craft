@@ -8,6 +8,10 @@ Unreleased
 ~~~~~~~~~~
 
 - Fixed: tests of the variational models no longer fail for some random seeds.
+- Fixed: mistakes in parameters and ``X`` raise a ``ValueError`` naming them; ``MultinomialHMM``
+  starts a missing ``emissionprob_``; prediction no longer modifies a non-variational model.
+- Changed: ``ValueError``, not a result, for invalid parameters or ``X`` and for ``sample(0)``; the
+  non-variational models convert parameters to arrays when assigned; no ``MultinomialHMM`` warning.
 - Documented: the shapes ``GMMHMM`` accepts for its priors, per covariance type; when
   ``ConvergenceMonitor.converged`` is true.
 

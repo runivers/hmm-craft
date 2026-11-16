@@ -7,6 +7,7 @@ from scipy import special
 from scipy.stats import multinomial, poisson
 from sklearn.utils import check_random_state
 
+from . import _utils
 from .base import BaseHMM, _AbstractHMM
 from .stats import log_multivariate_normal_density
 from .utils import fill_covars, log_normalize
@@ -24,6 +25,45 @@ format.
 
 def _make_wrapper(func):
     return functools.wraps(func)(lambda *args, **kwargs: func(*args, **kwargs))
+
+
+def _n_features_of(model, name):
+    """
+    Return the number of features the emission parameter *name* of *model*
+    implies: its number of columns.
+    """
+    if not hasattr(model, name):
+        raise ValueError(
+            f"the number of features is unknown: set {name} or n_features")
+    return np.atleast_2d(getattr(model, name)).shape[1]
+
+
+def _check_X_n_features(X, n_features):
+    """Check that ``X`` has one column per feature."""
+    if X.shape[1] != n_features:
+        raise ValueError(
+            f"X must have n_features={n_features} columns, got {X.shape[1]}")
+
+
+def _check_X_counts(X):
+    """
+    Check that every entry of ``X`` is a count: a non-negative whole
+    number, of any dtype (``2.0`` is a count).
+    """
+    invalid = (X < 0) | (X % 1 != 0)
+    if invalid.any():
+        raise ValueError(
+            f"X must contain counts, non-negative whole numbers, "
+            f"got {X[invalid][0]}")
+
+
+def _means_shape(model, name="means_"):
+    """Return the shape of the means *name*; raise if it is not set."""
+    means = getattr(model, name, None)
+    if means is None:
+        raise ValueError(
+            f"the number of features is unknown: set {name} or n_features")
+    return np.shape(means)
 
 
 class BaseCategoricalHMM(_AbstractHMM):
@@ -49,6 +89,24 @@ class BaseCategoricalHMM(_AbstractHMM):
                     + _CATEGORICALHMM_DOC_SUFFIX)
             setattr(cls, name, wrapper)
 
+    def _n_features_from_emissions(self):
+        return _n_features_of(self, "emissionprob_")
+
+    def _check_X(self, X):
+        # No column test: the deprecated (n_samples, k) layout is read as
+        # one sequence of symbols by _compute_likelihood.
+        if X.dtype == bool:
+            # NumPy reads a boolean array as a mask over the symbols, not as
+            # the symbols 0 and 1; fit refuses it too.
+            raise ValueError(
+                "X must contain symbols as integers, not booleans")
+        n_features = self._get_n_features()
+        invalid = (X < 0) | (X >= n_features) | (X % 1 != 0)
+        if invalid.any():
+            raise ValueError(
+                f"X must contain symbols, whole numbers from 0 to "
+                f"{n_features - 1}, got {X[invalid][0]}")
+
     def _check_and_set_n_features(self, X):
         """
         Check if ``X`` is a sample from a categorical distribution, i.e. an
@@ -68,7 +126,7 @@ class BaseCategoricalHMM(_AbstractHMM):
 
     def _get_n_fit_scalars_per_param(self):
         nc = self.n_components
-        nf = self.n_features
+        nf = self._get_n_features()
         return {
             "s": nc - 1,
             "t": nc * (nc - 1),
@@ -110,9 +168,45 @@ class BaseCategoricalHMM(_AbstractHMM):
 
 class BaseGaussianHMM(_AbstractHMM):
 
+    # The attribute a caller sets for the means, named in errors.
+    _means_name = "means_"
+
+    @property
+    def covars_(self):
+        """Return covars as a full matrix."""
+        # A missing _covars_ stays an AttributeError, so that hasattr()
+        # tells whether covars_ is set.
+        covars = self._covars_
+        # Only the spherical layout needs the number of features.
+        n_features = (self._get_n_features()
+                      if self.covariance_type == "spherical" else None)
+        return fill_covars(covars, self.covariance_type, self.n_components,
+                           n_features)
+
+    @covars_.setter
+    def covars_(self, covars):
+        covars = np.array(covars, copy=True)
+        _utils._validate_covars(covars, self.covariance_type,
+                                self.n_components)
+        self._covars_ = covars
+
+    def _n_features_from_emissions(self):
+        name = self._means_name
+        shape = _means_shape(self, name)
+        if len(shape) != 2 or shape[0] != self.n_components:
+            raise ValueError(
+                f"{name} must have shape (n_components, n_features) with "
+                f"n_components={self.n_components}, actual shape: {shape}")
+        return shape[1]
+
+    def _check_X(self, X):
+        # The width of the means X is broadcast against, not n_features,
+        # which an earlier fit may have left.
+        _check_X_n_features(X, self._n_features_from_emissions())
+
     def _get_n_fit_scalars_per_param(self):
         nc = self.n_components
-        nf = self.n_features
+        nf = self._get_n_features()
         return {
             "s": nc - 1,
             "t": nc * (nc - 1),
@@ -183,9 +277,20 @@ class BaseGaussianHMM(_AbstractHMM):
 
 class BaseGMMHMM(BaseHMM):
 
+    def _n_features_from_emissions(self):
+        shape = _means_shape(self)
+        if len(shape) != 3:
+            raise ValueError(
+                f"means_ must have shape (n_components, n_mix, n_features), "
+                f"actual shape: {shape}")
+        return shape[2]
+
+    def _check_X(self, X):
+        _check_X_n_features(X, self._n_features_from_emissions())
+
     def _get_n_fit_scalars_per_param(self):
         nc = self.n_components
-        nf = self.n_features
+        nf = self._get_n_features()
         nm = self.n_mix
         return {
             "s": nc - 1,
@@ -301,13 +406,22 @@ class BaseGMMHMM(BaseHMM):
         else:
             covs = self.covars_[:, i_gauss]
             covs = fill_covars(covs, self.covariance_type,
-                               self.n_components, self.n_features)
+                               self.n_components, self._get_n_features())
         return random_state.multivariate_normal(
             self.means_[state, i_gauss], covs[state]
         )
 
 
 class BaseMultinomialHMM(BaseHMM):
+
+    def _n_features_from_emissions(self):
+        return _n_features_of(self, "emissionprob_")
+
+    def _check_X(self, X):
+        # No test of the row totals: each row is scored with its own. No
+        # dtype test either, so whole floats stay valid counts.
+        _check_X_n_features(X, self._n_features_from_emissions())
+        _check_X_counts(X)
 
     def _check_and_set_n_features(self, X):  # Also sets n_trials.
         """
@@ -325,7 +439,7 @@ class BaseMultinomialHMM(BaseHMM):
 
     def _get_n_fit_scalars_per_param(self):
         nc = self.n_components
-        nf = self.n_features
+        nf = self._get_n_features()
         return {
             "s": nc - 1,
             "t": nc * (nc - 1),
@@ -371,9 +485,16 @@ class BaseMultinomialHMM(BaseHMM):
 
 class BasePoissonHMM(BaseHMM):
 
+    def _n_features_from_emissions(self):
+        return _n_features_of(self, "lambdas_")
+
+    def _check_X(self, X):
+        _check_X_n_features(X, self._n_features_from_emissions())
+        _check_X_counts(X)
+
     def _get_n_fit_scalars_per_param(self):
         nc = self.n_components
-        nf = self.n_features
+        nf = self._get_n_features()
         return {
             "s": nc - 1,
             "t": nc * (nc - 1),

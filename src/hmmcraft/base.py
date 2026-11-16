@@ -140,6 +140,43 @@ class ConvergenceMonitor:
                  self.history[-1] - self.history[-2] < self.tol))
 
 
+class _ConvertedAttribute:
+    """
+    A model parameter converted to an array when it is assigned.
+
+    The value is kept in the instance's ``__dict__`` under the attribute's
+    own name, as a plain attribute would be, so ``vars(model)`` and a
+    pickle hold what they held before. Reading it returns the stored
+    object; an attribute that was never assigned is missing, for
+    ``hasattr`` too.
+    """
+
+    def __init__(self, convert):
+        self._convert = convert
+
+    def __set_name__(self, owner, name):
+        self._name = name
+
+    def __get__(self, instance, owner=None):
+        if instance is None:
+            return self
+        try:
+            return instance.__dict__[self._name]
+        except KeyError:
+            raise AttributeError(
+                f"{type(instance).__name__!r} object has no attribute "
+                f"{self._name!r}") from None
+
+    def __set__(self, instance, value):
+        instance.__dict__[self._name] = self._convert(value)
+
+    def __delete__(self, instance):
+        try:
+            del instance.__dict__[self._name]
+        except KeyError:
+            raise AttributeError(self._name) from None
+
+
 class _AbstractHMM(BaseEstimator):
     """
     Base class for Hidden Markov Models learned via Expectation-Maximization
@@ -194,6 +231,16 @@ class _AbstractHMM(BaseEstimator):
         self.implementation = implementation
         self.random_state = random_state
 
+    def __setstate__(self, state):
+        super().__setstate__(state)
+        # A pickle holds each parameter as it was stored; one written
+        # before parameters were converted on assignment can hold a list.
+        # Assign it again, so that it is converted as when it is set.
+        for name, value in list(vars(self).items()):
+            if isinstance(getattr(type(self), name, None),
+                          _ConvertedAttribute):
+                setattr(self, name, value)
+
     def score_samples(self, X, lengths=None):
         """
         Compute the log probability under the model and compute posteriors.
@@ -216,6 +263,16 @@ class _AbstractHMM(BaseEstimator):
             Log likelihood of ``X``.
         posteriors : array, shape (n_samples, n_components)
             State-membership probabilities for each sample in ``X``.
+
+        Raises
+        ------
+        ValueError
+            If ``X`` does not fit the model: for the categorical models, a
+            boolean ``X`` or a symbol that is not a whole number from 0 to
+            ``n_features - 1``; for the others, a number of columns other
+            than the model's number of features, and for the multinomial
+            and Poisson models a count that is not a non-negative whole
+            number.
 
         See Also
         --------
@@ -242,6 +299,16 @@ class _AbstractHMM(BaseEstimator):
         log_prob : float
             Log likelihood of ``X``.
 
+        Raises
+        ------
+        ValueError
+            If ``X`` does not fit the model: for the categorical models, a
+            boolean ``X`` or a symbol that is not a whole number from 0 to
+            ``n_features - 1``; for the others, a number of columns other
+            than the model's number of features, and for the multinomial
+            and Poisson models a count that is not a non-negative whole
+            number.
+
         See Also
         --------
         score_samples : Compute the log probability under the model and
@@ -263,10 +330,9 @@ class _AbstractHMM(BaseEstimator):
         self._check()
 
         X = check_array(X)
-        impl = {
-            "scaling": self._score_scaling,
-            "log": self._score_log,
-        }[self.implementation]
+        self._check_X(X)
+        impl = self._by_implementation(
+            log=self._score_log, scaling=self._score_scaling)
         return impl(
             X=X, lengths=lengths, compute_posteriors=compute_posteriors)
 
@@ -356,6 +422,16 @@ class _AbstractHMM(BaseEstimator):
             Labels for each sample from ``X`` obtained via a given
             decoder ``algorithm``.
 
+        Raises
+        ------
+        ValueError
+            If ``X`` does not fit the model: for the categorical models, a
+            boolean ``X`` or a symbol that is not a whole number from 0 to
+            ``n_features - 1``; for the others, a number of columns other
+            than the model's number of features, and for the multinomial
+            and Poisson models a count that is not a non-negative whole
+            number.
+
         See Also
         --------
         score_samples : Compute the log probability under the model and
@@ -375,6 +451,7 @@ class _AbstractHMM(BaseEstimator):
         }[algorithm]
 
         X = check_array(X)
+        self._check_X(X)
         log_prob = 0
         sub_state_sequences = []
         for sub_X in _utils.split_X_lengths(X, lengths):
@@ -451,7 +528,7 @@ class _AbstractHMM(BaseEstimator):
         Parameters
         ----------
         n_samples : int
-            Number of samples to generate.
+            Number of samples to generate, at least 1.
         random_state : RandomState or an int seed
             A random number generator instance. If ``None``, the object's
             ``random_state`` is used.
@@ -474,6 +551,9 @@ class _AbstractHMM(BaseEstimator):
             X, Z = model.sample(n_samples=10, currstate=Z[-1])
         """
         check_is_fitted(self, "startprob_")
+        if n_samples < 1:
+            raise ValueError(
+                f"n_samples must be at least 1, got {n_samples!r}")
         self._check()
 
         if random_state is None:
@@ -520,7 +600,22 @@ class _AbstractHMM(BaseEstimator):
         -------
         self : object
             Returns self.
+
+        Raises
+        ------
+        ValueError
+            If ``X`` does not fit the model: for the categorical models, a
+            boolean ``X`` or a symbol that is not a whole number from 0 to
+            ``n_features - 1``; for the others, a number of columns other
+            than the model's number of features, and for the multinomial
+            and Poisson models a count that is not a non-negative whole
+            number.
         """
+        # Refuse an invalid number of states before anything is computed
+        # or written.
+        if self.n_components < 1:
+            raise ValueError(
+                f"n_components must be at least 1, got {self.n_components!r}")
         X = check_array(X)
         # Refuse invalid lengths before the start uses them, whatever
         # n_iter is; the split itself happens in each E-step.
@@ -533,6 +628,10 @@ class _AbstractHMM(BaseEstimator):
         vars(self).pop("state_occupancy_", None)
         self._init(X, lengths)
         self._check()
+        self._store_checked()
+        # X against the parameters _check has validated, before the first
+        # E-step reads it.
+        self._check_X(X)
         self.monitor_._reset()
 
         for iter in range(self.n_iter):
@@ -584,6 +683,55 @@ class _AbstractHMM(BaseEstimator):
             return True
         return not hasattr(self, name)
 
+    def _by_implementation(self, *, log, scaling):
+        """
+        Return *log* or *scaling*, the one :attr:`implementation` names.
+
+        Raises
+        ------
+        ValueError
+            If :attr:`implementation` is neither "log" nor "scaling".
+        """
+        implementation = self.implementation
+        if isinstance(implementation, str):
+            if implementation == "log":
+                return log
+            if implementation == "scaling":
+                return scaling
+        raise ValueError(
+            f"implementation must be 'log' or 'scaling', "
+            f"got {implementation!r}")
+
+    def _get_n_features(self):
+        """
+        Return the number of features: :attr:`n_features` when it is set,
+        else the number the emission parameters imply.
+
+        Raises
+        ------
+        ValueError
+            If neither gives it.
+        """
+        n_features = getattr(self, "n_features", None)
+        if n_features is None:
+            n_features = self._n_features_from_emissions()
+        return n_features
+
+    def _n_features_from_emissions(self):
+        """
+        Return the number of features the emission parameters imply.
+
+        A model class reads it from its emission parameter; this default
+        knows none.
+
+        Raises
+        ------
+        ValueError
+            If the emission parameter is not set, or its shape does not
+            give the number of features.
+        """
+        raise ValueError("the number of features is unknown: set n_features")
+
     def _check_and_set_n_features(self, X):
         _, n_features = X.shape
         if hasattr(self, "n_features"):
@@ -605,9 +753,26 @@ class _AbstractHMM(BaseEstimator):
         """
         raise NotImplementedError("Must be overridden in subclass")
 
-    def _check_sum_1(self, name):
-        """Check that an array describes one or more distributions."""
-        s = getattr(self, name).sum(axis=-1)
+    def _check_sum_1(self, name, value=None):
+        """
+        Check that an array describes one or more distributions: each row
+        sums to 1 and has no negative entry.
+
+        Parameters
+        ----------
+        name : str
+            The parameter's name, used in the message.
+        value : array, optional
+            The values to test; by default the attribute ``name``.
+
+        Raises
+        ------
+        ValueError
+            If a row does not sum to 1, or has a negative entry.
+        """
+        if value is None:
+            value = getattr(self, name)
+        s = value.sum(axis=-1)
         if not np.allclose(s, 1):
             raise ValueError(
                 f"{name} must sum to 1 (got {s:.4f})"
@@ -615,18 +780,79 @@ class _AbstractHMM(BaseEstimator):
                 else f"{name} rows must sum to 1 (got row sums of {s})"
                     if s.ndim == 1
                     else "Expected 1D or 2D array")
+        self._check_nonnegative(name, value)
 
-    def _check(self):
+    @staticmethod
+    def _check_finite(name, value):
         """
-        Validate model parameters prior to fitting.
+        Check that an array holds no NaN and no infinity.
 
         Raises
         ------
         ValueError
-            If any of the parameters are invalid, e.g. if :attr:`startprob_`
-            don't sum to 1.
+            If an entry of ``value`` is NaN or infinite.
+        """
+        # A comparison, not np.isfinite: it judges an array of any numeric
+        # or object dtype by its values, where np.isfinite raises TypeError
+        # on an object array.
+        if not np.all(np.abs(value) < np.inf):
+            raise ValueError(f"{name} must contain only finite values")
+
+    @staticmethod
+    def _check_nonnegative(name, value):
+        """
+        Check that an array has no negative entry; zeros, ``-0.0``
+        included, are valid.
+
+        Raises
+        ------
+        ValueError
+            If an entry of ``value`` is below 0.
+        """
+        if np.any(value < 0):
+            raise ValueError(
+                f"{name} must not have negative entries, got a minimum of "
+                f"{np.min(value):.4g}")
+
+    def _check(self):
+        """
+        Validate model parameters before fitting or predicting.
+
+        :meth:`fit` and every prediction call it; in the models fitted by
+        expectation-maximization it reads the model and writes nothing.
+
+        Raises
+        ------
+        ValueError
+            If any of the parameters are invalid, e.g. if a probability is
+            negative or the rows of :attr:`startprob_` or :attr:`transmat_`
+            do not sum to 1, or if a parameter is not finite.
         """
         raise NotImplementedError("Must be overridden in subclass")
+
+    def _store_checked(self):
+        """
+        Store what follows from the parameters :meth:`_check` has just
+        validated; called by :meth:`fit` only, never on a prediction.
+
+        The default stores nothing.
+        """
+
+    def _check_X(self, X):
+        """
+        Check ``X``, as ``check_array`` returned it, against the model.
+
+        Runs after :meth:`_check`, so the parameters it reads are valid. It
+        reads the model and ``X`` and writes nothing. An emission class
+        overrides it; this class knows no emission distribution and checks
+        nothing, so a subclass that brings its own likelihood takes ``X`` as
+        it is.
+
+        Raises
+        ------
+        ValueError
+            If ``X`` does not fit the model; the message names ``X``.
+        """
 
     def _compute_likelihood(self, X):
         """
@@ -746,10 +972,9 @@ class _AbstractHMM(BaseEstimator):
             forward and backward probabilities.
         """
 
-        impl = {
-            "scaling": self._accumulate_sufficient_statistics_scaling,
-            "log": self._accumulate_sufficient_statistics_log,
-        }[self.implementation]
+        impl = self._by_implementation(
+            log=self._accumulate_sufficient_statistics_log,
+            scaling=self._accumulate_sufficient_statistics_scaling)
 
         return impl(stats=stats, X=X, lattice=lattice, posteriors=posteriors,
                     fwdlattice=fwdlattice, bwdlattice=bwdlattice)
@@ -804,10 +1029,8 @@ class _AbstractHMM(BaseEstimator):
         """
 
     def _do_estep(self, X, lengths):
-        impl = {
-            "scaling": self._fit_scaling,
-            "log": self._fit_log,
-        }[self.implementation]
+        impl = self._by_implementation(
+            log=self._fit_log, scaling=self._fit_scaling)
 
         stats = self._initialize_sufficient_statistics()
         self._estep_begin()
@@ -918,6 +1141,9 @@ class BaseHMM(_AbstractHMM):
         self.transmat_prior = transmat_prior
         self.monitor_ = ConvergenceMonitor(self.tol, self.n_iter, self.verbose)
 
+    startprob_ = _ConvertedAttribute(np.asarray)
+    transmat_ = _ConvertedAttribute(np.asarray)
+
     def get_stationary_distribution(self):
         """Compute the stationary distribution of states."""
         # The stationary distribution is proportional to the left-eigenvector
@@ -1002,33 +1228,22 @@ class BaseHMM(_AbstractHMM):
                     "%d data points will result in a degenerate solution.",
                     n_fit_scalars, X.size)
 
-    def _check_sum_1(self, name):
-        """Check that an array describes one or more distributions."""
-        s = getattr(self, name).sum(axis=-1)
-        if not np.allclose(s, 1):
-            raise ValueError(
-                f"{name} must sum to 1 (got {s:.4f})"
-                if s.ndim == 0
-                else f"{name} rows must sum to 1 (got row sums of {s})"
-                    if s.ndim == 1
-                    else "Expected 1D or 2D array")
-
     def _check(self):
         """
-        Validate model parameters prior to fitting.
+        Validate model parameters before fitting or predicting; reads the
+        model and writes nothing.
 
         Raises
         ------
         ValueError
-            If any of the parameters are invalid, e.g. if :attr:`startprob_`
-            don't sum to 1.
+            If any of the parameters are invalid, e.g. if a probability is
+            negative or the rows of :attr:`startprob_` or :attr:`transmat_`
+            do not sum to 1, or if a parameter is not finite.
         """
-        self.startprob_ = np.asarray(self.startprob_)
         if len(self.startprob_) != self.n_components:
             raise ValueError("startprob_ must have length n_components")
         self._check_sum_1("startprob_")
 
-        self.transmat_ = np.asarray(self.transmat_)
         if self.transmat_.shape != (self.n_components, self.n_components):
             raise ValueError(
                 "transmat_ must have shape (n_components, n_components)")

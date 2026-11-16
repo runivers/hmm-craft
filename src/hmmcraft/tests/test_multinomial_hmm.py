@@ -1,6 +1,9 @@
+import logging
+
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose
+from sklearn.base import clone
 
 from hmmcraft import hmm
 
@@ -32,6 +35,21 @@ class TestMultinomialHMM:
             h.emissionprob_ = np.zeros((self.n_components - 2,
                                         self.n_features))
             h._check()
+        for row in ([np.nan, 0.5, 0.25, 0.25], [1.2, -0.2, 0.0, 0.0],
+                    [0.3, 0.3, 0.2, 0.1]):
+            h = self.new_hmm(implementation)
+            h.emissionprob_ = np.array([row, [.1, .1, .4, .4]])
+            with pytest.raises(ValueError, match="emissionprob_"):
+                h._check()
+
+    def test_check_accepts_object_emissionprob(self):
+        # The sum test judges the values: an object array of numbers that
+        # sum to 1 passes, and the check leaves the array as it was set.
+        h = self.new_hmm("log")
+        h.emissionprob_ = np.array([[.1, .2, .3, .4], [.4, .3, .2, .1]],
+                                   dtype=object)
+        h._check()
+        assert h.emissionprob_.dtype == object
 
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
     def test_score_samples(self, implementation):
@@ -53,6 +71,48 @@ class TestMultinomialHMM:
         _ll, posteriors = h.score_samples(X)
         assert posteriors.shape == (n_samples, self.n_components)
         assert_allclose(posteriors.sum(axis=1), np.ones(n_samples))
+
+    @pytest.mark.parametrize("implementation", ["scaling", "log"])
+    @pytest.mark.parametrize("X, match", [
+        ([[1.5, 0.5, 3, 0], [3, 1, 1, 0]], "X must contain counts"),
+        ([[-1, 2, 4, 0], [3, 1, 1, 0]], "X must contain counts"),
+        ([[1, 1, 3], [3, 1, 1]], "X must have n_features=4"),
+        ([[1, 1, 3, 0, 0], [3, 1, 1, 0, 0]], "X must have n_features=4"),
+    ], ids=["fraction", "negative", "one-column-fewer", "one-column-more"])
+    def test_score_refuses_X_that_is_not_counts(self, X, match,
+                                                implementation):
+        """
+        ``score`` refuses, naming ``X``, a count that is negative or not a
+        whole number (scored as impossible otherwise) and ``X`` of another
+        number of columns (refused by SciPy otherwise).
+        """
+        h = self.new_hmm(implementation)
+        with np.errstate(all="ignore"), \
+                pytest.raises(ValueError, match=match):
+            h.score(np.array(X))
+
+    @pytest.mark.parametrize("implementation", ["scaling", "log"])
+    @pytest.mark.parametrize("dtype", [float, bool, object])
+    def test_counts_of_any_dtype_score_as_integers(self, dtype,
+                                                   implementation):
+        """
+        Counts held as whole floats, booleans or objects score as the same
+        counts held as integers.
+        """
+        h = self.new_hmm(implementation)
+        X = np.array([[1, 1, 0, 0], [0, 1, 1, 0], [1, 0, 0, 1]])
+        assert h.score(X.astype(dtype)) == h.score(X)
+
+    @pytest.mark.parametrize("implementation", ["scaling", "log"])
+    def test_rows_off_n_trials_score_with_their_own_total(
+            self, implementation):
+        """
+        Rows whose counts do not add up to ``n_trials``, the count 0
+        included, still score: each row with its own total.
+        """
+        h = self.new_hmm(implementation)
+        X = np.array([[1, 1, 0, 0], [0, 0, 0, 7], [2, 0, 1, 0]])
+        assert np.isfinite(h.score(X))
 
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
     def test_sample(self, implementation, n_samples=1000):
@@ -108,6 +168,54 @@ class TestMultinomialHMM:
         h._init(X, lengths)
 
         assert_log_likelihood_increasing(h, X, lengths, n_iter)
+
+    @pytest.mark.parametrize("init_params", ["", "st"])
+    def test_fit_starts_emissionprob_not_set(self, init_params):
+        """
+        ``fit`` starts an ``emissionprob_`` that is not set, as with ``"e"``
+        in ``init_params``: the same draws from ``random_state``.
+        """
+        X = self.new_hmm("log").sample(20, random_state=10)[0]
+
+        def started(init_params):
+            h = hmm.MultinomialHMM(
+                self.n_components, self.n_trials, n_iter=0,
+                init_params=init_params, random_state=0)
+            return h.fit(X)
+
+        h, reference = started(init_params), started("ste")
+        for name in ("startprob_", "transmat_", "emissionprob_"):
+            assert getattr(h, name).tobytes() == (
+                getattr(reference, name).tobytes())
+
+    def test_init_keeps_emissionprob_set(self):
+        """An ``emissionprob_`` set and not in ``init_params`` stays."""
+        h = self.new_hmm("log")
+        h.init_params = "st"
+        emissionprob = h.emissionprob_
+        expected = emissionprob.tobytes()
+        h._init(h.sample(20, random_state=10)[0])
+        assert h.emissionprob_ is emissionprob
+        assert h.emissionprob_.tobytes() == expected
+
+    def test_init_warns_emissionprob_overwritten(self, caplog):
+        """
+        ``"e"`` in ``init_params`` with ``emissionprob_`` set logs that it is
+        overwritten, as for every other model.
+        """
+        h = self.new_hmm("log")
+        X = h.sample(20, random_state=10)[0]
+        with caplog.at_level(logging.WARNING):
+            h._init(X)
+        assert any("'emissionprob_' attribute is set" in r.getMessage()
+                   for r in caplog.records)
+
+    def test_construct_and_clone_log_nothing(self, caplog):
+        """Building or cloning a ``MultinomialHMM`` logs nothing."""
+        with caplog.at_level(logging.WARNING):
+            h = hmm.MultinomialHMM(self.n_components, self.n_trials)
+            clone(h)
+        assert caplog.records == []
 
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
     def test__check_and_set_multinomial_n_features_n_trials(
