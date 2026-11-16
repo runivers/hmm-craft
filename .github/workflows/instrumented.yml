@@ -1,12 +1,15 @@
 name: instrumented
 
-# The suite against a build of the C++ kernel made for measuring, never for
-# release: nothing built here is uploaded or published. The "coverage" job
-# builds the kernel with --coverage and no optimisation, runs the suite under
-# coverage.py with the newest NumPy, SciPy and scikit-learn wheels, and fails
-# when the Python total or the kernel's line coverage falls below its floor in
-# pyproject.toml. The reports are in the log and in the run's
-# "coverage-reports" artifact.
+# The suite against instrumented builds of the C++ kernel, never used for a
+# release: nothing built here is uploaded or published. Both jobs install the
+# newest NumPy, SciPy and scikit-learn wheels. The "coverage" job builds the
+# kernel with --coverage and no optimisation, runs the suite under
+# coverage.py, and fails when the Python total or the kernel's line coverage
+# falls below its floor in pyproject.toml; the reports are in the log and in
+# the run's "coverage-reports" artifact. The "sanitizers" job builds the
+# kernel with AddressSanitizer and UndefinedBehaviorSanitizer and runs the
+# suite; the first error either finds stops the run, with its report in the
+# log.
 
 on:
   pull_request:
@@ -90,3 +93,69 @@ jobs:
         path: ${{ runner.temp }}/coverage-reports/
         retention-days: 14
         if-no-files-found: warn
+
+  sanitizers:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      HMMCRAFT_SEED: "0"
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+      with:
+        python-version: "3.12"
+    - name: Build requirements, newest dependencies
+      run: |
+        python -m pip install --only-binary :all: --require-hashes \
+          -r ci/build_requirements.txt
+        python -m pip install --only-binary :all: \
+          numpy scipy scikit-learn threadpoolctl pytest
+        python -m pip freeze
+        c++ --version
+    - name: Build the kernel with AddressSanitizer and UBSan
+      # As in the coverage job, CXXFLAGS replaces the interpreter's flags, so
+      # -DNDEBUG is given again, and -g in CFLAGS keeps pybind11 from adding
+      # -g0. No floating-point check is on: GCC's -fsanitize=undefined leaves
+      # them out, and the kernel takes the logarithm of zero on purpose.
+      env:
+        CFLAGS: >-
+          -fsanitize=address,undefined -fno-sanitize-recover=all
+          -fno-omit-frame-pointer -O1 -g
+        CXXFLAGS: >-
+          -fsanitize=address,undefined -fno-sanitize-recover=all
+          -fno-omit-frame-pointer -O1 -g -DNDEBUG
+        LDFLAGS: -fsanitize=address,undefined
+      run: |
+        rm -rf build src/hmm_craft.egg-info
+        python -m pip install -v --no-build-isolation --no-deps .
+        so=$(ls build/lib.*/hmmcraft/_hmmc.*.so)
+        ldd "$so"
+        ldd "$so" | grep -q libasan
+        ldd "$so" | grep -q libubsan
+    - name: Suite under the sanitizers
+      # Python is not built with the sanitizers, so their runtime is preloaded
+      # for this command only: libasan first, then libstdc++, which the
+      # interpreter does not load by itself and in which ASan must find
+      # __cxa_throw when it starts. setarch -R turns address randomisation off
+      # for this process: older ASan runtimes can crash or hang at start on
+      # kernels that randomise mmap addresses with more bits. --capture=sys
+      # leaves standard error to the sanitizers; under pytest's default capture
+      # a report written as the process stops is lost. Leak detection is off
+      # (the interpreter does not free everything at exit); abort_on_error lets
+      # Python's fault handler print the test that was running.
+      env:
+        ASAN_OPTIONS: detect_leaks=0:abort_on_error=1
+        UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1:abort_on_error=1
+      run: |
+        preload="$(c++ -print-file-name=libasan.so)"
+        preload="$preload $(c++ -print-file-name=libstdc++.so.6)"
+        setarch "$(uname -m)" -R env LD_PRELOAD="$preload" \
+          python -I -m pytest -p no:cacheprovider -q --capture=sys \
+          --pyargs hmmcraft.tests doc
