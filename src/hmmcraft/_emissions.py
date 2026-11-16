@@ -11,7 +11,6 @@ from .base import BaseHMM, _AbstractHMM
 from .stats import log_multivariate_normal_density
 from .utils import fill_covars, log_normalize
 
-
 _CATEGORICALHMM_DOC_SUFFIX = """
 
 Notes

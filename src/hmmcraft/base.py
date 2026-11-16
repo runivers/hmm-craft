@@ -7,11 +7,14 @@ import numpy as np
 from scipy import linalg, special
 from sklearn.base import BaseEstimator
 from sklearn.utils.validation import (
-    check_array, check_is_fitted, check_random_state)
+    check_array,
+    check_is_fitted,
+    check_random_state,
+)
 
-from . import _hmmc, _kl_divergence as _kl, _utils
-from .utils import normalize, log_normalize
-
+from . import _hmmc, _utils
+from . import _kl_divergence as _kl
+from .utils import log_normalize, normalize
 
 _log = logging.getLogger(__name__)
 #: Supported decoder algorithms.
@@ -81,7 +84,7 @@ class ConvergenceMonitor:
     def __repr__(self):
         class_name = self.__class__.__name__
         params = sorted(dict(vars(self), history=list(self.history)).items())
-        return ("{}(\n".format(class_name)
+        return (f"{class_name}(\n"
                 + "".join(map("    {}={},\n".format, *zip(*params)))
                 + ")")
 
@@ -579,9 +582,7 @@ class _AbstractHMM(BaseEstimator):
                     "overwritten during initialization because 'init_params' "
                     "contains %r", name, code)
             return True
-        if not hasattr(self, name):
-            return True
-        return False
+        return not hasattr(self, name)
 
     def _check_and_set_n_features(self, X):
         _, n_features = X.shape
@@ -763,7 +764,7 @@ class _AbstractHMM(BaseEstimator):
         if 's' in self.params:
             stats['start'] += posteriors[0]
         if 't' in self.params:
-            n_samples, n_components = lattice.shape
+            n_samples, _ = lattice.shape
             # when the sample is of length 1, it contains no transitions
             # so there is no reason to update our trans. matrix estimate
             if n_samples <= 1:
@@ -782,7 +783,7 @@ class _AbstractHMM(BaseEstimator):
         if 's' in self.params:
             stats['start'] += posteriors[0]
         if 't' in self.params:
-            n_samples, n_components = lattice.shape
+            n_samples, _ = lattice.shape
             # when the sample is of length 1, it contains no transitions
             # so there is no reason to update our trans. matrix estimate
             if n_samples <= 1:
@@ -1228,7 +1229,7 @@ class VariationalBaseHMM(_AbstractHMM):
         if 's' in self.params:
             stats['start'] += posteriors[0]
         if 't' in self.params:
-            n_samples, n_components = lattice.shape
+            n_samples, _ = lattice.shape
             # when the sample is of length 1, it contains no transitions
             # so there is no reason to update our trans. matrix estimate
             if n_samples <= 1:
@@ -1249,7 +1250,7 @@ class VariationalBaseHMM(_AbstractHMM):
         if 's' in self.params:
             stats['start'] += posteriors[0]
         if 't' in self.params:
-            n_samples, n_components = lattice.shape
+            n_samples, _ = lattice.shape
             # when the sample is of length 1, it contains no transitions
             # so there is no reason to update our trans. matrix estimate
             if n_samples <= 1:

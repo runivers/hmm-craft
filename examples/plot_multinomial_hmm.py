@@ -31,6 +31,7 @@ __ https://en.wikipedia.org/wiki/Multinomial_distribution
 
 
 import numpy as np
+
 from hmmcraft import hmm
 
 # For this example, we will model the stages of a conversation,
@@ -71,7 +72,7 @@ observations = [["tail", "mouse", "mouse", "food", "mouse"],
 vocab2id = dict(zip(vocabulary, range(len(vocabulary))))
 def sentence2counts(sentence):
     ans = []
-    for word, idx in vocab2id.items():
+    for word in vocab2id:
         count = sentence.count(word)
         ans.append(count)
     return ans

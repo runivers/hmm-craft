@@ -18,8 +18,8 @@ often the loaded die is used (i.e. the transition probabilities) and
 # %%
 # First, import necessary modules and functions.
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 
 from hmmcraft import hmm
 

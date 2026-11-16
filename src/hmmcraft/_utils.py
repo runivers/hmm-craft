@@ -55,17 +55,14 @@ def _validate_covars(covars, covariance_type, n_components):
         elif np.any(covars <= 0):
             raise ValueError("'diag' covars must be positive")
     elif covariance_type == 'full':
-        if len(covars.shape) != 3:
-            raise ValueError("'full' covars must have shape "
-                             "(n_components, n_dim, n_dim)")
-        elif covars.shape[1] != covars.shape[2]:
+        if len(covars.shape) != 3 or covars.shape[1] != covars.shape[2]:
             raise ValueError("'full' covars must have shape "
                              "(n_components, n_dim, n_dim)")
         for n, cv in enumerate(covars):
             if (not np.allclose(cv, cv.T)
                     or np.any(linalg.eigvalsh(cv) <= 0)):
-                raise ValueError("component %d of 'full' covars must be "
-                                 "symmetric, positive-definite" % n)
+                raise ValueError(f"component {n} of 'full' covars must be "
+                                 "symmetric, positive-definite")
     else:
         raise ValueError("covariance_type must be one of " +
                          "'spherical', 'tied', 'diag', 'full'")

@@ -1,11 +1,13 @@
+import itertools
+
 import numpy as np
-from numpy.testing import assert_allclose, assert_array_less
 import pytest
+from numpy.testing import assert_allclose, assert_array_less
 from sklearn.utils import check_random_state
 
 from ..hmm import GMMHMM
-from .test_gmm_hmm import create_random_gmm
 from . import assert_log_likelihood_increasing, normalized
+from .test_gmm_hmm import create_random_gmm
 
 
 def sample_from_parallelepiped(low, high, n_samples, random_state):
@@ -30,7 +32,7 @@ def prep_params(n_comps, n_mix, n_features, covar_type,
     )
 
     means = np.zeros((n_comps, n_mix, n_features))
-    for i, (left, right) in enumerate(zip(dim_lims, dim_lims[1:])):
+    for i, (left, right) in enumerate(itertools.pairwise(dim_lims)):
         means[i] = sample_from_parallelepiped(left, right, n_mix,
                                               random_state)
 

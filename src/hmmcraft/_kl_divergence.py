@@ -5,7 +5,7 @@ All implementations are based upon the following:
 """
 
 import numpy as np
-from scipy.special import gammaln, digamma
+from scipy.special import digamma, gammaln
 
 from . import _utils
 

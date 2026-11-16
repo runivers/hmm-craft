@@ -6,12 +6,12 @@ from scipy import special
 from sklearn import cluster
 from sklearn.utils import check_random_state
 
-from . import _kl_divergence as _kl, _utils
+from . import _kl_divergence as _kl
+from . import _utils
 from ._emissions import BaseCategoricalHMM, BaseGaussianHMM
 from .base import VariationalBaseHMM
 from .hmm import COVARIANCE_TYPES
 from .utils import fill_covars
-
 
 _log = logging.getLogger(__name__)
 

@@ -14,9 +14,8 @@ from . import _emissions, _utils
 from .base import BaseHMM
 from .utils import fill_covars, normalize
 
-
 __all__ = [
-    "GMMHMM", "GaussianHMM", "CategoricalHMM", "MultinomialHMM", "PoissonHMM",
+    "GMMHMM", "CategoricalHMM", "GaussianHMM", "MultinomialHMM", "PoissonHMM",
 ]
 
 

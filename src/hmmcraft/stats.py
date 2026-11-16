@@ -47,7 +47,7 @@ def log_multivariate_normal_density(X, means, covars, covariance_type='diag'):
 def _log_multivariate_normal_density_diag(X, means, covars):
     """Compute Gaussian log-density at X for a diagonal model."""
     # X: (ns, nf); means: (nc, nf); covars: (nc, nf) -> (ns, nc)
-    nc, nf = means.shape
+    _, nf = means.shape
     # Avoid 0 log 0 = nan in degenerate covariance case.
     covars = np.maximum(covars, np.finfo(float).tiny)
     with np.errstate(over="ignore"):
@@ -74,7 +74,7 @@ def _log_multivariate_normal_density_tied(X, means, covars):
 
 def _log_multivariate_normal_density_full(X, means, covars, min_covar=1.e-7):
     """Log probability for full covariance matrices."""
-    nc, nf = means.shape
+    _, nf = means.shape
     log_prob = []
     for c, (mu, cv) in enumerate(zip(means, covars)):
         try:

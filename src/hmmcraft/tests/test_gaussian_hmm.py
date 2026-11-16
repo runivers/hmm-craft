@@ -1,6 +1,6 @@
 import numpy as np
-from numpy.testing import assert_allclose
 import pytest
+from numpy.testing import assert_allclose
 from sklearn.utils import check_random_state
 
 from .. import hmm
@@ -49,11 +49,11 @@ class GaussianHMMTestMixin:
         X = (self.prng.randn(n_samples, self.n_features)
              + h.means_[gaussidx])
         h._init(X, [n_samples])
-        ll, posteriors = h.score_samples(X)
+        _ll, posteriors = h.score_samples(X)
         assert posteriors.shape == (n_samples, self.n_components)
         assert_allclose(posteriors.sum(axis=1), np.ones(n_samples))
 
-        viterbi_ll, stateseq = h.decode(X)
+        _viterbi_ll, stateseq = h.decode(X)
         assert_allclose(stateseq, gaussidx)
 
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
@@ -355,7 +355,7 @@ class TestGaussianHMMWithDiagonalCovars(GaussianHMMTestMixin):
         assert not np.isnan(posteriors).any()
         assert_allclose(posteriors.sum(axis=1), 1.)
 
-        score, state_sequence = h.decode(X, algorithm="viterbi")
+        score, _state_sequence = h.decode(X, algorithm="viterbi")
         assert np.isfinite(score)
 
 

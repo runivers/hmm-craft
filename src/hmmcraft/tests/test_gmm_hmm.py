@@ -1,10 +1,11 @@
 import numpy as np
-from numpy.testing import assert_allclose
 import pytest
+from numpy.testing import assert_allclose
 from sklearn.mixture import GaussianMixture
 from sklearn.utils import check_random_state
 
 from hmmcraft import hmm
+
 from . import assert_log_likelihood_increasing, make_covar_matrix, normalized
 
 pytestmark = pytest.mark.xfail()

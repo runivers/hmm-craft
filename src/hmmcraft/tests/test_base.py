@@ -1,10 +1,10 @@
 import numpy as np
-from numpy.testing import assert_allclose
 import pytest
+from numpy.testing import assert_allclose
 from scipy import special
 
-from hmmcraft.base import BaseHMM, ConvergenceMonitor
 from hmmcraft import _hmmc, hmm, vhmm
+from hmmcraft.base import BaseHMM, ConvergenceMonitor
 
 
 class TestMonitor:
@@ -76,7 +76,7 @@ class TestBaseAgainstWikipedia:
         self.hmm = h
 
     def test_do_forward_scaling_pass(self):
-        log_prob, fwdlattice, scaling_factors = _hmmc.forward_scaling(
+        log_prob, fwdlattice, _scaling_factors = _hmmc.forward_scaling(
             self.hmm.startprob_, self.hmm.transmat_, self.frameprob)
         ref_log_prob = -3.3725
         assert round(log_prob, 4) == ref_log_prob
@@ -101,7 +101,7 @@ class TestBaseAgainstWikipedia:
         assert_allclose(np.exp(fwdlattice), reffwdlattice, 4)
 
     def test_do_backward_scaling_pass(self):
-        log_prob, fwdlattice, scaling_factors = _hmmc.forward_scaling(
+        _log_prob, _fwdlattice, scaling_factors = _hmmc.forward_scaling(
             self.hmm.startprob_, self.hmm.transmat_, self.frameprob)
         bwdlattice = _hmmc.backward_scaling(self.hmm.startprob_,
             self.hmm.transmat_, self.frameprob, scaling_factors)
@@ -148,8 +148,8 @@ class TestBaseAgainstWikipedia:
         assert_allclose(posteriors, refposteriors, atol=1e-4)
 
     def test_generate_samples(self):
-        X0, Z0 = self.hmm.sample(n_samples=10)
-        X, Z = self.hmm.sample(n_samples=10, currstate=Z0[-1])
+        _X0, Z0 = self.hmm.sample(n_samples=10)
+        _X, Z = self.hmm.sample(n_samples=10, currstate=Z0[-1])
         assert len(Z0) == len(Z) == 10 and Z[0] == Z0[-1]
 
 
@@ -174,7 +174,7 @@ class TestBaseConsistentWithGMM:
         self.hmm = h
 
     def test_score_samples(self):
-        log_prob, hmmposteriors = self.hmm.score_samples(self.log_frameprob)
+        _log_prob, hmmposteriors = self.hmm.score_samples(self.log_frameprob)
 
         n_samples, n_components = self.log_frameprob.shape
         assert_allclose(hmmposteriors.sum(axis=1), np.ones(n_samples))
@@ -187,7 +187,7 @@ class TestBaseConsistentWithGMM:
     def test_decode(self):
         _log_prob, state_sequence = self.hmm.decode(self.log_frameprob)
 
-        n_samples, n_components = self.log_frameprob.shape
+        _n_samples, n_components = self.log_frameprob.shape
         norm = special.logsumexp(self.log_frameprob, axis=1)[:, np.newaxis]
         gmmposteriors = np.exp(self.log_frameprob
                                - np.tile(norm, (1, n_components)))

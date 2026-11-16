@@ -54,7 +54,8 @@ on a machine with Python 3.12 and a network connection.
   fails; a count that falls fails too until the baseline is lowered. After
   fixing findings, lower it with
   `python3 -I scripts/check_ruff_baseline.py --update`, which refuses while
-  any count is above the baseline, and commit the file. The list does not
+  any count is above the baseline, and commit the file. The baseline is empty:
+  no file has a finding, so any finding fails the check. The list does not
   follow ruff's defaults, so a ruff upgrade adds no rule; it can still find
   more under a listed rule. The baseline never rises: the commit that moves
   to a newer ruff fixes what it finds, or the pin stays.
