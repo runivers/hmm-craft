@@ -12,7 +12,7 @@ from sklearn.utils import check_random_state
 
 from . import _emissions, _utils
 from .base import BaseHMM
-from .utils import fill_covars, normalize
+from .utils import normalize
 
 __all__ = [
     "GMMHMM", "CategoricalHMM", "GaussianHMM", "MultinomialHMM", "PoissonHMM",
@@ -192,7 +192,7 @@ class CategoricalHMM(_emissions.BaseCategoricalHMM, BaseHMM):
 
         self.emissionprob_ = np.atleast_2d(self.emissionprob_)
         if self.n_features is None:
-            self.n_features = self.emissionprob_.shape[1]
+            self.n_features = self._get_n_features()
         if self.emissionprob_.shape != (self.n_components, self.n_features):
             raise ValueError(
                 f"emissionprob_ must have shape"
@@ -398,19 +398,6 @@ class GaussianHMM(_emissions.BaseGaussianHMM, BaseHMM):
         state.setdefault("covars_floor", None)
         super().__setstate__(state)
 
-    @property
-    def covars_(self):
-        """Return covars as a full matrix."""
-        return fill_covars(self._covars_, self.covariance_type,
-                           self.n_components, self.n_features)
-
-    @covars_.setter
-    def covars_(self, covars):
-        covars = np.array(covars, copy=True)
-        _utils._validate_covars(covars, self.covariance_type,
-                                self.n_components)
-        self._covars_ = covars
-
     def _init(self, X, lengths=None):
         super()._init(X, lengths)
 
@@ -432,7 +419,11 @@ class GaussianHMM(_emissions.BaseGaussianHMM, BaseHMM):
         super()._check()
 
         self.means_ = np.asarray(self.means_)
-        self.n_features = self.means_.shape[1]
+        # means_ gives the number of features on every check, not a stale
+        # n_features, so a model whose means_ and covars_ were both replaced
+        # for another number of features keeps working. The hook refuses a
+        # means_ of the wrong shape before anything is written.
+        self.n_features = self._n_features_from_emissions()
 
         if self.covariance_type not in COVARIANCE_TYPES:
             raise ValueError(
@@ -817,7 +808,7 @@ class GMMHMM(_emissions.BaseGMMHMM):
     def _check(self):
         super()._check()
         if not hasattr(self, "n_features"):
-            self.n_features = self.means_.shape[2]
+            self.n_features = self._get_n_features()
         nc = self.n_components
         nf = self.n_features
         nm = self.n_mix
@@ -980,6 +971,9 @@ class MultinomialHMM(_emissions.BaseMultinomialHMM):
     """
     Hidden Markov Model with multinomial emissions.
 
+    Each row of ``X`` holds the counts of the ``n_features`` symbols in
+    ``n_trials`` draws; for one symbol per sample, use `CategoricalHMM`.
+
     Attributes
     ----------
     n_features : int
@@ -1075,21 +1069,10 @@ class MultinomialHMM(_emissions.BaseMultinomialHMM):
                          implementation=implementation)
         self.n_trials = n_trials
 
-        _log.warning(
-            "MultinomialHMM has undergone major changes. "
-            "The previous version was implementing a CategoricalHMM "
-            "(a special case of MultinomialHMM). "
-            "This new implementation follows the standard definition for "
-            "a Multinomial distribution (e.g. as in "
-            "https://en.wikipedia.org/wiki/Multinomial_distribution). "
-            "See these issues for details:\n"
-            "https://github.com/hmmlearn/hmmlearn/issues/335\n"
-            "https://github.com/hmmlearn/hmmlearn/issues/340")
-
     def _init(self, X, lengths=None):
         super()._init(X, lengths=None)
         self.random_state = check_random_state(self.random_state)
-        if 'e' in self.init_params:
+        if self._needs_init("e", "emissionprob_"):
             self.emissionprob_ = self.random_state \
                 .rand(self.n_components, self.n_features)
             normalize(self.emissionprob_, axis=1)
@@ -1097,7 +1080,7 @@ class MultinomialHMM(_emissions.BaseMultinomialHMM):
     def _check(self):
         super()._check()
         self.emissionprob_ = np.atleast_2d(self.emissionprob_)
-        n_features = getattr(self, "n_features", self.emissionprob_.shape[1])
+        n_features = self._get_n_features()
         if self.emissionprob_.shape != (self.n_components, n_features):
             raise ValueError(
                 "emissionprob_ must have shape (n_components, n_features)")
@@ -1227,7 +1210,7 @@ class PoissonHMM(_emissions.BasePoissonHMM):
         super()._check()
 
         self.lambdas_ = np.atleast_2d(self.lambdas_)
-        n_features = getattr(self, "n_features", self.lambdas_.shape[1])
+        n_features = self._get_n_features()
         if self.lambdas_.shape != (self.n_components, n_features):
             raise ValueError(
                 "lambdas_ must have shape (n_components, n_features)")

@@ -1,6 +1,9 @@
+import logging
+
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose
+from sklearn.base import clone
 
 from hmmcraft import hmm
 
@@ -108,6 +111,54 @@ class TestMultinomialHMM:
         h._init(X, lengths)
 
         assert_log_likelihood_increasing(h, X, lengths, n_iter)
+
+    @pytest.mark.parametrize("init_params", ["", "st"])
+    def test_fit_starts_emissionprob_not_set(self, init_params):
+        """
+        ``fit`` starts an ``emissionprob_`` that is not set, as with ``"e"``
+        in ``init_params``: the same draws from ``random_state``.
+        """
+        X = self.new_hmm("log").sample(20, random_state=10)[0]
+
+        def started(init_params):
+            h = hmm.MultinomialHMM(
+                self.n_components, self.n_trials, n_iter=0,
+                init_params=init_params, random_state=0)
+            return h.fit(X)
+
+        h, reference = started(init_params), started("ste")
+        for name in ("startprob_", "transmat_", "emissionprob_"):
+            assert getattr(h, name).tobytes() == (
+                getattr(reference, name).tobytes())
+
+    def test_init_keeps_emissionprob_set(self):
+        """An ``emissionprob_`` set and not in ``init_params`` stays."""
+        h = self.new_hmm("log")
+        h.init_params = "st"
+        emissionprob = h.emissionprob_
+        expected = emissionprob.tobytes()
+        h._init(h.sample(20, random_state=10)[0])
+        assert h.emissionprob_ is emissionprob
+        assert h.emissionprob_.tobytes() == expected
+
+    def test_init_warns_emissionprob_overwritten(self, caplog):
+        """
+        ``"e"`` in ``init_params`` with ``emissionprob_`` set logs that it is
+        overwritten, as for every other model.
+        """
+        h = self.new_hmm("log")
+        X = h.sample(20, random_state=10)[0]
+        with caplog.at_level(logging.WARNING):
+            h._init(X)
+        assert any("'emissionprob_' attribute is set" in r.getMessage()
+                   for r in caplog.records)
+
+    def test_construct_and_clone_log_nothing(self, caplog):
+        """Building or cloning a ``MultinomialHMM`` logs nothing."""
+        with caplog.at_level(logging.WARNING):
+            h = hmm.MultinomialHMM(self.n_components, self.n_trials)
+            clone(h)
+        assert caplog.records == []
 
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
     def test__check_and_set_multinomial_n_features_n_trials(

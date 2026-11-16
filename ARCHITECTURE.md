@@ -58,9 +58,10 @@ emission classes derive from `BaseHMM` directly.
 
 `_AbstractHMM.fit(X, lengths)` is the only fit loop. `X` holds every
 sequence, one after another; `lengths` gives the length of each, a positive
-integer. `fit` first passes both to `_utils.split_X_lengths`, which raises
-`ValueError` for any other entry and for a total that is not the number of
-samples, so no start is computed from invalid `lengths`.
+integer. `fit` first refuses an `n_components` less than 1, then passes `X`
+and `lengths` to `_utils.split_X_lengths`, which raises `ValueError` for any
+other entry and for a total that is not the number of samples, so no start is
+computed from invalid `lengths`.
 
 ```mermaid
 flowchart TD
@@ -98,19 +99,28 @@ A model class supplies these hooks; the loop never changes per class:
 | Hook | Does |
 |---|---|
 | `_init` | sets the starting parameters named in `init_params`, and any that is not yet set (k-means for Gaussian means, for instance) |
-| `_check` | validates shapes and that probabilities sum to one |
+| `_check` | validates shapes (`GaussianHMM`'s `means_` among them) and that probabilities sum to one |
 | `_compute_likelihood` / `_compute_log_likelihood` | at least one implemented; the base class derives a missing one from the other |
 | `_initialize_sufficient_statistics` | the empty dictionary of statistics |
 | `_accumulate_sufficient_statistics` | adds one sequence's statistics |
 | `_do_mstep` | sets the parameters named in `params` from the statistics |
 | `_generate_sample_from_state` | draws one observation, for `sample` |
 | `_get_n_fit_scalars_per_param` | the free parameters, for the warning on too little data and for `aic` and `bic` |
+| `_n_features_from_emissions` | the number of features the emission parameter implies (`means_`, `means_posterior_`, `emissionprob_` or `lambdas_`) |
+
+`n_features` is set from `X` by `fit`, or from the emission parameter by
+`_check`. `_get_n_features` returns it, or before either has run the count the
+emission parameter implies; `aic`, `bic` and a spherical `covars_` read it
+there. `implementation` is read through
+`_by_implementation`, which raises `ValueError` for a value other than `"log"`
+or `"scaling"`.
 
 `score` runs the forward pass alone; `score_samples`, `predict_proba` and
 `decode(algorithm="map")` run the forward and backward passes; none of them
 fits. `decode` with
 `algorithm="viterbi"` calls the kernel's `viterbi`. `sample` is a Python loop
-over the transition matrix and `_generate_sample_from_state`.
+over the transition matrix and `_generate_sample_from_state`; it refuses fewer
+than one sample.
 
 ## The C++ kernel
 

@@ -33,6 +33,58 @@ class GaussianHMMTestMixin:
             h.transmat_ = self.transmat
             h._check()
 
+    @pytest.mark.parametrize("method", ["score", "decode", "sample", "fit"])
+    @pytest.mark.parametrize("means", [
+        lambda m: m[:, 0], lambda m: m[:2], lambda m: m[:1],
+        lambda m: m[None],
+    ], ids=["1-D", "too-few-rows", "one-row", "3-D"])
+    def test_means_of_wrong_shape_raise(self, means, method):
+        """
+        A ``means_`` not of shape ``(n_components, n_features)`` is refused,
+        whatever reads it, and the message names it.
+        """
+        h = hmm.GaussianHMM(self.n_components, self.covariance_type,
+                            init_params="")
+        h.startprob_ = self.startprob
+        h.transmat_ = self.transmat
+        h.means_ = means(self.means)
+        h.covars_ = self.covars
+        X = self.prng.randn(10, self.n_features)
+        call = {
+            "score": lambda: h.score(X),
+            "decode": lambda: h.decode(X),
+            "sample": lambda: h.sample(5),
+            "fit": lambda: h.fit(X),
+        }[method]
+        with pytest.raises(
+                ValueError,
+                match=r"means_ must have shape \(n_components, n_features\)"):
+            call()
+
+    def test_covars_before_n_features(self):
+        """
+        ``covars_`` before ``n_features`` is known: ``diag``, ``full`` and
+        ``tied`` need no feature count; ``spherical`` takes it from
+        ``means_``, and without ``means_`` the message names both.
+        """
+        def new(**attrs):
+            h = hmm.GaussianHMM(self.n_components, self.covariance_type)
+            h.covars_ = self.covars
+            for name, value in attrs.items():
+                setattr(h, name, value)
+            return h
+
+        expected = new(n_features=self.n_features).covars_
+        if self.covariance_type == "spherical":
+            assert new(means_=self.means).covars_.tobytes() == (
+                expected.tobytes())
+            with pytest.raises(ValueError, match="n_features"):
+                _ = new().covars_
+        else:
+            assert new().covars_.tobytes() == expected.tobytes()
+        h = hmm.GaussianHMM(self.n_components, self.covariance_type)
+        assert not hasattr(h, "covars_")
+
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
     def test_score_samples_and_decode(self, implementation):
         h = hmm.GaussianHMM(self.n_components, self.covariance_type,
@@ -267,8 +319,8 @@ class TestGaussianHMMWithSphericalCovars(GaussianHMMTestMixin):
         model.means_ = np.array([[3.0], [5.0]])
         model.covars_ = np.array([[[[4.0]]], [[[3.0]]]])
 
-        # If setting up an HMM to immediately sample from, the easiest thing is
-        # to just set n_features.  We could infer it from self.means_ perhaps.
+        # An n_features set by hand is used; without it, the count comes
+        # from means_ (test_covars_before_n_features).
         model.n_features = 1
         _ = model.covars_
         # Make sure covariance is of correct format - the spherical case would
@@ -418,3 +470,23 @@ def test_covariance_only_fit_is_the_weighted_covariance(
         expected = expected[:, None]
     assert_allclose(fitted, np.broadcast_to(expected, fitted.shape),
                     rtol=1e-10)
+
+
+def test_means_give_n_features_on_every_check():
+    """
+    ``means_`` gives the number of features on every check: a fitted model
+    whose ``means_`` and ``covars_`` are both replaced for another number of
+    features scores as a model built with them.
+    """
+    rs = np.random.RandomState(10)
+    X = rs.normal(size=(20, 2))
+    fitted = hmm.GaussianHMM(2, "diag", random_state=0).fit(X[:, :1])
+    built = hmm.GaussianHMM(2, "diag")
+    for model in (fitted, built):
+        model.startprob_ = np.array([0.6, 0.4])
+        model.transmat_ = np.array([[0.7, 0.3], [0.4, 0.6]])
+        model.means_ = np.array([[0.0, 0.0], [3.0, 3.0]])
+        model.covars_ = np.ones((2, 2))
+    assert fitted.n_features == 1
+    assert fitted.score(X) == built.score(X)
+    assert fitted.n_features == 2

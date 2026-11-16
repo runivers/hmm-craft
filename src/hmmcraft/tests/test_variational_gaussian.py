@@ -517,3 +517,30 @@ class TestDiagonal(_TestGaussian):
         model.scale_prior_ = [[2], [2], [2], [2]]
         model.scale_posterior_ =[[2], [2], [2], [2]]
         assert_log_likelihood_increasing(model, sequences, lengths, 10)
+
+
+def test_covars_before_n_features():
+    """
+    ``covars_`` of a ``diag`` model is read before ``n_features`` is known:
+    the full matrices need no feature count.
+    """
+    model = vhmm.VariationalGaussianHMM(2, "diag")
+    model.covars_ = np.array([[1.0, 2.0], [3.0, 4.0]])
+    assert not hasattr(model, "n_features")
+    expected = np.array([np.diag([1.0, 2.0]), np.diag([3.0, 4.0])])
+    assert model.covars_.tobytes() == expected.tobytes()
+
+
+@pytest.mark.parametrize("means", [None, np.zeros(2)], ids=["unset", "1-D"])
+def test_spherical_covars_name_means_posterior(means):
+    """
+    ``covars_`` of a ``spherical`` model with no feature count names
+    ``means_posterior_``, the attribute to set, when that is unset or of
+    the wrong shape.
+    """
+    model = vhmm.VariationalGaussianHMM(2, "spherical")
+    model.covars_ = np.array([1.0, 2.0])
+    if means is not None:
+        model.means_posterior_ = means
+    with pytest.raises(ValueError, match="means_posterior_"):
+        _ = model.covars_

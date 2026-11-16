@@ -98,6 +98,20 @@ class GMMHMMTestMixin:
         h = self.new_hmm(implementation)
         h._check()  # should not raise any errors
 
+    @pytest.mark.parametrize("means", [
+        lambda m: m[:, 0], lambda m: m[:, 0, 0],
+    ], ids=["2-D", "1-D"])
+    def test_means_of_wrong_ndim_raise(self, means):
+        """
+        Without ``n_features``, a ``means_`` that is not 3-D is refused with
+        a message naming it, not read for the number of features.
+        """
+        h = self.new_hmm("log")
+        h.means_ = means(h.means_)
+        assert not hasattr(h, "n_features")
+        with pytest.raises(ValueError, match="means_ must have shape"):
+            h._check()
+
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
     def test_sample(self, implementation):
         n_samples = 1000

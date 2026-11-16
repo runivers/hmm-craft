@@ -6,6 +6,8 @@ from scipy import special
 from hmmcraft import _hmmc, hmm, vhmm
 from hmmcraft.base import BaseHMM, ConvergenceMonitor
 
+from .test_sequence_lengths import new_hmm
+
 
 class TestMonitor:
     def test_converged_by_iterations(self):
@@ -151,6 +153,34 @@ class TestBaseAgainstWikipedia:
         _X0, Z0 = self.hmm.sample(n_samples=10)
         _X, Z = self.hmm.sample(n_samples=10, currstate=Z0[-1])
         assert len(Z0) == len(Z) == 10 and Z[0] == Z0[-1]
+
+    @pytest.mark.parametrize(
+        "n_samples", [0, -1, np.array(0), 0.5, False])
+    def test_sample_refuses_fewer_than_one(self, n_samples):
+        """``sample`` draws at least one sample."""
+        with pytest.raises(ValueError, match="n_samples must be at least 1"):
+            self.hmm.sample(n_samples)
+
+    def test_sample_float_keeps_type_error(self):
+        """A float count of at least 1 fails where it did before."""
+        with pytest.raises(TypeError):
+            self.hmm.sample(2.0)
+
+    @pytest.mark.parametrize("n_samples, length", [
+        (1, 1), (True, 1), (np.int64(1), 1), (np.array(1), 1),
+        (np.array(True), 1), (np.True_, 1),
+        (np.array(2, dtype=object), 2), (np.array(3), 3),
+    ])
+    def test_sample_count_as_given(self, n_samples, length):
+        """
+        A count of at least 1 draws what the integer draws, whatever type
+        holds it.
+        """
+        X, Z = self.hmm.sample(n_samples, random_state=0)
+        X_int, Z_int = self.hmm.sample(length, random_state=0)
+        assert len(X) == len(Z) == length
+        assert X.tobytes() == X_int.tobytes()
+        assert Z.tobytes() == Z_int.tobytes()
 
 
 class TestBaseConsistentWithGMM:
@@ -393,3 +423,155 @@ def test_state_occupancy_absent_after_a_fit_without_iterations():
     model.n_iter = 0
     model.fit(X, LENGTHS)
     assert not hasattr(model, "state_occupancy_")
+
+
+def _model_cases():
+    """(id, factory taking n_components, X) for every model class."""
+    rs = np.random.RandomState(10)
+    continuous = rs.normal(size=(20, 2)) + 3 * rs.randint(0, 2, (20, 1))
+    symbols = rs.randint(0, 3, (20, 1))
+    counts = rs.poisson(4, (20, 3))
+    multinomial = rs.multinomial(5, [0.2, 0.3, 0.5], size=20)
+    return [
+        ("GaussianHMM", lambda n: hmm.GaussianHMM(n, random_state=0),
+         continuous),
+        ("GMMHMM", lambda n: hmm.GMMHMM(n, random_state=0), continuous),
+        ("CategoricalHMM", lambda n: hmm.CategoricalHMM(n, random_state=0),
+         symbols),
+        ("MultinomialHMM",
+         lambda n: hmm.MultinomialHMM(n, 5, random_state=0), multinomial),
+        ("PoissonHMM", lambda n: hmm.PoissonHMM(n, random_state=0), counts),
+        ("VariationalCategoricalHMM",
+         lambda n: vhmm.VariationalCategoricalHMM(n, random_state=0),
+         symbols),
+        ("VariationalGaussianHMM",
+         lambda n: vhmm.VariationalGaussianHMM(n, random_state=0),
+         continuous),
+    ]
+
+
+MODEL_CASES = _model_cases()
+MODEL_IDS = [case[0] for case in MODEL_CASES]
+
+
+@pytest.mark.parametrize("n_components", [0, -1, 0.5])
+@pytest.mark.parametrize("case", MODEL_CASES, ids=MODEL_IDS)
+def test_fit_refuses_n_components_below_one(case, n_components):
+    """
+    ``fit`` refuses an ``n_components`` less than 1 before it starts, so
+    the model keeps what it held.
+    """
+    _, factory, X = case
+    model = factory(n_components)
+    before = dict(vars(model))
+    with pytest.raises(ValueError, match="n_components must be at least 1"):
+        model.fit(X)
+    assert vars(model).keys() == before.keys()
+    assert all(vars(model)[k] is v for k, v in before.items())
+
+
+@pytest.mark.parametrize("n_components", [1.5, 2.0, True])
+@pytest.mark.parametrize("case", MODEL_CASES, ids=MODEL_IDS)
+def test_fit_n_components_not_integer_keeps_type_error(case, n_components):
+    """A float or boolean number of states fails where it did before."""
+    _, factory, X = case
+    with pytest.raises(TypeError):
+        factory(n_components).fit(X)
+
+
+@pytest.mark.parametrize("case", MODEL_CASES, ids=MODEL_IDS)
+def test_one_state_model_fits(case):
+    """A model with one state fits and scores a finite log-likelihood."""
+    _, factory, X = case
+    assert np.isfinite(factory(1).fit(X).score(X))
+
+
+@pytest.mark.parametrize("name", ["CategoricalHMM", "PoissonHMM"])
+def test_n_components_as_zero_dim_array_fits(name):
+    """
+    An ``n_components`` given as a 0-d integer array fits as the integer
+    does.
+    """
+    _, factory, X = MODEL_CASES[MODEL_IDS.index(name)]
+    expected = factory(2).fit(X)
+    model = factory(np.array(2)).fit(X)
+    assert model.monitor_.history == expected.monitor_.history
+    assert model.transmat_.tobytes() == expected.transmat_.tobytes()
+
+
+@pytest.mark.parametrize("call", [
+    lambda h, X: h.fit(X),
+    lambda h, X: h.score(X),
+    lambda h, X: h.score_samples(X),
+    lambda h, X: h.predict_proba(X),
+    lambda h, X: h.decode(X, algorithm="map"),
+], ids=["fit", "score", "score_samples", "predict_proba", "decode-map"])
+def test_unknown_implementation_raises(call):
+    """Every path that reads ``implementation`` names it when it is wrong."""
+    h = new_hmm("foo")
+    with pytest.raises(ValueError, match="implementation"):
+        call(h, np.array([[0], [1]]))
+
+
+def test_unknown_implementation_raises_in_variational_fit():
+    """The variational models read ``implementation`` through one place."""
+    model = vhmm.VariationalGaussianHMM(2, implementation="foo",
+                                        random_state=0)
+    X = np.random.RandomState(10).normal(size=(20, 2))
+    with pytest.raises(ValueError, match="implementation"):
+        model.fit(X)
+
+
+def _hand_built(name):
+    """A two-state model with every parameter set and no ``n_features``."""
+    rs = np.random.RandomState(10)
+    if name == "GaussianHMM":
+        h = hmm.GaussianHMM(2, init_params="")
+        h.means_ = np.array([[0.0, 0.0], [3.0, 3.0]])
+        h.covars_ = np.ones((2, 2))
+        X = rs.normal(size=(20, 2))
+    elif name == "CategoricalHMM":
+        h = hmm.CategoricalHMM(2, init_params="")
+        h.emissionprob_ = np.array([[0.2, 0.3, 0.5], [0.5, 0.3, 0.2]])
+        X = rs.randint(0, 3, (20, 1))
+    elif name == "MultinomialHMM":
+        h = hmm.MultinomialHMM(2, 5, init_params="")
+        h.emissionprob_ = np.array([[0.2, 0.3, 0.5], [0.5, 0.3, 0.2]])
+        X = rs.multinomial(5, [0.2, 0.3, 0.5], size=20)
+    else:
+        h = hmm.PoissonHMM(2, init_params="")
+        h.lambdas_ = np.array([[1.0, 2.0], [4.0, 3.0]])
+        X = rs.poisson(3, (20, 2))
+    h.startprob_ = np.array([0.6, 0.4])
+    h.transmat_ = np.array([[0.7, 0.3], [0.4, 0.6]])
+    return h, X
+
+
+@pytest.mark.parametrize("criterion", ["aic", "bic"])
+@pytest.mark.parametrize("name",
+                         ["GaussianHMM", "CategoricalHMM", "PoissonHMM"])
+def test_aic_bic_before_n_features(name, criterion):
+    """
+    ``aic`` and ``bic`` of a model built by hand take the number of
+    features from its emission parameter: the value equals the one after a
+    ``score`` has set ``n_features``.
+    """
+    h, X = _hand_built(name)
+    before = getattr(h, criterion)(X)
+    h.score(X)
+    assert getattr(h, "n_features", None) is not None
+    assert before == getattr(h, criterion)(X)
+
+
+@pytest.mark.parametrize("name", ["MultinomialHMM", "PoissonHMM"])
+def test_n_features_none_is_taken_from_emissions(name):
+    """
+    An ``n_features`` set to ``None`` is read from the emission parameter,
+    as when it is not set: the same score, and the count is stored.
+    """
+    h, X = _hand_built(name)
+    expected = h.score(X)
+    h, X = _hand_built(name)
+    h.n_features = None
+    assert h.score(X) == expected
+    assert h.n_features == (3 if name == "MultinomialHMM" else 2)

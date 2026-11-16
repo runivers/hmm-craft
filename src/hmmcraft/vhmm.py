@@ -342,6 +342,8 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
     VariationalGaussianHMM(n_components=2)
     """
 
+    _means_name = "means_posterior_"
+
     def __init__(self, n_components=1, covariance_type="full",
                  startprob_prior=None, transmat_prior=None,
                  means_prior=None, beta_prior=None, dof_prior=None,
@@ -441,19 +443,6 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
         self.beta_prior = beta_prior
         self.dof_prior = dof_prior
         self.scale_prior = scale_prior
-
-    @property
-    def covars_(self):
-        """Return covars as a full matrix."""
-        return fill_covars(self._covars_, self.covariance_type,
-                           self.n_components, self.n_features)
-
-    @covars_.setter
-    def covars_(self, covars):
-        covars = np.array(covars, copy=True)
-        _utils._validate_covars(covars, self.covariance_type,
-                                self.n_components)
-        self._covars_ = covars
 
     @property
     def means_(self):

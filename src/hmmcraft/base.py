@@ -263,10 +263,8 @@ class _AbstractHMM(BaseEstimator):
         self._check()
 
         X = check_array(X)
-        impl = {
-            "scaling": self._score_scaling,
-            "log": self._score_log,
-        }[self.implementation]
+        impl = self._by_implementation(
+            log=self._score_log, scaling=self._score_scaling)
         return impl(
             X=X, lengths=lengths, compute_posteriors=compute_posteriors)
 
@@ -451,7 +449,7 @@ class _AbstractHMM(BaseEstimator):
         Parameters
         ----------
         n_samples : int
-            Number of samples to generate.
+            Number of samples to generate, at least 1.
         random_state : RandomState or an int seed
             A random number generator instance. If ``None``, the object's
             ``random_state`` is used.
@@ -474,6 +472,9 @@ class _AbstractHMM(BaseEstimator):
             X, Z = model.sample(n_samples=10, currstate=Z[-1])
         """
         check_is_fitted(self, "startprob_")
+        if n_samples < 1:
+            raise ValueError(
+                f"n_samples must be at least 1, got {n_samples!r}")
         self._check()
 
         if random_state is None:
@@ -521,6 +522,11 @@ class _AbstractHMM(BaseEstimator):
         self : object
             Returns self.
         """
+        # Refuse an invalid number of states before anything is computed
+        # or written.
+        if self.n_components < 1:
+            raise ValueError(
+                f"n_components must be at least 1, got {self.n_components!r}")
         X = check_array(X)
         # Refuse invalid lengths before the start uses them, whatever
         # n_iter is; the split itself happens in each E-step.
@@ -583,6 +589,55 @@ class _AbstractHMM(BaseEstimator):
                     "contains %r", name, code)
             return True
         return not hasattr(self, name)
+
+    def _by_implementation(self, *, log, scaling):
+        """
+        Return *log* or *scaling*, the one :attr:`implementation` names.
+
+        Raises
+        ------
+        ValueError
+            If :attr:`implementation` is neither "log" nor "scaling".
+        """
+        implementation = self.implementation
+        if isinstance(implementation, str):
+            if implementation == "log":
+                return log
+            if implementation == "scaling":
+                return scaling
+        raise ValueError(
+            f"implementation must be 'log' or 'scaling', "
+            f"got {implementation!r}")
+
+    def _get_n_features(self):
+        """
+        Return the number of features: :attr:`n_features` when it is set,
+        else the number the emission parameters imply.
+
+        Raises
+        ------
+        ValueError
+            If neither gives it.
+        """
+        n_features = getattr(self, "n_features", None)
+        if n_features is None:
+            n_features = self._n_features_from_emissions()
+        return n_features
+
+    def _n_features_from_emissions(self):
+        """
+        Return the number of features the emission parameters imply.
+
+        A model class reads it from its emission parameter; this default
+        knows none.
+
+        Raises
+        ------
+        ValueError
+            If the emission parameter is not set, or its shape does not
+            give the number of features.
+        """
+        raise ValueError("the number of features is unknown: set n_features")
 
     def _check_and_set_n_features(self, X):
         _, n_features = X.shape
@@ -746,10 +801,9 @@ class _AbstractHMM(BaseEstimator):
             forward and backward probabilities.
         """
 
-        impl = {
-            "scaling": self._accumulate_sufficient_statistics_scaling,
-            "log": self._accumulate_sufficient_statistics_log,
-        }[self.implementation]
+        impl = self._by_implementation(
+            log=self._accumulate_sufficient_statistics_log,
+            scaling=self._accumulate_sufficient_statistics_scaling)
 
         return impl(stats=stats, X=X, lattice=lattice, posteriors=posteriors,
                     fwdlattice=fwdlattice, bwdlattice=bwdlattice)
@@ -804,10 +858,8 @@ class _AbstractHMM(BaseEstimator):
         """
 
     def _do_estep(self, X, lengths):
-        impl = {
-            "scaling": self._fit_scaling,
-            "log": self._fit_log,
-        }[self.implementation]
+        impl = self._by_implementation(
+            log=self._fit_log, scaling=self._fit_scaling)
 
         stats = self._initialize_sufficient_statistics()
         self._estep_begin()
