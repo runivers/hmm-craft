@@ -4,8 +4,10 @@ hmm-craft Changelog
 The changes of hmm-craft, a fork of hmmlearn, come first. The entries from
 "Version 0.3.3" down are hmmlearn's own history, kept as written.
 
-Unreleased
-~~~~~~~~~~
+Version 0.4.1
+~~~~~~~~~~~~~
+
+Released on November 16, 2026.
 
 - Fixed: a ``GaussianHMM`` test with priors no longer fails for some random seeds.
 - Changed: ``full`` and ``tied`` fits with numpy older than 2.0.2 and AVX-512 no longer depend on
