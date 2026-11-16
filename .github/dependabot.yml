@@ -1,5 +1,6 @@
 # Proposes newer releases of the pinned GitHub Actions once a month, in one
-# pull request. Build requirements (ci/*.txt) are updated by hand.
+# pull request. The hashed build requirements under ci/ are updated by hand;
+# the weekly pins.yml names a stale one.
 version: 2
 updates:
   - package-ecosystem: github-actions
