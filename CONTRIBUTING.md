@@ -52,8 +52,8 @@ Report a security problem as described in `SECURITY.md`, not in an issue.
        ruff check .
        python3 -I scripts/check_ruff_baseline.py
 
-   Both must pass. Fixing a finding lowers a count in `ci/ruff_baseline.json`:
-   run the second command with `--update` and commit the file.
+   Both must pass. `ci/ruff_baseline.json` is empty, so the second check fails
+   on any finding of its rules: fix the finding; the baseline does not rise.
 4. Sign off every commit with `git commit -s`. The line `Signed-off-by: Your
    Name <you@example.com>` certifies the
    [Developer Certificate of Origin](https://developercertificate.org/): you

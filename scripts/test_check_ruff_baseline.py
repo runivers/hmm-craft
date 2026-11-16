@@ -196,10 +196,12 @@ def test_rule_list_is_explicit_codes_without_duplicates():
 
 
 def test_the_committed_baseline_is_well_formed():
-    """The repository's baseline reads as ``{file: {rule: positive int}}``."""
+    """The repository's baseline reads as ``{file: {rule: positive int}}``.
+
+    It may be empty.
+    """
     root = pathlib.Path(ratchet.__file__).resolve().parent.parent
     baseline = ratchet.read_baseline(root)
-    assert baseline
     for name, rules in baseline.items():
         assert not name.startswith("/"), name
         assert all(n > 0 and c in ratchet.RULES for c, n in rules.items())

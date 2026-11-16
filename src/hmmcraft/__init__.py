@@ -8,7 +8,6 @@ Hidden Markov Models.
 
 import importlib.metadata
 
-
 try:
     __version__ = importlib.metadata.version("hmm-craft")
 except ImportError:
