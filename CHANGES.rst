@@ -10,6 +10,8 @@ Unreleased
 - Fixed: a ``GaussianHMM`` test with priors no longer fails for some random seeds.
 - Changed: ``full`` and ``tied`` fits with numpy older than 2.0.2 and AVX-512 no longer depend on
   memory placement; their last bits can differ from 0.3.3's; see DIFFERENCES.md.
+- Documented: the shapes ``GaussianHMM`` accepts for its mean and covariance priors, per
+  covariance type; the docstring gave a shape that raises or acts on features.
 
 Version 0.4.0
 ~~~~~~~~~~~~~

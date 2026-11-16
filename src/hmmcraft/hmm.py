@@ -288,17 +288,50 @@ class GaussianHMM(_emissions.BaseGaussianHMM, BaseHMM):
             Parameters of the Dirichlet prior distribution for each row
             of the transition probabilities :attr:`transmat_`.
 
-        means_prior, means_weight : array, shape (n_components, ), optional
-            Mean and precision of the Normal prior distribtion for
-            :attr:`means_`.
+        means_prior : float or array, optional
+            Mean of the Normal prior distribution for :attr:`means_`.  A
+            number, or an array that broadcasts to
+            ``(n_components, n_features)``: shape ``(n_features, )`` gives
+            one value per feature for all states, a column of shape
+            ``(n_components, 1)`` one value per state.  An array of shape
+            ``(n_components, )`` is matched to the features, not to the
+            states.  Defaults to 0.
 
-        covars_prior, covars_weight : array, shape (n_components, ), optional
+        means_weight : float or array, optional
+            Weight of ``means_prior``: the prior mean counts as this many
+            observations of each state.  With "spherical" or "diag", a number
+            or an array of a shape ``means_prior`` accepts; with "full" or
+            "tied", a number only.  The default, 0, puts no prior on the
+            means.
+
+        covars_prior : float or array, optional
             Parameters of the prior distribution for the covariance matrix
-            :attr:`covars_`.
+            :attr:`covars_`, with ``covars_weight``.  It is added to the
+            posterior-weighted scatter of the observations around each
+            state's mean (for "tied", summed over the states) before the
+            division by the posterior mass.
+
+            * "spherical", "diag": a number, or an array of a shape
+              ``means_prior`` accepts.  For "spherical" the variances this
+              gives per feature are averaged.
+            * "full": a number, or a symmetric array of shape
+              ``(n_features, n_features)`` or
+              ``(n_components, n_features, n_features)``.
+            * "tied": a number, or a symmetric array of shape
+              ``(n_features, n_features)``.
+
+            With "full" or "tied", a number is added to every entry of the
+            matrix, not only to its diagonal.  Defaults to 1e-2.
 
             If :attr:`covariance_type` is "spherical" or "diag" the prior is
             the inverse gamma distribution, otherwise --- the inverse Wishart
             distribution.
+
+        covars_weight : float, optional
+            A number, not an array.  ``covars_weight - 1`` ("spherical",
+            "diag") or ``covars_weight - n_features`` ("full", "tied") is
+            added to the posterior mass the covariance update divides by,
+            when it is positive, so the default, 1, has no effect.
 
         algorithm : {"viterbi", "map"}, optional
             Decoder algorithm.
