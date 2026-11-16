@@ -56,9 +56,9 @@ class VariationalCategoricalHMM(BaseCategoricalHMM, VariationalBaseHMM):
 
     Examples
     --------
-    >>> from hmmcraft.hmm import VariationalCategoricalHMM
-    >>> VariationalCategoricalHMM(n_components=2)  #doctest: +ELLIPSIS
-    VariationalCategoricalHMM(algorithm='viterbi',...
+    >>> from hmmcraft.vhmm import VariationalCategoricalHMM
+    >>> VariationalCategoricalHMM(n_components=2)
+    VariationalCategoricalHMM(n_components=2)
     """
 
     def __init__(self, n_components=1,
@@ -337,9 +337,9 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
 
     Examples
     --------
-    >>> from hmmcraft.hmm import VariationalGaussianHMM
-    >>> VariationalGaussianHMM(n_components=2)  #doctest: +ELLIPSIS
-    VariationalGaussianHMM(algorithm='viterbi',...
+    >>> from hmmcraft.vhmm import VariationalGaussianHMM
+    >>> VariationalGaussianHMM(n_components=2)
+    VariationalGaussianHMM(n_components=2)
     """
 
     def __init__(self, n_components=1, covariance_type="full",
@@ -359,10 +359,10 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
             The type of covariance parameters to use:
 
             * "spherical" --- each state uses a single variance value that
-              applies to all features (default).
+              applies to all features.
             * "diag" --- each state uses a diagonal covariance matrix.
             * "full" --- each state uses a full (i.e. unrestricted)
-              covariance matrix.
+              covariance matrix (default).
             * "tied" --- all states use **the same** full covariance matrix.
 
         startprob_prior : array, shape (n_components, ), optional

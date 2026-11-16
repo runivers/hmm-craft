@@ -100,8 +100,8 @@ class CategoricalHMM(_emissions.BaseCategoricalHMM, BaseHMM):
     Examples
     --------
     >>> from hmmcraft.hmm import CategoricalHMM
-    >>> CategoricalHMM(n_components=2)  #doctest: +ELLIPSIS
-    CategoricalHMM(algorithm='viterbi',...
+    >>> CategoricalHMM(n_components=2)
+    CategoricalHMM(n_components=2)
     """
 
     def __init__(self, n_components=1, startprob_prior=1.0,
@@ -246,8 +246,8 @@ class GaussianHMM(_emissions.BaseGaussianHMM, BaseHMM):
     Examples
     --------
     >>> from hmmcraft.hmm import GaussianHMM
-    >>> GaussianHMM(n_components=2)  #doctest: +ELLIPSIS
-    GaussianHMM(algorithm='viterbi',...
+    >>> GaussianHMM(n_components=2)
+    GaussianHMM(n_components=2)
     """
 
     def __init__(self, n_components=1, covariance_type='diag',
@@ -269,8 +269,9 @@ class GaussianHMM(_emissions.BaseGaussianHMM, BaseHMM):
             The type of covariance parameters to use:
 
             * "spherical" --- each state uses a single variance value that
-              applies to all features (default).
-            * "diag" --- each state uses a diagonal covariance matrix.
+              applies to all features.
+            * "diag" --- each state uses a diagonal covariance matrix
+              (default).
             * "full" --- each state uses a full (i.e. unrestricted)
               covariance matrix.
             * "tied" --- all states use **the same** full covariance matrix.
