@@ -6,7 +6,7 @@ from sklearn.datasets import make_spd_matrix
 from sklearn.utils import check_random_state
 
 from hmmcraft.utils import normalize
-from hmmcraft.base import DECODER_ALGORITHMS
+from hmmcraft.base import DECODER_ALGORITHMS, VariationalBaseHMM
 
 # Make NumPy complain about underflows/overflows etc.
 np.seterr(all="warn")
@@ -42,9 +42,25 @@ def assert_log_likelihood_increasing(h, X, lengths, n_iter):
     h.n_iter = 1        # make sure we do a single iteration at a time
     h.init_params = ''  # and don't re-init params
     log_likelihoods = np.empty(n_iter, dtype=float)
+    lower_bounds = np.empty(n_iter, dtype=float)
     for i in range(n_iter):
         h.fit(X, lengths=lengths)
         log_likelihoods[i] = h.score(X, lengths=lengths)
+        # The bound at the parameters this iteration started from.
+        lower_bounds[i] = h.monitor_.history[-1]
+
+    if isinstance(h, VariationalBaseHMM):
+        # A variational fit raises its lower bound, not the log-likelihood:
+        # the bound must never fall (beyond rounding) and must rise.
+        diff = np.diff(lower_bounds)
+        value = np.finfo(float).eps ** (1 / 2)
+        assert diff.min() >= -value and diff.max() > value, (
+            f"Lower bound decreasing or not increasing:\n"
+            f"lower_bounds={lower_bounds}\n"
+            f"diff={diff}\n"
+            f"threshold={value}\n"
+        )
+        return
 
     # XXX the rounding is necessary because LL can oscillate in the
     #     fractional part, failing the tests.

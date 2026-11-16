@@ -4,6 +4,11 @@ hmm-craft Changelog
 The changes of hmm-craft, a fork of hmmlearn, come first. The entries from
 "Version 0.3.3" down are hmmlearn's own history, kept as written.
 
+Unreleased
+~~~~~~~~~~
+
+- Fixed: tests of the variational models no longer fail for some random seeds.
+
 Version 0.4.1
 ~~~~~~~~~~~~~
 
