@@ -1,10 +1,10 @@
 name: pins
 
-# Names each pin of ci/build_requirements.txt, ci/tool_requirements.txt and
-# ci/coverage_requirements.txt that is older than the newest final release on
-# PyPI, with the command that updates it (scripts/check_pins.py). Weekly and
-# by hand, never on a pull request: a release elsewhere must not turn a
-# contributor's pull request red.
+# Names each pin of ci/build_requirements.txt, ci/tool_requirements.txt,
+# ci/coverage_requirements.txt and ci/lint_requirements.txt that is older
+# than the newest final release on PyPI, with the command that updates it
+# (scripts/check_pins.py). Weekly and by hand, never on a pull request: a
+# release elsewhere must not turn a contributor's pull request red.
 # ci/floor_constraints.txt pins the declared minimums on purpose and is not
 # read. The script's unit tests run on every pull request, in ci.yml.
 

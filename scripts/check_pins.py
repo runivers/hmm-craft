@@ -3,9 +3,10 @@ Check that each hashed pin under ``ci/`` is the newest release on PyPI.
 
 usage: python3 -I scripts/check_pins.py [--root DIR]
 
-Reads ``ci/build_requirements.txt``, ``ci/tool_requirements.txt`` and
-``ci/coverage_requirements.txt`` under DIR (default: the repository) and
-compares each pin with the newest final, unyanked release that PyPI lists.
+Reads ``ci/build_requirements.txt``, ``ci/tool_requirements.txt``,
+``ci/coverage_requirements.txt`` and ``ci/lint_requirements.txt`` under DIR
+(default: the repository) and compares each pin with the newest final,
+unyanked release that PyPI lists.
 A pin that is older is named with the command that updates it.
 ``ci/floor_constraints.txt`` pins the declared minimums on purpose and is
 never read.
@@ -32,6 +33,7 @@ FILES = (
     "ci/build_requirements.txt",
     "ci/tool_requirements.txt",
     "ci/coverage_requirements.txt",
+    "ci/lint_requirements.txt",
 )
 PYPI = "https://pypi.org/pypi/{}/json"
 TIMEOUT = 30

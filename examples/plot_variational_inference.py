@@ -20,7 +20,6 @@ import scipy.stats
 from sklearn.utils import check_random_state
 
 from hmmcraft import hmm, vhmm
-import matplotlib
 
 
 def gaussian_hinton_diagram(startprob, transmat, means,

@@ -249,7 +249,7 @@ class TestFull(_TestGaussian):
         model.beta_posterior_ = [1, 1, 1, 1]
         model.dof_prior_ = [2., 2., 2., 2.]
         model.dof_posterior_ = [1, 1, 1, 1]
-        modelscale_prior_ = [[[2.]], [[2.]], [[2.]], [[2.]]]
+        model.scale_prior_ = [[[2.]], [[2.]], [[2.]], [[2.]]]
         model.scale_posterior_ = [[[2.]], [[2.]], [[2.]], [[2.]]]
         assert_log_likelihood_increasing(model, sequences, lengths, 10)
 

@@ -133,10 +133,10 @@ class TestMultinomialHMM:
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
     def test_compare_with_categorical_hmm(self, implementation):
         n_components = 2   # ['Rainy', 'Sunny']
-        n_features = 3     # ['walk', 'shop', 'clean']
         n_trials = 1
         startprob = np.array([0.6, 0.4])
         transmat = np.array([[0.7, 0.3], [0.4, 0.6]])
+        # Emissions: ['walk', 'shop', 'clean']
         emissionprob = np.array([[0.1, 0.4, 0.5],
                                  [0.6, 0.3, 0.1]])
         h1 = hmm.MultinomialHMM(

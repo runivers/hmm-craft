@@ -43,7 +43,17 @@ Report a security problem as described in `SECURITY.md`, not in an issue.
        python -m coverage run -m pytest --pyargs hmmcraft.tests doc
        python -m coverage report
 
-3. Keep every Python line under 80 characters, as upstream does.
+3. Keep every Python line under 80 characters, as upstream does. CI also runs
+   `ruff check .` (pyflakes and syntax errors) and a check that no other
+   style finding is added to a file. With the ruff version CI uses
+   (`pip install --require-hashes -r ci/lint_requirements.txt`; another
+   version can count differently):
+
+       ruff check .
+       python3 -I scripts/check_ruff_baseline.py
+
+   Both must pass. Fixing a finding lowers a count in `ci/ruff_baseline.json`:
+   run the second command with `--update` and commit the file.
 4. Sign off every commit with `git commit -s`. The line `Signed-off-by: Your
    Name <you@example.com>` certifies the
    [Developer Certificate of Origin](https://developercertificate.org/): you

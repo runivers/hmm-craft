@@ -30,6 +30,7 @@ TOOL_COMMAND = BUILD_COMMAND.replace("build_requirements", "tool_requirements")
 COVERAGE_COMMAND = BUILD_COMMAND.replace(
     "build_requirements", "coverage_requirements"
 )
+LINT_COMMAND = BUILD_COMMAND.replace("build_requirements", "lint_requirements")
 HASH = "    --hash=sha256:" + "0" * 64
 BUILD_TXT = ("alpha-pkg==1.0", "packaging==26.3")
 BUILD_IN = ("alpha-pkg==1.0",)
@@ -37,10 +38,13 @@ TOOL_TXT = ("build==1.6.1", "packaging==26.3")
 TOOL_IN = ("build==1.6.1",)
 COVERAGE_TXT = ("cov-pkg==2.0", "packaging==26.3")
 COVERAGE_IN = ("cov-pkg==2.0",)
+LINT_TXT = ("lint-pkg==3.0",)
+LINT_IN = ("lint-pkg==3.0",)
 CURRENT = {
     "alpha-pkg": ["1.0"],
     "build": ["1.6.1"],
     "cov-pkg": ["2.0"],
+    "lint-pkg": ["3.0"],
     "packaging": ["26.3"],
 }
 
@@ -72,6 +76,8 @@ def _tree(
     tool_in=TOOL_IN,
     coverage=COVERAGE_TXT,
     coverage_in=COVERAGE_IN,
+    lint=LINT_TXT,
+    lint_in=LINT_IN,
     header=True,
 ):
     """Write ``ci/`` under ``root`` and return ``root``."""
@@ -86,6 +92,11 @@ def _tree(
     (ci / "coverage_requirements.txt").write_text(
         _txt("coverage_requirements", coverage, header)
     )
+    (ci / "lint_requirements.txt").write_text(
+        _txt("lint_requirements", lint, header)
+    )
+    if lint_in is not None:
+        (ci / "lint_requirements.in").write_text("\n".join(lint_in) + "\n")
     if build_in is not None:
         (ci / "build_requirements.in").write_text("\n".join(build_in) + "\n")
     if tool_in is not None:
@@ -140,9 +151,9 @@ def test_current_pins_pass(tmp_path, capsys):
     """Pins equal to the newest final release pass, one line each."""
     status, out, _ = _run(tmp_path, capsys)
     assert status == 0, out
-    assert len(_lines(out, "ok")) == 6
+    assert len(_lines(out, "ok")) == 7
     assert not _lines(out, "stale")
-    assert "6 pin(s) checked: 0 stale, 0 held, 0 lookup failure(s)." in out
+    assert "7 pin(s) checked: 0 stale, 0 held, 0 lookup failure(s)." in out
 
 
 def test_stale_pin_names_file_package_pin_and_newest(tmp_path, capsys):
@@ -185,6 +196,17 @@ def test_stale_pin_in_the_coverage_lock_names_its_remedy(tmp_path, capsys):
         assert text in line
     assert "set cov-pkg==2.1 in ci/coverage_requirements.in" in out
     assert COVERAGE_COMMAND in out
+
+
+def test_stale_pin_in_the_lint_lock_names_its_remedy(tmp_path, capsys):
+    """A stale pin of the lint lock is named with its remedy."""
+    status, out, _ = _run(tmp_path, capsys, world={"lint-pkg": ["3.0", "3.1"]})
+    assert status == 1
+    (line,) = _lines(out, "stale")
+    for text in ("ci/lint_requirements.txt", "lint-pkg==3.0", "3.1"):
+        assert text in line
+    assert "set lint-pkg==3.1 in ci/lint_requirements.in" in out
+    assert LINT_COMMAND in out
 
 
 def test_stale_transitive_pin_remedy_adds_upgrade_package(tmp_path, capsys):
@@ -449,6 +471,7 @@ def test_files_exclude_the_floor_file():
         "ci/build_requirements.txt",
         "ci/tool_requirements.txt",
         "ci/coverage_requirements.txt",
+        "ci/lint_requirements.txt",
     )
 
 
@@ -461,7 +484,7 @@ def test_lookup_failure_has_its_own_message_and_status(tmp_path, capsys):
     assert "PyPI lookup failed: boom" in line
     assert "alpha-pkg==1.0" in line
     assert not _lines(out, "stale")
-    assert len(_lines(out, "ok")) == 5
+    assert len(_lines(out, "ok")) == 6
     assert "1 lookup failure(s)" in out
 
 
@@ -490,6 +513,7 @@ def test_package_in_several_files_is_asked_once(tmp_path, capsys):
         "alpha-pkg",
         "build",
         "cov-pkg",
+        "lint-pkg",
         "packaging",
     ]
 

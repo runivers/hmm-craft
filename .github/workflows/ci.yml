@@ -35,6 +35,17 @@ jobs:
       run: |
         shopt -s globstar &&
         ! grep -E '.{80}' -- **/*.py
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+      with:
+        python-version: "3.12"
+    - name: Install ruff from the hashed lock
+      run: |
+        python3 -m pip install --require-hashes --only-binary :all: \
+          -r ci/lint_requirements.txt
+    - name: ruff check (pyflakes and syntax errors)
+      run: ruff check .
+    - name: No style finding added (ruff, per-file counts)
+      run: python3 -I scripts/check_ruff_baseline.py
 
   sign-off:
     if: github.event_name == 'pull_request'
