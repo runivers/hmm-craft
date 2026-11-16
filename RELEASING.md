@@ -9,11 +9,11 @@ repository, through [trusted publishing](https://docs.pypi.org/trusted-publisher
 
 | Workflow | Runs on | Does |
 |---|---|---|
-| `ci.yml` | pull request, push to `main`, manual, weekly | The style rule (no Python line of 80 characters or more), then the suite and the bit-equality check against hmmlearn 0.3.3 in two cells: `floor` (the declared minimum versions) and `latest` (the newest wheels). On a pull request, `sign-off` checks that every commit except a merge carries a `Signed-off-by` line with its author's or its committer's address (`scripts/check_signoff.py`, the base branch's copy); Dependabot's commits are exempt. The weekly run shows a new release of NumPy, SciPy or scikit-learn that breaks the suite, or under which the fits differ from hmmlearn 0.3.3's; both packages are installed at the same versions, so a release that changes both fits alike is not seen. |
+| `ci.yml` | pull request, push to `main`, manual, weekly | The style rules (no Python line of 80 characters or more, `ruff check`, no style finding added), then the suite and the bit-equality check against hmmlearn 0.3.3 in two cells: `floor` (the declared minimum versions) and `latest` (the newest wheels). On a pull request, `sign-off` checks that every commit except a merge carries a `Signed-off-by` line with its author's or its committer's address (`scripts/check_signoff.py`, the base branch's copy); Dependabot's commits are exempt. The weekly run shows a new release of NumPy, SciPy or scikit-learn that breaks the suite, or under which the fits differ from hmmlearn 0.3.3's; both packages are installed at the same versions, so a release that changes both fits alike is not seen. |
 | `instrumented.yml` | pull request, push to `main`, manual, weekly | Two jobs, both with the newest NumPy, SciPy and scikit-learn wheels; nothing they build is published. `coverage` builds the C++ kernel with `--coverage` and without optimisation, runs the suite under coverage.py, and reports line and branch coverage of the Python package (tests left out) and of `ext/` (gcovr). It fails when the Python total or the kernel's line coverage is below its floor in `pyproject.toml` (`[tool.coverage.report]`, `[tool.gcovr]`); the kernel's branch coverage has no floor. A floor is raised by hand and lowered only in a commit that says why. Reports: the log and the run's `coverage-reports` artifact. `sanitizers` builds the kernel with AddressSanitizer and UndefinedBehaviorSanitizer and runs the suite; an invalid memory access or undefined behaviour in the kernel that the sanitizers detect stops the suite and fails the job, with the report in the log. Floating-point checks are off: the kernel takes the logarithm of zero on purpose. |
 | `wheels.yml` | pull request, manual, weekly, and called by `release.yml` | cibuildwheel builds the wheels and tests each one from the installed wheel; one job builds the sdist, installs it and runs the suite. A pull request builds the Linux x86_64 wheels only; the other runs build all 20. |
 | `release.yml` | a pushed tag `v<version>` | Calls `wheels.yml` for everything, then publishes after the maintainer approves the `pypi` environment. |
-| `pins.yml` | manual, weekly | `scripts/check_pins.py` compares each pin of `ci/build_requirements.txt`, `ci/tool_requirements.txt` and `ci/coverage_requirements.txt` with the newest final, unyanked release on PyPI and fails naming each older pin, with the command that updates it; `ci/floor_constraints.txt` is not read. It does not run on a pull request, which a release elsewhere must not turn red; its unit tests run in `ci.yml`. |
+| `pins.yml` | manual, weekly | `scripts/check_pins.py` compares each pin of `ci/build_requirements.txt`, `ci/tool_requirements.txt`, `ci/coverage_requirements.txt` and `ci/lint_requirements.txt` with the newest final, unyanked release on PyPI and fails naming each older pin, with the command that updates it; `ci/floor_constraints.txt` is not read. It does not run on a pull request, which a release elsewhere must not turn red; its unit tests run in `ci.yml`. |
 
 The wheels are CPython 3.12 to 3.15 (GIL builds) for Linux x86_64 and aarch64
 (`manylinux_2_28`, built on native runners), macOS arm64 and x86_64, and Windows
@@ -33,7 +33,8 @@ on a machine with Python 3.12 and a network connection.
   and installed before every build, which then runs without build isolation.
   `ci/tool_requirements.txt` pins `build`, which makes the sdist.
   `ci/coverage_requirements.txt` pins coverage.py and gcovr for the `coverage`
-  job; neither the release build nor the sdist job installs it. All three are
+  job; neither the release build nor the sdist job installs it.
+  `ci/lint_requirements.txt` pins ruff for the `style` job. All four are
   regenerated from their `.in` files with the command in their first lines.
   The command's `--no-header` drops those lines, so they are put back by hand.
   It keeps the versions already in the file, so a pin that is not in the `.in`
@@ -44,6 +45,19 @@ on a machine with Python 3.12 and a network connection.
   while a newer release exists above it (`HOLDS` in `scripts/check_pins.py`,
   each with its reason). A hold fails the check once the capping pin moves
   or the held pin reaches the cap, until its cap is read again.
+- **Style checks** run in `ci.yml`'s `style` job with the pinned ruff.
+  `ruff check .` reads `[tool.ruff]` in `pyproject.toml` (pyflakes and syntax
+  errors, which must stay at zero). `scripts/check_ruff_baseline.py` counts the
+  findings of a wider, fixed list of rules (the ones ruff 0.17.5 selects by
+  default, written out in the script) per file and rule, and compares them
+  with `ci/ruff_baseline.json`: a count that rises, or a new file or rule,
+  fails; a count that falls fails too until the baseline is lowered. After
+  fixing findings, lower it with
+  `python3 -I scripts/check_ruff_baseline.py --update`, which refuses while
+  any count is above the baseline, and commit the file. The list does not
+  follow ruff's defaults, so a ruff upgrade adds no rule; it can still find
+  more under a listed rule. The baseline never rises: the commit that moves
+  to a newer ruff fixes what it finds, or the pin stays.
 - **The floor** is `ci/floor_constraints.txt`. The `floor` cell installs exactly
   those versions from binary wheels and checks that `numpy`, `scipy` and
   `scikit-learn` are the declared minimums. `scripts/test_floor_constraints.py`

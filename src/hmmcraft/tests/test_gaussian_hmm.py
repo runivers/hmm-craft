@@ -270,7 +270,7 @@ class TestGaussianHMMWithSphericalCovars(GaussianHMMTestMixin):
         # If setting up an HMM to immediately sample from, the easiest thing is
         # to just set n_features.  We could infer it from self.means_ perhaps.
         model.n_features = 1
-        covars = model.covars_
+        _ = model.covars_
         # Make sure covariance is of correct format - the spherical case would
         # throw an exception here.
         model.sample(1000)
