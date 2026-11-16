@@ -122,6 +122,25 @@ class TestCategoricalHMM:
             getattr(h, method)(X)
 
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
+    def test_fit_after_a_score_refuses_a_wider_emissionprob_as_fit_alone(
+            self, implementation):
+        """
+        A ``score`` leaves nothing for a later ``fit``: without
+        ``n_features``, a kept ``emissionprob_`` with more symbols than
+        ``X`` shows is refused by ``fit``, with or without a ``score``
+        before it.
+        """
+        X = np.array([[0, 1, 1, 0, 1]]).T
+        for score_first in (False, True):
+            h = self.new_hmm(implementation)
+            h.init_params = ""
+            if score_first:
+                h.score(X)
+            with pytest.raises(ValueError,
+                               match=r"emissionprob_ must have shape\(2, 2\)"):
+                h.fit(X)
+
+    @pytest.mark.parametrize("implementation", ["scaling", "log"])
     def test_score_samples(self, implementation):
         idx = np.repeat(np.arange(self.n_components), 10)
         n_samples = len(idx)

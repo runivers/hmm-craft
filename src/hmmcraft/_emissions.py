@@ -406,7 +406,7 @@ class BaseGMMHMM(BaseHMM):
         else:
             covs = self.covars_[:, i_gauss]
             covs = fill_covars(covs, self.covariance_type,
-                               self.n_components, self.n_features)
+                               self.n_components, self._get_n_features())
         return random_state.multivariate_normal(
             self.means_[state, i_gauss], covs[state]
         )

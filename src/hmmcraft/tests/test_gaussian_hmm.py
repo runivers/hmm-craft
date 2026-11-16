@@ -583,7 +583,8 @@ def test_means_give_n_features_on_every_check():
     """
     ``means_`` gives the number of features on every check: a fitted model
     whose ``means_`` and ``covars_`` are both replaced for another number of
-    features scores as a model built with them.
+    features scores as a model built with them, and ``aic`` is the same
+    before and after a ``score``, which leaves ``n_features`` as it was.
     """
     rs = np.random.RandomState(10)
     X = rs.normal(size=(20, 2))
@@ -595,8 +596,73 @@ def test_means_give_n_features_on_every_check():
         model.means_ = np.array([[0.0, 0.0], [3.0, 3.0]])
         model.covars_ = np.ones((2, 2))
     assert fitted.n_features == 1
+    aic = fitted.aic(X)
     assert fitted.score(X) == built.score(X)
-    assert fitted.n_features == 2
+    assert fitted.n_features == 1
+    assert fitted.aic(X) == aic
+
+
+STALE_COVARS = {
+    "spherical": np.array([1.5, 2.0]),
+    "diag": np.ones((2, 2)),
+    "full": np.array([np.eye(2), np.eye(2)]),
+    "tied": np.eye(2),
+}
+
+
+def _stale(covariance_type):
+    """
+    A model fitted on one feature whose parameters were then replaced for
+    two, and ``X`` with two features.
+    """
+    X = np.random.RandomState(10).normal(size=(20, 2))
+    model = hmm.GaussianHMM(2, covariance_type, random_state=0)
+    model.fit(X[:, :1])
+    model.startprob_ = np.array([0.6, 0.4])
+    model.transmat_ = np.array([[0.7, 0.3], [0.4, 0.6]])
+    model.means_ = np.array([[0.0, 0.0], [3.0, 3.0]])
+    model.covars_ = STALE_COVARS[covariance_type]
+    return model, X
+
+
+@pytest.mark.parametrize("read", [
+    lambda h, X: h.aic(X),
+    lambda h, X: h.bic(X),
+    lambda h, X: h.covars_.tobytes(),
+], ids=["aic", "bic", "covars_"])
+@pytest.mark.parametrize("covariance_type", list(STALE_COVARS))
+def test_means_give_n_features_before_any_prediction(covariance_type, read):
+    """
+    Once ``means_`` is set it gives the number of features, not an
+    ``n_features`` left from an earlier fit: ``aic``, ``bic`` and
+    ``covars_`` are the same before any prediction and after one, and
+    ``sample`` draws as many features as ``means_`` has.
+    """
+    model, X = _stale(covariance_type)
+    before = read(model, X)
+    model.score(X)
+    assert read(model, X) == before
+    model, X = _stale(covariance_type)
+    assert model.sample(3, random_state=0)[0].shape == (3, 2)
+
+
+@pytest.mark.parametrize("covariance_type", list(STALE_COVARS))
+def test_fit_after_a_score_refuses_a_stale_width_as_fit_alone(
+        covariance_type):
+    """
+    A ``score`` leaves nothing for a later ``fit``: a model whose
+    ``means_`` and ``covars_`` were replaced for another number of
+    features than it was fitted on refuses ``X`` of the new width in
+    ``fit``, with or without a ``score`` before it.
+    """
+    for score_first in (False, True):
+        model, X = _stale(covariance_type)
+        model.init_params = ""
+        if score_first:
+            model.score(X)
+        with pytest.raises(ValueError,
+                           match="Unexpected number of dimensions"):
+            model.fit(X)
 
 
 def test_X_check_reads_means_not_a_stale_n_features():
@@ -662,3 +728,26 @@ def test_fit_refuses_overflowing_start_covariance(covariance_type):
     with np.errstate(all="ignore"), \
             pytest.raises(ValueError, match="covars_"):
         h.fit(X)
+
+
+@pytest.mark.parametrize("given", [
+    lambda h, X: h.fit(X).set_params(n_components=3),
+    lambda h, X: setattr(h, "means_", np.zeros(3)) or h,
+], ids=["fitted-then-3-states", "1-D-means_"])
+@pytest.mark.parametrize("covariance_type", list(STALE_COVARS))
+def test_fit_starting_means_replaces_means_of_another_shape(
+        covariance_type, given):
+    """
+    With ``"m"`` in ``init_params``, ``fit`` replaces a ``means_`` whose
+    shape does not fit the model, as after a change of ``n_components``,
+    and fits as a model without it.
+    """
+    X = np.random.RandomState(10).normal(size=(40, 2))
+    model = given(hmm.GaussianHMM(2, covariance_type, random_state=0,
+                                  n_iter=5), X)
+    expected = hmm.GaussianHMM(model.n_components, covariance_type,
+                               random_state=0, n_iter=5).fit(X)
+    model.fit(X)
+    assert model.monitor_.history == expected.monitor_.history
+    assert model.means_.tobytes() == expected.means_.tobytes()
+    assert model._covars_.tobytes() == expected._covars_.tobytes()

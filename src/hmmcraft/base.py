@@ -140,6 +140,43 @@ class ConvergenceMonitor:
                  self.history[-1] - self.history[-2] < self.tol))
 
 
+class _ConvertedAttribute:
+    """
+    A model parameter converted to an array when it is assigned.
+
+    The value is kept in the instance's ``__dict__`` under the attribute's
+    own name, as a plain attribute would be, so ``vars(model)`` and a
+    pickle hold what they held before. Reading it returns the stored
+    object; an attribute that was never assigned is missing, for
+    ``hasattr`` too.
+    """
+
+    def __init__(self, convert):
+        self._convert = convert
+
+    def __set_name__(self, owner, name):
+        self._name = name
+
+    def __get__(self, instance, owner=None):
+        if instance is None:
+            return self
+        try:
+            return instance.__dict__[self._name]
+        except KeyError:
+            raise AttributeError(
+                f"{type(instance).__name__!r} object has no attribute "
+                f"{self._name!r}") from None
+
+    def __set__(self, instance, value):
+        instance.__dict__[self._name] = self._convert(value)
+
+    def __delete__(self, instance):
+        try:
+            del instance.__dict__[self._name]
+        except KeyError:
+            raise AttributeError(self._name) from None
+
+
 class _AbstractHMM(BaseEstimator):
     """
     Base class for Hidden Markov Models learned via Expectation-Maximization
@@ -193,6 +230,16 @@ class _AbstractHMM(BaseEstimator):
         self.verbose = verbose
         self.implementation = implementation
         self.random_state = random_state
+
+    def __setstate__(self, state):
+        super().__setstate__(state)
+        # A pickle holds each parameter as it was stored; one written
+        # before parameters were converted on assignment can hold a list.
+        # Assign it again, so that it is converted as when it is set.
+        for name, value in list(vars(self).items()):
+            if isinstance(getattr(type(self), name, None),
+                          _ConvertedAttribute):
+                setattr(self, name, value)
 
     def score_samples(self, X, lengths=None):
         """
@@ -581,6 +628,7 @@ class _AbstractHMM(BaseEstimator):
         vars(self).pop("state_occupancy_", None)
         self._init(X, lengths)
         self._check()
+        self._store_checked()
         # X against the parameters _check has validated, before the first
         # E-step reads it.
         self._check_X(X)
@@ -768,7 +816,10 @@ class _AbstractHMM(BaseEstimator):
 
     def _check(self):
         """
-        Validate model parameters prior to fitting.
+        Validate model parameters before fitting or predicting.
+
+        :meth:`fit` and every prediction call it; in the models fitted by
+        expectation-maximization it reads the model and writes nothing.
 
         Raises
         ------
@@ -778,6 +829,14 @@ class _AbstractHMM(BaseEstimator):
             do not sum to 1, or if a parameter is not finite.
         """
         raise NotImplementedError("Must be overridden in subclass")
+
+    def _store_checked(self):
+        """
+        Store what follows from the parameters :meth:`_check` has just
+        validated; called by :meth:`fit` only, never on a prediction.
+
+        The default stores nothing.
+        """
 
     def _check_X(self, X):
         """
@@ -1082,6 +1141,9 @@ class BaseHMM(_AbstractHMM):
         self.transmat_prior = transmat_prior
         self.monitor_ = ConvergenceMonitor(self.tol, self.n_iter, self.verbose)
 
+    startprob_ = _ConvertedAttribute(np.asarray)
+    transmat_ = _ConvertedAttribute(np.asarray)
+
     def get_stationary_distribution(self):
         """Compute the stationary distribution of states."""
         # The stationary distribution is proportional to the left-eigenvector
@@ -1168,7 +1230,8 @@ class BaseHMM(_AbstractHMM):
 
     def _check(self):
         """
-        Validate model parameters prior to fitting.
+        Validate model parameters before fitting or predicting; reads the
+        model and writes nothing.
 
         Raises
         ------
@@ -1177,12 +1240,10 @@ class BaseHMM(_AbstractHMM):
             negative or the rows of :attr:`startprob_` or :attr:`transmat_`
             do not sum to 1, or if a parameter is not finite.
         """
-        self.startprob_ = np.asarray(self.startprob_)
         if len(self.startprob_) != self.n_components:
             raise ValueError("startprob_ must have length n_components")
         self._check_sum_1("startprob_")
 
-        self.transmat_ = np.asarray(self.transmat_)
         if self.transmat_.shape != (self.n_components, self.n_components):
             raise ValueError(
                 "transmat_ must have shape (n_components, n_components)")

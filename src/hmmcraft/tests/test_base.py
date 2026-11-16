@@ -5,7 +5,7 @@ import pytest
 from numpy.testing import assert_allclose
 from scipy import special
 
-from hmmcraft import _hmmc, hmm, vhmm
+from hmmcraft import _hmmc, base, hmm, vhmm
 from hmmcraft.base import BaseHMM, ConvergenceMonitor
 
 from .test_sequence_lengths import new_hmm
@@ -603,6 +603,13 @@ def _hand_built(name):
         h.means_ = np.array([[0.0, 0.0], [3.0, 3.0]])
         h.covars_ = np.ones((2, 2))
         X = rs.normal(size=(20, 2))
+    elif name == "GMMHMM":
+        h = hmm.GMMHMM(2, n_mix=2, covariance_type="diag", init_params="")
+        h.weights_ = np.array([[0.5, 0.5], [0.3, 0.7]])
+        h.means_ = np.array([[[0.0, 0.0], [1.0, 1.0]],
+                             [[3.0, 3.0], [4.0, 4.0]]])
+        h.covars_ = np.ones((2, 2, 2))
+        X = rs.normal(size=(20, 2))
     elif name == "CategoricalHMM":
         h = hmm.CategoricalHMM(2, init_params="")
         h.emissionprob_ = np.array([[0.2, 0.3, 0.5], [0.5, 0.3, 0.2]])
@@ -627,27 +634,28 @@ def test_aic_bic_before_n_features(name, criterion):
     """
     ``aic`` and ``bic`` of a model built by hand take the number of
     features from its emission parameter: the value equals the one after a
-    ``score`` has set ``n_features``.
+    ``score``, and the ``score`` leaves ``n_features`` unset.
     """
     h, X = _hand_built(name)
     before = getattr(h, criterion)(X)
     h.score(X)
-    assert getattr(h, "n_features", None) is not None
+    assert getattr(h, "n_features", None) is None
     assert before == getattr(h, criterion)(X)
 
 
-@pytest.mark.parametrize("name", ["MultinomialHMM", "PoissonHMM"])
+@pytest.mark.parametrize("name", ["MultinomialHMM", "PoissonHMM", "GMMHMM"])
 def test_n_features_none_is_taken_from_emissions(name):
     """
     An ``n_features`` set to ``None`` is read from the emission parameter,
-    as when it is not set: the same score, and the count is stored.
+    as when it is not set: the same score, and ``n_features`` stays
+    ``None``.
     """
     h, X = _hand_built(name)
     expected = h.score(X)
     h, X = _hand_built(name)
     h.n_features = None
     assert h.score(X) == expected
-    assert h.n_features == (3 if name == "MultinomialHMM" else 2)
+    assert h.n_features is None
 
 
 def _refused_X(name, X):
@@ -668,7 +676,6 @@ def test_X_check_writes_nothing(case):
     """
     name, factory, X = case
     model = factory(2).fit(X)
-    model._check()
     before = dict(vars(model))
     arrays = {k: v.tobytes() for k, v in before.items()
               if isinstance(v, np.ndarray)}
@@ -678,3 +685,334 @@ def test_X_check_writes_nothing(case):
     assert vars(model).keys() == before.keys()
     assert all(vars(model)[k] is v for k, v in before.items())
     assert all(vars(model)[k].tobytes() == b for k, b in arrays.items())
+
+
+EM_NAMES = ["GaussianHMM", "GMMHMM", "CategoricalHMM", "MultinomialHMM",
+            "PoissonHMM"]
+# The parameters each model converts to an array when they are assigned.
+CONVERTED = {
+    "GaussianHMM": ["startprob_", "transmat_", "means_"],
+    "GMMHMM": ["startprob_", "transmat_", "weights_", "means_", "covars_"],
+    "CategoricalHMM": ["startprob_", "transmat_", "emissionprob_"],
+    "MultinomialHMM": ["startprob_", "transmat_", "emissionprob_"],
+    "PoissonHMM": ["startprob_", "transmat_", "lambdas_"],
+}
+CONVERTED_CASES = [(name, attr) for name in EM_NAMES
+                   for attr in CONVERTED[name]]
+CONVERTED_IDS = [f"{name}-{attr}" for name, attr in CONVERTED_CASES]
+PREDICTIONS = {
+    "score": lambda h, X: h.score(X),
+    "score_samples": lambda h, X: h.score_samples(X),
+    "decode-viterbi": lambda h, X: h.decode(X, algorithm="viterbi"),
+    "decode-map": lambda h, X: h.decode(X, algorithm="map"),
+    "predict": lambda h, X: h.predict(X),
+    "predict_proba": lambda h, X: h.predict_proba(X),
+    "sample": lambda h, X: h.sample(5, random_state=0),
+    "aic": lambda h, X: h.aic(X),
+    "bic": lambda h, X: h.bic(X),
+}
+
+
+def _built(name, build):
+    """
+    A two-state model built by hand from arrays or from lists, or fitted,
+    and an ``X`` it takes.
+    """
+    if build == "fitted":
+        _, factory, X = MODEL_CASES[MODEL_IDS.index(name)]
+        return factory(2).fit(X), X
+    h, X = _hand_built(name)
+    if build == "lists":
+        for attr in CONVERTED[name]:
+            setattr(h, attr, getattr(h, attr).tolist())
+    return h, X
+
+
+def _record_assignments(model):
+    """
+    Give *model* a subclass of its class that records the name of every
+    attribute assigned or deleted; return the list it records into.
+    """
+    names = []
+    cls = type(model)
+
+    def __setattr__(self, name, value):
+        names.append(name)
+        super(recording, self).__setattr__(name, value)
+
+    def __delattr__(self, name):
+        names.append(name)
+        super(recording, self).__delattr__(name)
+
+    recording = type(cls.__name__, (cls,), {
+        "__setattr__": __setattr__, "__delattr__": __delattr__})
+    model.__class__ = recording
+    return names
+
+
+def _snapshot(model):
+    """The model's attributes, and the bytes of those that are arrays."""
+    state = dict(vars(model))
+    return state, {k: v.tobytes() for k, v in state.items()
+                   if isinstance(v, np.ndarray)}
+
+
+def _assert_unchanged(model, snapshot):
+    """Same names in the same order, same objects, same bytes."""
+    state, arrays = snapshot
+    assert list(vars(model)) == list(state)
+    assert all(vars(model)[k] is v for k, v in state.items())
+    assert all(vars(model)[k].tobytes() == b for k, b in arrays.items())
+
+
+def _as_bytes(result):
+    """A prediction's result as bytes, with its dtype and shape."""
+    if isinstance(result, tuple):
+        return tuple(_as_bytes(r) for r in result)
+    result = np.asarray(result)
+    return result.dtype.str, result.shape, result.tobytes()
+
+
+@pytest.mark.parametrize("call", PREDICTIONS.values(), ids=PREDICTIONS.keys())
+@pytest.mark.parametrize("build", ["arrays", "lists", "fitted"])
+@pytest.mark.parametrize("name", EM_NAMES)
+def test_prediction_assigns_nothing(name, build, call):
+    """
+    A prediction reads the model: it assigns and deletes no attribute,
+    and every attribute keeps its object, its place and its bytes, on a
+    model built by hand from arrays or from lists and on a fitted one.
+    """
+    h, X = _built(name, build)
+    snapshot = _snapshot(h)
+    assigned = _record_assignments(h)
+    call(h, X)
+    assert assigned == []
+    _assert_unchanged(h, snapshot)
+
+
+REFUSED_PARAMETERS = [
+    ("GaussianHMM", "startprob_", [1.2, -0.2],
+     "startprob_ must not have negative entries"),
+    ("GaussianHMM", "transmat_", [[0.7, 0.3], [1.2, -0.2]],
+     "transmat_ must not have negative entries"),
+    ("GaussianHMM", "means_", [[0.0, np.nan], [3.0, 3.0]],
+     "means_ must contain only finite values"),
+    ("GMMHMM", "weights_", [[0.5, 0.6], [0.3, 0.7]],
+     "weights_ rows must sum to 1"),
+    ("GMMHMM", "means_", [[0.0, 0.0], [3.0, 3.0]],
+     r"means_ must have shape \(n_components, n_mix, n_features\)"),
+    ("CategoricalHMM", "emissionprob_", [[1.2, -0.1, -0.1], [0.5, 0.3, 0.2]],
+     "emissionprob_ must not have negative entries"),
+    ("CategoricalHMM", "emissionprob_", [[np.nan, 0.5, 0.5], [0.5, 0.3, 0.2]],
+     "emissionprob_ rows must sum to 1"),
+    ("MultinomialHMM", "emissionprob_", [[1.2, -0.1, -0.1], [0.5, 0.3, 0.2]],
+     "emissionprob_ must not have negative entries"),
+    ("MultinomialHMM", "emissionprob_", [[np.nan, 0.5, 0.5], [0.5, 0.3, 0.2]],
+     "emissionprob_ rows must sum to 1"),
+    ("MultinomialHMM", "emissionprob_", [[0.3, 0.3, 0.3], [0.5, 0.3, 0.2]],
+     "emissionprob_ rows must sum to 1"),
+    ("PoissonHMM", "lambdas_", [[1.0, -2.0], [4.0, 3.0]],
+     "lambdas_ must not have negative entries"),
+    ("PoissonHMM", "lambdas_", [[1.0, np.nan], [4.0, 3.0]],
+     "lambdas_ must contain only finite values"),
+    ("PoissonHMM", "lambdas_", [[1.0, np.inf], [4.0, 3.0]],
+     "lambdas_ must contain only finite values"),
+]
+REFUSED_IDS = ["GaussianHMM-negative-startprob_",
+               "GaussianHMM-negative-transmat_", "GaussianHMM-nan-means_",
+               "GMMHMM-unnormalized-weights_", "GMMHMM-2-D-means_",
+               "CategoricalHMM-negative-emissionprob_",
+               "CategoricalHMM-nan-emissionprob_",
+               "MultinomialHMM-negative-emissionprob_",
+               "MultinomialHMM-nan-emissionprob_",
+               "MultinomialHMM-unnormalized-emissionprob_",
+               "PoissonHMM-negative-lambdas_", "PoissonHMM-nan-lambdas_",
+               "PoissonHMM-inf-lambdas_"]
+
+
+@pytest.mark.parametrize("name, attr, value, match", REFUSED_PARAMETERS,
+                         ids=REFUSED_IDS)
+@pytest.mark.parametrize("method", ["score", "decode", "sample"])
+def test_refused_prediction_assigns_nothing(name, attr, value, match, method):
+    """
+    A prediction refuses an invalid parameter, naming it, and raises before
+    it has assigned anything.
+    """
+    h, X = _hand_built(name)
+    setattr(h, attr, np.array(value))
+    snapshot = _snapshot(h)
+    assigned = _record_assignments(h)
+    with pytest.raises(ValueError, match=match):
+        if method == "sample":
+            h.sample(5, random_state=0)
+        else:
+            getattr(h, method)(X)
+    assert assigned == []
+    _assert_unchanged(h, snapshot)
+
+
+@pytest.mark.parametrize("name, attr", CONVERTED_CASES, ids=CONVERTED_IDS)
+def test_assignment_converts_to_an_array(name, attr):
+    """
+    A parameter is converted when it is assigned and kept under its own
+    name: a list or a tuple reads back as the array of the same bytes; an
+    array is kept as the same object (a copy for ``GMMHMM``'s emission
+    parameters); it is missing before it is assigned and after ``del``.
+    """
+    h, _ = _hand_built(name)
+    array = getattr(h, attr)
+    for given in (array.tolist(), tuple(array.tolist())):
+        setattr(h, attr, given)
+        stored = getattr(h, attr)
+        assert type(stored) is np.ndarray
+        assert _as_bytes(stored) == _as_bytes(array)
+        assert vars(h)[attr] is stored
+    setattr(h, attr, array)
+    copied = name == "GMMHMM" and attr not in ("startprob_", "transmat_")
+    assert (getattr(h, attr) is array) is not copied
+    assert _as_bytes(getattr(h, attr)) == _as_bytes(array)
+    del h.__dict__[attr]
+    assert not hasattr(h, attr)
+    setattr(h, attr, array)
+    delattr(h, attr)
+    assert not hasattr(h, attr)
+    assert attr not in vars(h)
+    assert not hasattr(type(h)(2), attr)
+    assert isinstance(getattr(type(h), attr), base._ConvertedAttribute)
+
+
+@pytest.mark.parametrize("name, attr", CONVERTED_CASES, ids=CONVERTED_IDS)
+def test_ragged_list_is_refused_at_assignment(name, attr):
+    """
+    A list that does not make an array is refused when it is assigned,
+    and the parameter keeps its value.
+    """
+    h, _ = _hand_built(name)
+    array = getattr(h, attr)
+    with pytest.raises(ValueError, match="inhomogeneous"):
+        setattr(h, attr, [[0.5, 0.5], [1.0]])
+    assert vars(h)[attr] is array
+
+
+ONE_STATE_CASES = [
+    ("CategoricalHMM", "emissionprob_", lambda: hmm.CategoricalHMM(1),
+     np.array([[0], [2], [1], [1], [0]])),
+    ("MultinomialHMM", "emissionprob_", lambda: hmm.MultinomialHMM(1, 5),
+     np.array([[1, 2, 2], [0, 0, 5], [3, 1, 1]])),
+    ("PoissonHMM", "lambdas_", lambda: hmm.PoissonHMM(1),
+     np.array([[1, 4, 0], [2, 3, 1], [0, 5, 2]])),
+]
+
+
+def _one_state(factory, attr, emission, implementation="log"):
+    h = factory()
+    h.implementation = implementation
+    h.init_params = ""
+    h.startprob_ = np.array([1.0])
+    h.transmat_ = np.array([[1.0]])
+    setattr(h, attr, emission)
+    return h
+
+
+@pytest.mark.parametrize("name, attr, factory, X", ONE_STATE_CASES,
+                         ids=[c[0] for c in ONE_STATE_CASES])
+def test_one_state_1d_emission_is_stored_as_one_row(name, attr, factory, X):
+    """
+    A one-state model given its emission parameter as one flat row stores
+    it as the ``(1, n_features)`` array.
+    """
+    h = _one_state(factory, attr, [0.2, 0.3, 0.5])
+    stored = getattr(h, attr)
+    assert type(stored) is np.ndarray
+    assert _as_bytes(stored) == _as_bytes(np.array([[0.2, 0.3, 0.5]]))
+
+
+@pytest.mark.parametrize("implementation", ["log", "scaling"])
+@pytest.mark.parametrize("name, attr, factory, X", ONE_STATE_CASES,
+                         ids=[c[0] for c in ONE_STATE_CASES])
+def test_one_state_1d_emission_predicts_as_one_row(
+        name, attr, factory, X, implementation):
+    """
+    A one-state model given its emission parameter as one flat list
+    predicts as the model given the ``(1, n_features)`` array.
+    """
+    h = _one_state(factory, attr, [0.2, 0.3, 0.5], implementation)
+    expected = _one_state(
+        factory, attr, np.array([[0.2, 0.3, 0.5]]), implementation)
+    for call in PREDICTIONS.values():
+        assert _as_bytes(call(h, X)) == _as_bytes(call(expected, X))
+
+
+@pytest.mark.parametrize("implementation", ["log", "scaling"])
+@pytest.mark.parametrize(
+    "name, attrs",
+    [(name, (attr,)) for name, attr in CONVERTED_CASES]
+    + [(name, tuple(CONVERTED[name])) for name in EM_NAMES],
+    ids=CONVERTED_IDS + [f"{name}-all" for name in EM_NAMES])
+def test_list_parameters_predict_as_arrays(name, attrs, implementation):
+    """
+    A model given a parameter, or all of them, as lists predicts as the
+    model given the arrays: every prediction has the same bytes.
+    """
+    expected, X = _hand_built(name)
+    h, _ = _hand_built(name)
+    for model in (expected, h):
+        model.implementation = implementation
+    for attr in attrs:
+        setattr(h, attr, getattr(h, attr).tolist())
+    for call in PREDICTIONS.values():
+        assert _as_bytes(call(h, X)) == _as_bytes(call(expected, X))
+
+
+@pytest.mark.parametrize("name", EM_NAMES)
+def test_state_holding_lists_loads_as_arrays(name):
+    """
+    A pickled state that holds parameters as lists, as an older version
+    could store them, loads with the parameters as arrays, no attribute
+    added, and predicts as the model built from the arrays.
+    """
+    expected, X = _hand_built(name)
+    state = dict(expected.__getstate__())
+    for attr in CONVERTED[name]:
+        state[attr] = state[attr].tolist()
+    keys = [k for k in state if k != "_sklearn_version"]
+    loaded = type(expected).__new__(type(expected))
+    loaded.__setstate__(state)
+    for attr in CONVERTED[name]:
+        assert type(getattr(loaded, attr)) is np.ndarray
+    assert list(vars(loaded)) == keys
+    for call in PREDICTIONS.values():
+        assert _as_bytes(call(loaded, X)) == _as_bytes(call(expected, X))
+
+
+@pytest.mark.parametrize("name", EM_NAMES)
+def test_fit_from_list_parameters_equals_fit_from_arrays(name):
+    """
+    ``fit`` with ``init_params=""`` from parameters given as lists gives
+    the fit from the arrays: every fitted array and the score history.
+    """
+    expected, X = _hand_built(name)
+    h, _ = _hand_built(name)
+    for attr in CONVERTED[name]:
+        setattr(h, attr, getattr(h, attr).tolist())
+    for model in (expected, h):
+        model.n_iter = 3
+        model.fit(X)
+    assert h.monitor_.history == expected.monitor_.history
+    fitted, wanted = _fitted_arrays(h), _fitted_arrays(expected)
+    assert list(fitted) == list(wanted)
+    assert all(_as_bytes(fitted[k]) == _as_bytes(wanted[k]) for k in wanted)
+
+
+def test_stationary_distribution_of_a_list_transmat():
+    """
+    ``get_stationary_distribution`` of a ``transmat_`` given as a list,
+    before any prediction, equals that of the array.
+    """
+    transmat = np.array([[0.7, 0.3], [0.4, 0.6]])
+    h = StubHMM(2)
+    h.transmat_ = transmat.tolist()
+    expected = StubHMM(2)
+    expected.transmat_ = transmat
+    assert (_as_bytes(h.get_stationary_distribution())
+            == _as_bytes(expected.get_stationary_distribution()))
