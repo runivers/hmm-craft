@@ -12,6 +12,8 @@ Unreleased
   memory placement; their last bits can differ from 0.3.3's; see DIFFERENCES.md.
 - Documented: the shapes ``GaussianHMM`` accepts for its mean and covariance priors, per
   covariance type; the docstring gave a shape that raises or acts on features.
+- Documented: ``decode``, ``predict``, ``predict_proba`` and ``score_samples`` use the later samples
+  of each sequence; the tutorial shows the state probabilities given the samples so far.
 
 Version 0.4.0
 ~~~~~~~~~~~~~
