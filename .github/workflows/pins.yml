@@ -1,0 +1,27 @@
+name: pins
+
+# Names each pin of ci/build_requirements.txt and ci/tool_requirements.txt
+# that is older than the newest final release on PyPI, with the command that
+# updates it (scripts/check_pins.py). Weekly and by hand, never on a pull
+# request: a release elsewhere must not turn a contributor's pull request red.
+# ci/floor_constraints.txt pins the declared minimums on purpose and is not
+# read. The script's unit tests run on every pull request, in ci.yml.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "27 4 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  pins:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      with:
+        persist-credentials: false
+    - name: Every hashed pin under ci/ is the newest release
+      run: python3 -I scripts/check_pins.py
