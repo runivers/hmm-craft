@@ -4,6 +4,13 @@ hmm-craft Changelog
 The changes of hmm-craft, a fork of hmmlearn, come first. The entries from
 "Version 0.3.3" down are hmmlearn's own history, kept as written.
 
+Unreleased
+~~~~~~~~~~
+
+- Fixed: tests of the variational models no longer fail for some random seeds.
+- Documented: the shapes ``GMMHMM`` accepts for its priors, per covariance type; when
+  ``ConvergenceMonitor.converged`` is true.
+
 Version 0.4.1
 ~~~~~~~~~~~~~
 

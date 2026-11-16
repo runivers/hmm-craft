@@ -27,8 +27,11 @@ class ConvergenceMonitor:
     history : deque
         The log probability of the data at each iteration of the last
         fit, oldest first (for a variational model, the lower bound).
-        If the values are not strictly increasing, the model did not
-        converge.
+        :attr:`converged` is true when ``n_iter`` iterations have run or
+        when the last value minus the one before it is less than
+        ``tol``, a decrease included when ``tol`` is not negative; it
+        does not check that the values increase. ``history`` shows
+        whether they decreased.
     iter : int
         Number of iterations performed while training the model.
 
@@ -120,7 +123,14 @@ class ConvergenceMonitor:
 
     @property
     def converged(self):
-        """Whether the EM algorithm converged."""
+        """
+        Whether ``fit`` stops after the current iteration.
+
+        True when ``n_iter`` iterations have run, or when the last value
+        of :attr:`history` minus the one before it is less than ``tol``,
+        a decrease included when ``tol`` is not negative. It does not
+        check that the values increase.
+        """
         # XXX we might want to check that ``log_prob`` is non-decreasing.
         return (self.iter == self.n_iter or
                 (len(self.history) >= 2 and

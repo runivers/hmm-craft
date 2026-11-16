@@ -92,19 +92,21 @@ class _TestGaussian:
 
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
     def test_common_initialization(self, implementation):
+        random_state = check_random_state(234234)
         sequences, lengths = get_sequences(50, 10,
-                                           model=get_mcgrory_titterington())
+                                           model=get_mcgrory_titterington(),
+                                           rs=random_state)
 
         with pytest.raises(ValueError):
             model = vhmm.VariationalGaussianHMM(
-                4, n_iter=500, tol=1e-9,
+                4, n_iter=500, tol=1e-9, random_state=random_state,
                 covariance_type="incorrect",
                 implementation=implementation)
             assert_log_likelihood_increasing(model, sequences, lengths, 10)
 
         with pytest.raises(ValueError):
             model = vhmm.VariationalGaussianHMM(
-                4, n_iter=500, tol=1e-9,
+                4, n_iter=500, tol=1e-9, random_state=random_state,
                 covariance_type="incorrect",
                 init_params="",
                 implementation=implementation)
@@ -113,7 +115,8 @@ class _TestGaussian:
 
         # Manually setup means - should converge
         model = vhmm.VariationalGaussianHMM(
-            4, n_iter=500, tol=1e-9, init_params="stc",
+            4, n_iter=500, tol=1e-9, random_state=random_state,
+            init_params="stc",
             covariance_type=self.covariance_type,
             implementation=implementation)
         model.means_prior_ = [[1], [1], [1], [1]]
@@ -125,7 +128,8 @@ class _TestGaussian:
         # Means have wrong shape
         with pytest.raises(ValueError):
             model = vhmm.VariationalGaussianHMM(
-                4, n_iter=500, tol=1e-9, init_params="stc",
+                4, n_iter=500, tol=1e-9, random_state=random_state,
+                init_params="stc",
                 covariance_type=self.covariance_type,
                 implementation=implementation)
             model.means_prior_ = [[1], [1], [1]]
@@ -136,7 +140,8 @@ class _TestGaussian:
 
         with pytest.raises(ValueError):
             model = vhmm.VariationalGaussianHMM(
-                4, n_iter=500, tol=1e-9, init_params="stc",
+                4, n_iter=500, tol=1e-9, random_state=random_state,
+                init_params="stc",
                 covariance_type=self.covariance_type,
                 implementation=implementation)
             model.means_prior_ = [[1], [1], [1], [1]]
@@ -148,7 +153,8 @@ class _TestGaussian:
         # beta's have wrong shape
         with pytest.raises(ValueError):
             model = vhmm.VariationalGaussianHMM(
-                4, n_iter=500, tol=1e-9, init_params="stc",
+                4, n_iter=500, tol=1e-9, random_state=random_state,
+                init_params="stc",
                 covariance_type=self.covariance_type,
                 implementation=implementation)
             model.means_prior_ = [[1], [1], [1], [1]]
@@ -159,7 +165,8 @@ class _TestGaussian:
 
         with pytest.raises(ValueError):
             model = vhmm.VariationalGaussianHMM(
-                4, n_iter=500, tol=1e-9, init_params="stc",
+                4, n_iter=500, tol=1e-9, random_state=random_state,
+                init_params="stc",
                 covariance_type=self.covariance_type,
                 implementation=implementation)
             model.means_prior_ = [[1], [1], [1], [1]]
