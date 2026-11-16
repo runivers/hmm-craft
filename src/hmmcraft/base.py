@@ -25,9 +25,10 @@ class ConvergenceMonitor:
     Attributes
     ----------
     history : deque
-        The log probability of the data for the last two training
-        iterations. If the values are not strictly increasing, the
-        model did not converge.
+        The log probability of the data at each iteration of the last
+        fit, oldest first (for a variational model, the lower bound).
+        If the values are not strictly increasing, the model did not
+        converge.
     iter : int
         Number of iterations performed while training the model.
 
@@ -206,7 +207,8 @@ class _AbstractHMM(BaseEstimator):
         See Also
         --------
         score : Compute the log probability under the model.
-        decode : Find most likely state sequence corresponding to ``X``.
+        decode : Find the state of each sample in ``X`` with the chosen
+            decoder.
         """
         return self._score(X, lengths, compute_posteriors=True)
 
@@ -231,7 +233,8 @@ class _AbstractHMM(BaseEstimator):
         --------
         score_samples : Compute the log probability under the model and
             posteriors.
-        decode : Find most likely state sequence corresponding to ``X``.
+        decode : Find the state of each sample in ``X`` with the chosen
+            decoder.
         """
         return self._score(X, lengths, compute_posteriors=False)[0]
 
@@ -303,7 +306,7 @@ class _AbstractHMM(BaseEstimator):
 
     def decode(self, X, lengths=None, algorithm=None):
         """
-        Find most likely state sequence corresponding to ``X``.
+        Find the state of each sample in ``X`` with the chosen decoder.
 
         The state given to each sample depends on every sample of its
         sequence, the samples after it included: "viterbi" traces the path

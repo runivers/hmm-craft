@@ -14,6 +14,8 @@ Unreleased
   covariance type; the docstring gave a shape that raises or acts on features.
 - Documented: ``decode``, ``predict``, ``predict_proba`` and ``score_samples`` use the later samples
   of each sequence; the tutorial shows the state probabilities given the samples so far.
+- Documented: docstring examples run as written and are now tested; corrected the default
+  ``covariance_type``, what ``ConvergenceMonitor.history`` holds and the summary of ``decode``.
 
 Version 0.4.0
 ~~~~~~~~~~~~~
