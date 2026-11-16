@@ -142,9 +142,10 @@ with various initializations and select the highest scored model.
 The score of the model can be calculated by the :meth:`~.BaseHMM.score` method.
 
 The inferred optimal hidden states can be obtained by calling
-:meth:`~.BaseHMM.predict` method. The ``predict`` method can be
-specified with a decoder algorithm. Currently the Viterbi algorithm
-(``"viterbi"``), and maximum a posteriori estimation (``"map"``) are supported.
+:meth:`~.BaseHMM.predict` method. It uses the decoder algorithm given to the
+model as ``algorithm``: the Viterbi algorithm (``"viterbi"``, the default) or
+maximum a posteriori estimation (``"map"``). :meth:`~.BaseHMM.decode` also
+takes the algorithm as an argument.
 
 This time, the input is a single sequence of observed values.  Note, the states
 in ``remodel`` will have a different order than those in the generating model.
@@ -157,6 +158,48 @@ GaussianHMM(...
 .. topic:: Examples:
 
  * :doc:`/auto_examples/plot_casino`
+
+Decoding uses the whole sequence
+--------------------------------
+
+:meth:`~.BaseHMM.decode`, :meth:`~.BaseHMM.predict`,
+:meth:`~.BaseHMM.predict_proba` and :meth:`~.BaseHMM.score_samples` compute
+the state or the posterior of each sample from every sample of its sequence,
+including the samples after it. When a sequence grows, the answer for an
+earlier sample can change. Take a model with two states and three symbols:
+
+>>> chain = hmm.CategoricalHMM(n_components=2)
+>>> chain.n_features = 3
+>>> chain.startprob_ = np.array([0.6, 0.4])
+>>> chain.transmat_ = np.array([[0.7, 0.3], [0.4, 0.6]])
+>>> chain.emissionprob_ = np.array([[0.1, 0.4, 0.5], [0.6, 0.3, 0.1]])
+>>> obs = np.array([[0], [1], [2]])
+>>> chain.predict(obs[:2]).tolist()
+[1, 1]
+>>> chain.predict(obs).tolist()
+[1, 0, 0]
+
+The third sample changes the state decoded for the second. The probability
+of each state given the samples up to sample ``t`` only (the filtered
+probability) is the last row of ``predict_proba(X[:t + 1])``. Row ``t`` of
+``predict_proba(X)`` is conditioned on the samples after ``t`` as well (the
+smoothed probability):
+
+>>> chain.predict_proba(obs[:2])[-1].round(3).tolist()
+[0.532, 0.468]
+>>> chain.predict_proba(obs)[1].round(3).tolist()
+[0.624, 0.376]
+
+The most probable state given the samples so far is the argmax of that last
+row. With ``algorithm="viterbi"``, the default, the last element of
+``predict(X[:t + 1])`` ends the most likely path instead, and the two can
+differ, as they do here:
+
+>>> int(chain.predict_proba(obs[:2])[-1].argmax())
+0
+
+Following a sequence this way runs the forward and backward passes over
+each prefix again, so the cost grows with the square of its length.
 
 Monitoring convergence
 ----------------------

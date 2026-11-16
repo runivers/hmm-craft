@@ -184,6 +184,10 @@ class _AbstractHMM(BaseEstimator):
         """
         Compute the log probability under the model and compute posteriors.
 
+        The posteriors are those of :meth:`predict_proba`: the posterior at
+        each sample depends on every sample of its sequence, the samples
+        after it included.
+
         Parameters
         ----------
         X : array-like, shape (n_samples, n_features)
@@ -301,6 +305,14 @@ class _AbstractHMM(BaseEstimator):
         """
         Find most likely state sequence corresponding to ``X``.
 
+        The state given to each sample depends on every sample of its
+        sequence, the samples after it included: "viterbi" traces the path
+        back from the last sample, and "map" takes the posteriors of
+        :meth:`predict_proba`, which combine a forward and a backward pass.
+        Decoding a sequence again after samples are added to it can change
+        the states of its earlier samples. With ``lengths``, each sequence
+        is decoded on its own.
+
         Parameters
         ----------
         X : array-like, shape (n_samples, n_features)
@@ -316,7 +328,8 @@ class _AbstractHMM(BaseEstimator):
             - "map" (also known as smoothing or forward-backward): finds the
               sequence of the individual most-likely states, given all
               emissions.
-            If not given, :attr:`decoder` is used.
+
+            If not given, the model's ``algorithm`` is used.
 
         Returns
         -------
@@ -358,7 +371,16 @@ class _AbstractHMM(BaseEstimator):
 
     def predict(self, X, lengths=None):
         """
-        Find most likely state sequence corresponding to ``X``.
+        Find the state of each sample in ``X`` with the model's decoder.
+
+        The decoder is the model's ``algorithm`` (see :meth:`decode`):
+        "viterbi" gives the most likely state sequence, "map" the most
+        likely state of each sample on its own. Either way the state of a
+        sample depends on the samples after it in the same sequence. The
+        most likely state given the samples up to sample ``t`` only is the
+        argmax of the last row of ``predict_proba(X[:t + 1])``. With "map",
+        the last element of ``predict(X[:t + 1])`` is that state; with
+        "viterbi", it ends the most likely path and can differ from it.
 
         Parameters
         ----------
@@ -379,6 +401,16 @@ class _AbstractHMM(BaseEstimator):
     def predict_proba(self, X, lengths=None):
         """
         Compute the posterior probability for each state in the model.
+
+        The posterior at sample ``t`` is conditioned on every sample of its
+        sequence, the samples after ``t`` included: it combines a forward
+        and a backward pass over the sequence (smoothing). With ``lengths``,
+        each sequence is treated on its own. The probability given the
+        samples up to ``t`` only (filtering) is the last row of
+        ``predict_proba(X[:t + 1])``, for either ``implementation``: at the
+        last sample of a sequence, the backward pass is the same for every
+        state. Following a sequence this way runs both passes over each
+        prefix again, so the cost grows with the square of its length.
 
         Parameters
         ----------
