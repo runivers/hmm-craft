@@ -558,7 +558,7 @@ class GMMHMM(_emissions.BaseGMMHMM):
         n_mix : int
             Number of states in the GMM.
 
-        covariance_type : {"sperical", "diag", "full", "tied"}, optional
+        covariance_type : {"spherical", "diag", "full", "tied"}, optional
             The type of covariance parameters to use:
 
             * "spherical" --- each state uses a single variance value that
@@ -583,21 +583,68 @@ class GMMHMM(_emissions.BaseGMMHMM):
             Parameters of the Dirichlet prior distribution for each row
             of the transition probabilities :attr:`transmat_`.
 
-        weights_prior : array, shape (n_mix, ), optional
+        weights_prior : float or array, optional
             Parameters of the Dirichlet prior distribution for
-            :attr:`weights_`.
+            :attr:`weights_`.  A number, or an array that broadcasts to
+            ``(n_components, n_mix)``: shape ``(n_mix, )`` gives one value
+            per mixture component for all states, a column of shape
+            ``(n_components, 1)`` one value per state.  An array of shape
+            ``(n_components, )`` is matched to the mixture components, not
+            to the states.  The default, 1, puts no prior on the weights.
 
-        means_prior, means_weight : array, shape (n_mix, ), optional
-            Mean and precision of the Normal prior distribtion for
-            :attr:`means_`.
+        means_prior : float or array, optional
+            Mean of the Normal prior distribution for :attr:`means_`.  A
+            number, or an array that broadcasts to
+            ``(n_components, n_mix, n_features)``: shape ``(n_features, )``
+            gives one value per feature, a column of shape ``(n_mix, 1)``
+            one value per mixture component, and one of shape
+            ``(n_components, 1, 1)`` one value per state.  An array of shape
+            ``(n_mix, )`` is matched to the features, not to the mixture
+            components.  Defaults to 0.
 
-        covars_prior, covars_weight : array, shape (n_mix, ), optional
+        means_weight : float or array, optional
+            Weight of ``means_prior``: the prior mean counts as this many
+            observations of each mixture component.  A number, or an array
+            of a shape ``weights_prior`` accepts.  The default, 0, puts no
+            prior on the means.
+
+        covars_prior : float or array, optional
             Parameters of the prior distribution for the covariance matrix
-            :attr:`covars_`.
+            :attr:`covars_`, with ``covars_weight``.
 
             If :attr:`covariance_type` is "spherical" or "diag" the prior is
             the inverse gamma distribution, otherwise --- the inverse Wishart
+            distribution.  ``covars_prior`` is the shape parameter of the
+            inverse gamma distribution and the scale matrix of the inverse
+            Wishart distribution.
+
+            * "spherical": a number, or an array of a shape
+              ``weights_prior`` accepts.
+            * "diag": a number, or an array of a shape ``means_prior``
+              accepts.
+            * "full": a number, or a symmetric array of shape
+              ``(n_features, n_features)``,
+              ``(n_mix, n_features, n_features)`` or
+              ``(n_components, n_mix, n_features, n_features)``.
+            * "tied": a number, or a symmetric array of shape
+              ``(n_features, n_features)`` or
+              ``(n_components, n_features, n_features)``.
+
+            With "full" or "tied", a number is added to every entry of the
+            matrix, not only to its diagonal.
+
+        covars_weight : float or array, optional
+            Parameters of the prior distribution for :attr:`covars_`, with
+            ``covars_prior``: the scale parameter of the inverse gamma
+            distribution, or the degrees of freedom of the inverse Wishart
             distribution.
+
+            * "spherical", "full": a number, or an array of a shape
+              ``weights_prior`` accepts.
+            * "diag": a number, or an array of a shape ``means_prior``
+              accepts.
+            * "tied": a number, or an array of shape ``(n_components, )``,
+              one value per state.
 
         algorithm : {"viterbi", "map"}, optional
             Decoder algorithm.

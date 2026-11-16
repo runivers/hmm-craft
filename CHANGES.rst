@@ -8,6 +8,7 @@ Unreleased
 ~~~~~~~~~~
 
 - Fixed: tests of the variational models no longer fail for some random seeds.
+- Documented: the shapes ``GMMHMM`` accepts for its priors, per covariance type.
 
 Version 0.4.1
 ~~~~~~~~~~~~~
