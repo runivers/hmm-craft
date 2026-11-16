@@ -8,7 +8,8 @@ Unreleased
 ~~~~~~~~~~
 
 - Fixed: tests of the variational models no longer fail for some random seeds.
-- Documented: the shapes ``GMMHMM`` accepts for its priors, per covariance type.
+- Documented: the shapes ``GMMHMM`` accepts for its priors, per covariance type; when
+  ``ConvergenceMonitor.converged`` is true.
 
 Version 0.4.1
 ~~~~~~~~~~~~~
