@@ -81,6 +81,19 @@ fallback_version = "0+unknown"
 [tool.coverage.run]
 branch = true
 source_pkgs = ["hmmcraft"]
+omit = ["*/hmmcraft/tests/*"]
+
+[tool.coverage.report]
+# Raised by hand, never lowered without a reason (RELEASING.md).
+fail_under = 92
+precision = 2
+
+[tool.gcovr]
+filter = ["ext/"]
+exclude-throw-branches = true
+exclude-unreachable-branches = true
+# A string: gcovr 8.8 reads a percentage as text.
+fail-under-line = "96"
 
 [tool.pytest.ini_options]
 addopts = "--doctest-glob=*.rst"

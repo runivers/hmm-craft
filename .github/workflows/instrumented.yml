@@ -1,0 +1,92 @@
+name: instrumented
+
+# The suite against a build of the C++ kernel made for measuring, never for
+# release: nothing built here is uploaded or published. The "coverage" job
+# builds the kernel with --coverage and no optimisation, runs the suite under
+# coverage.py with the newest NumPy, SciPy and scikit-learn wheels, and fails
+# when the Python total or the kernel's line coverage falls below its floor in
+# pyproject.toml. The reports are in the log and in the run's
+# "coverage-reports" artifact.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: "37 4 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: instrumented-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  coverage:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      HMMCRAFT_SEED: "0"
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+      with:
+        python-version: "3.12"
+    - name: Build requirements, coverage tools, newest dependencies
+      run: |
+        python -m pip install --only-binary :all: --require-hashes \
+          -r ci/build_requirements.txt
+        python -m pip install --only-binary :all: --require-hashes \
+          -r ci/coverage_requirements.txt
+        python -m pip install --only-binary :all: \
+          numpy scipy scikit-learn threadpoolctl pytest
+        python -m pip freeze
+        c++ --version
+        gcov --version
+    - name: Build the kernel with --coverage, unoptimised
+      # setuptools puts CXXFLAGS in place of the interpreter's CFLAGS on the
+      # C++ compile line, so -DNDEBUG is given here again; -g in CFLAGS keeps
+      # pybind11 from adding -g0.
+      env:
+        CFLAGS: "-O0 -g --coverage"
+        CXXFLAGS: "-O0 -g -DNDEBUG --coverage"
+        LDFLAGS: "--coverage"
+      run: |
+        rm -rf build src/hmm_craft.egg-info
+        python -m pip install -v --no-build-isolation --no-deps .
+        ls build/temp.*/ext/_hmmc.gcno
+        find build -name '*.gcda' -delete
+    - name: Suite under coverage.py
+      id: suite
+      run: >-
+        python -I -m coverage run -m pytest -p no:cacheprovider -q
+        --pyargs hmmcraft.tests doc
+    - name: Python coverage, floor in pyproject.toml
+      if: ${{ !cancelled() && steps.suite.outcome != 'skipped' }}
+      run: |
+        python -I -m coverage html --fail-under=0 \
+          -d "$RUNNER_TEMP/coverage-reports/python"
+        python -I -m coverage report
+    - name: Kernel coverage (ext/), floor in pyproject.toml
+      if: ${{ !cancelled() && steps.suite.outcome != 'skipped' }}
+      run: |
+        ls build/temp.*/ext/_hmmc.gcda
+        mkdir -p "$RUNNER_TEMP/coverage-reports/kernel"
+        python -I -m gcovr --root . --txt-summary \
+          --html-details "$RUNNER_TEMP/coverage-reports/kernel/index.html"
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+      if: ${{ !cancelled() && steps.suite.outcome != 'skipped' }}
+      with:
+        name: coverage-reports
+        path: ${{ runner.temp }}/coverage-reports/
+        retention-days: 14
+        if-no-files-found: warn
