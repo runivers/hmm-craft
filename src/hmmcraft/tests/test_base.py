@@ -648,3 +648,33 @@ def test_n_features_none_is_taken_from_emissions(name):
     h.n_features = None
     assert h.score(X) == expected
     assert h.n_features == (3 if name == "MultinomialHMM" else 2)
+
+
+def _refused_X(name, X):
+    """``X`` changed so that the model fitted on ``X`` refuses it."""
+    if name in ("CategoricalHMM", "VariationalCategoricalHMM"):
+        return X + 3
+    if name in ("MultinomialHMM", "PoissonHMM"):
+        return -1 - X
+    return X[:, :1]
+
+
+@pytest.mark.parametrize("case", MODEL_CASES, ids=MODEL_IDS)
+def test_X_check_writes_nothing(case):
+    """
+    The check of ``X`` against a fitted model reads it and writes nothing,
+    whether it passes ``X`` or refuses it: every attribute keeps its object
+    and every array its bytes.
+    """
+    name, factory, X = case
+    model = factory(2).fit(X)
+    model._check()
+    before = dict(vars(model))
+    arrays = {k: v.tobytes() for k, v in before.items()
+              if isinstance(v, np.ndarray)}
+    model._check_X(X)
+    with pytest.raises(ValueError, match="X must"):
+        model._check_X(_refused_X(name, X))
+    assert vars(model).keys() == before.keys()
+    assert all(vars(model)[k] is v for k, v in before.items())
+    assert all(vars(model)[k].tobytes() == b for k, b in arrays.items())

@@ -1112,6 +1112,9 @@ class PoissonHMM(_emissions.BasePoissonHMM):
     """
     Hidden Markov Model with Poisson emissions.
 
+    ``X`` holds counts, non-negative whole numbers (whole numbers stored as
+    floats included), one column per feature.
+
     Attributes
     ----------
     monitor_ : ConvergenceMonitor

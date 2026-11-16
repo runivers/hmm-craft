@@ -178,6 +178,69 @@ class TestCategoricalHMM:
         assert_log_likelihood_increasing(h, X, lengths, n_iter)
 
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
+    @pytest.mark.parametrize("method", [
+        "score", "score_samples", "decode", "predict", "predict_proba"])
+    @pytest.mark.parametrize("symbol", [-1, 3, 1.5, -1.0])
+    def test_prediction_refuses_symbols_outside_range(
+            self, symbol, method, implementation):
+        """
+        A symbol that is negative, not a whole number, or not below
+        ``n_features`` is refused, naming ``X``, instead of being read as a
+        column of ``emissionprob_`` counted from the end or failing on the
+        index.
+        """
+        h = self.new_hmm(implementation)
+        X = np.array([[0], [symbol], [2]])
+        with pytest.raises(ValueError, match="X must contain symbols"):
+            getattr(h, method)(X)
+
+    @pytest.mark.parametrize("implementation", ["scaling", "log"])
+    @pytest.mark.parametrize("symbol, probability", [(0, 0.30), (2, 0.34)])
+    def test_symbols_at_the_range_ends_score(
+            self, symbol, probability, implementation):
+        """
+        The symbols ``0`` and ``n_features - 1`` stay valid: one sample
+        scores the log of ``startprob_ @ emissionprob_[:, symbol]``
+        (``0.6 * 0.1 + 0.4 * 0.6`` and ``0.6 * 0.5 + 0.4 * 0.1``).
+        """
+        h = self.new_hmm(implementation)
+        assert_allclose(h.score([[symbol]]), np.log(probability),
+                        rtol=1e-12)
+
+    @pytest.mark.parametrize("implementation", ["scaling", "log"])
+    def test_two_column_layout_scores_as_one_sequence(self, implementation):
+        """
+        The deprecated ``(n_samples, 2)`` layout still scores, with a
+        ``DeprecationWarning``, as the ``(2 * n_samples, 1)`` sequence it is
+        read as.
+        """
+        h = self.new_hmm(implementation)
+        X = np.array([[0, 1], [2, 0], [1, 1]])
+        with pytest.warns(DeprecationWarning, match="deprecated"):
+            score = h.score(X)
+        assert score == h.score(X.reshape(-1, 1))
+
+    @pytest.mark.parametrize("implementation", ["scaling", "log"])
+    @pytest.mark.parametrize("method", ["score", "predict", "decode"])
+    @pytest.mark.parametrize("emissionprob, X", [
+        ([[1.0], [1.0]], [[True]]),
+        ([[0.3, 0.7], [0.8, 0.2]], [[True], [False]]),
+        ([[0.3, 0.7], [0.8, 0.2]], [[False]]),
+        ([[0.1, 0.4, 0.5], [0.6, 0.3, 0.1]], [[True], [False], [True]]),
+    ], ids=["1-symbol-T", "2-symbols-TF", "2-symbols-F", "3-symbols-TFT"])
+    def test_prediction_refuses_boolean_X(
+            self, emissionprob, X, method, implementation):
+        """
+        A boolean ``X`` is refused, naming ``X``, as ``fit`` refuses it:
+        NumPy reads a boolean array as a mask over the symbols, not as the
+        symbols 0 and 1.
+        """
+        h = self.new_hmm(implementation)
+        h.emissionprob_ = np.array(emissionprob)
+        with pytest.raises(ValueError, match="X must .*not booleans"):
+            getattr(h, method)(np.array(X))
+
+    @pytest.mark.parametrize("implementation", ["scaling", "log"])
     def test__check_and_set_categorical_n_features(self, implementation):
         h = self.new_hmm(implementation)
         h._check_and_set_n_features(np.array([[0, 0, 2, 1, 3, 1, 1]]).T)

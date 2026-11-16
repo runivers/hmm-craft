@@ -8,10 +8,10 @@ Unreleased
 ~~~~~~~~~~
 
 - Fixed: tests of the variational models no longer fail for some random seeds.
-- Fixed: parameter mistakes raise a ``ValueError`` naming the parameter; ``MultinomialHMM`` with
-  ``init_params=""`` and no ``emissionprob_`` starts it.
-- Changed: ``ValueError`` instead of a result: negative, non-finite or unnormalized parameters,
-  ``means_`` with a wrong row count, ``sample(0)``; ``MultinomialHMM`` drops its redesign warning.
+- Fixed: parameter and input mistakes raise a ``ValueError`` naming the parameter or ``X``;
+  ``MultinomialHMM`` with ``init_params=""`` and no ``emissionprob_`` starts it.
+- Changed: ``ValueError``, not a result: negative, non-finite or unnormalized parameters, a one-row
+  ``means_``, ``X`` the model cannot take, ``sample(0)``; ``MultinomialHMM`` drops a warning.
 - Documented: the shapes ``GMMHMM`` accepts for its priors, per covariance type; when
   ``ConvergenceMonitor.converged`` is true.
 

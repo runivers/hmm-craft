@@ -243,6 +243,45 @@ class TestVariationalCategorical:
 
         compare_variational_and_em_models(model, em_hmm, sequences, lengths)
 
+    @staticmethod
+    def _fitted(n_features, implementation):
+        """A model fitted on 30 symbols drawn from ``range(n_features)``."""
+        X = np.random.RandomState(10).randint(0, n_features, (30, 1))
+        model = vhmm.VariationalCategoricalHMM(
+            2, n_iter=5, random_state=0, implementation=implementation)
+        model.fit(X)
+        assert model.n_features == n_features
+        return model
+
+    @pytest.mark.parametrize("implementation", ["scaling", "log"])
+    @pytest.mark.parametrize("method", ["score", "predict"])
+    @pytest.mark.parametrize("symbol", [-1, 3])
+    def test_prediction_refuses_symbols_outside_range(
+            self, symbol, method, implementation):
+        """
+        A fitted model refuses a negative symbol and the symbol
+        ``n_features``, naming ``X``.
+        """
+        model = self._fitted(3, implementation)
+        with pytest.raises(ValueError, match="X must contain symbols"):
+            getattr(model, method)(np.array([[0], [symbol], [2]]))
+
+    @pytest.mark.parametrize("implementation", ["scaling", "log"])
+    @pytest.mark.parametrize("method", ["score", "predict", "decode"])
+    @pytest.mark.parametrize("n_features, X", [
+        (2, [[True], [False]]),
+        (3, [[True], [False], [True]]),
+    ], ids=["2-symbols-TF", "3-symbols-TFT"])
+    def test_prediction_refuses_boolean_X(
+            self, n_features, X, method, implementation):
+        """
+        A boolean ``X`` is refused, naming ``X``, as ``fit`` refuses it:
+        NumPy reads a boolean array as a mask over the symbols.
+        """
+        model = self._fitted(n_features, implementation)
+        with pytest.raises(ValueError, match="X must .*not booleans"):
+            getattr(model, method)(np.array(X))
+
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
     def test_fit_length_1_sequences(self, implementation):
         sequences1, lengths1 = self.get_from_one_beal(7, 100, 1984)

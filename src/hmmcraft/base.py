@@ -217,6 +217,16 @@ class _AbstractHMM(BaseEstimator):
         posteriors : array, shape (n_samples, n_components)
             State-membership probabilities for each sample in ``X``.
 
+        Raises
+        ------
+        ValueError
+            If ``X`` does not fit the model: for the categorical models, a
+            boolean ``X`` or a symbol that is not a whole number from 0 to
+            ``n_features - 1``; for the others, a number of columns other
+            than the model's number of features, and for the multinomial
+            and Poisson models a count that is not a non-negative whole
+            number.
+
         See Also
         --------
         score : Compute the log probability under the model.
@@ -242,6 +252,16 @@ class _AbstractHMM(BaseEstimator):
         log_prob : float
             Log likelihood of ``X``.
 
+        Raises
+        ------
+        ValueError
+            If ``X`` does not fit the model: for the categorical models, a
+            boolean ``X`` or a symbol that is not a whole number from 0 to
+            ``n_features - 1``; for the others, a number of columns other
+            than the model's number of features, and for the multinomial
+            and Poisson models a count that is not a non-negative whole
+            number.
+
         See Also
         --------
         score_samples : Compute the log probability under the model and
@@ -263,6 +283,7 @@ class _AbstractHMM(BaseEstimator):
         self._check()
 
         X = check_array(X)
+        self._check_X(X)
         impl = self._by_implementation(
             log=self._score_log, scaling=self._score_scaling)
         return impl(
@@ -354,6 +375,16 @@ class _AbstractHMM(BaseEstimator):
             Labels for each sample from ``X`` obtained via a given
             decoder ``algorithm``.
 
+        Raises
+        ------
+        ValueError
+            If ``X`` does not fit the model: for the categorical models, a
+            boolean ``X`` or a symbol that is not a whole number from 0 to
+            ``n_features - 1``; for the others, a number of columns other
+            than the model's number of features, and for the multinomial
+            and Poisson models a count that is not a non-negative whole
+            number.
+
         See Also
         --------
         score_samples : Compute the log probability under the model and
@@ -373,6 +404,7 @@ class _AbstractHMM(BaseEstimator):
         }[algorithm]
 
         X = check_array(X)
+        self._check_X(X)
         log_prob = 0
         sub_state_sequences = []
         for sub_X in _utils.split_X_lengths(X, lengths):
@@ -521,6 +553,16 @@ class _AbstractHMM(BaseEstimator):
         -------
         self : object
             Returns self.
+
+        Raises
+        ------
+        ValueError
+            If ``X`` does not fit the model: for the categorical models, a
+            boolean ``X`` or a symbol that is not a whole number from 0 to
+            ``n_features - 1``; for the others, a number of columns other
+            than the model's number of features, and for the multinomial
+            and Poisson models a count that is not a non-negative whole
+            number.
         """
         # Refuse an invalid number of states before anything is computed
         # or written.
@@ -539,6 +581,9 @@ class _AbstractHMM(BaseEstimator):
         vars(self).pop("state_occupancy_", None)
         self._init(X, lengths)
         self._check()
+        # X against the parameters _check has validated, before the first
+        # E-step reads it.
+        self._check_X(X)
         self.monitor_._reset()
 
         for iter in range(self.n_iter):
@@ -733,6 +778,22 @@ class _AbstractHMM(BaseEstimator):
             do not sum to 1, or if a parameter is not finite.
         """
         raise NotImplementedError("Must be overridden in subclass")
+
+    def _check_X(self, X):
+        """
+        Check ``X``, as ``check_array`` returned it, against the model.
+
+        Runs after :meth:`_check`, so the parameters it reads are valid. It
+        reads the model and ``X`` and writes nothing. An emission class
+        overrides it; this class knows no emission distribution and checks
+        nothing, so a subclass that brings its own likelihood takes ``X`` as
+        it is.
+
+        Raises
+        ------
+        ValueError
+            If ``X`` does not fit the model; the message names ``X``.
+        """
 
     def _compute_likelihood(self, X):
         """

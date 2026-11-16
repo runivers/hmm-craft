@@ -140,6 +140,20 @@ class GMMHMMTestMixin:
                 pytest.raises(ValueError, match="weights_"):
             h.score(X)
 
+    @pytest.mark.parametrize("method", ["score", "predict"])
+    @pytest.mark.parametrize("n_columns", [1, 3])
+    def test_prediction_refuses_X_of_another_n_features(
+            self, n_columns, method):
+        """
+        ``X`` with one column fewer or one more than the model's features is
+        refused, naming ``X``.
+        """
+        h = self.new_hmm("log")
+        X = np.random.RandomState(10).normal(size=(10, n_columns))
+        with np.errstate(all="ignore"), \
+                pytest.raises(ValueError, match="X must have"):
+            getattr(h, method)(X)
+
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
     def test_sample(self, implementation):
         n_samples = 1000

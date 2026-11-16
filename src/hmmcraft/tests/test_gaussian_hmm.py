@@ -161,6 +161,37 @@ class GaussianHMMTestMixin:
         h.startprob_ = np.array([1.5, -0.5, 0.0])
         self._raises_naming(h, method, "startprob_")
 
+    @pytest.mark.parametrize("method", [
+        "score", "score_samples", "decode", "predict", "predict_proba"])
+    @pytest.mark.parametrize("n_columns", [1, 4])
+    def test_prediction_refuses_X_of_another_n_features(
+            self, n_columns, method):
+        """
+        ``X`` whose number of columns is not the model's number of features
+        is refused, naming ``X``, instead of being broadcast against
+        ``means_``.
+        """
+        h = self._built()
+        X = self.prng.randn(10, n_columns)
+        with np.errstate(all="ignore"), \
+                pytest.raises(ValueError, match="X must have"):
+            getattr(h, method)(X)
+
+    @pytest.mark.parametrize("n_columns", [1, 4])
+    def test_fit_refuses_X_of_another_width_than_kept_means(self, n_columns):
+        """
+        ``fit`` with ``means_`` kept (``"m"`` not in ``init_params``) and
+        ``n_features`` unset refuses ``X`` of another number of columns,
+        naming ``X``, instead of fitting ``means_`` from a broadcast.
+        """
+        h = hmm.GaussianHMM(self.n_components, self.covariance_type,
+                            init_params="stc", n_iter=3, random_state=0)
+        h.means_ = self.means.astype(float)
+        X = self.prng.randn(30, n_columns)
+        with np.errstate(all="ignore"), \
+                pytest.raises(ValueError, match="X must have"):
+            h.fit(X)
+
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
     def test_score_samples_and_decode(self, implementation):
         h = hmm.GaussianHMM(self.n_components, self.covariance_type,
@@ -566,6 +597,35 @@ def test_means_give_n_features_on_every_check():
     assert fitted.n_features == 1
     assert fitted.score(X) == built.score(X)
     assert fitted.n_features == 2
+
+
+def test_X_check_reads_means_not_a_stale_n_features():
+    """
+    The check of ``X`` takes the number of features from ``means_``, not
+    from an ``n_features`` left from an earlier fit: without ``_check``
+    running, ``X`` as wide as ``means_`` passes and ``X`` as wide as the
+    stale ``n_features`` is refused.
+    """
+    X = np.random.RandomState(10).normal(size=(20, 2))
+    model = hmm.GaussianHMM(2, "diag")
+    model.n_features = 1
+    model.means_ = np.array([[0.0, 0.0], [3.0, 3.0]])
+    model.covars_ = np.ones((2, 2))
+    model._check_X(X)
+    with pytest.raises(ValueError, match="X must have"):
+        model._check_X(X[:, :1])
+    assert model.n_features == 1
+
+
+def test_prediction_refuses_one_column_after_a_two_feature_fit():
+    """
+    A model fitted on two features refuses ``X`` with one column, naming
+    ``X``, instead of returning states.
+    """
+    X = np.random.RandomState(10).normal(size=(100, 2))
+    model = hmm.GaussianHMM(n_components=2, random_state=0).fit(X)
+    with pytest.raises(ValueError, match="X must have n_features=2"):
+        model.predict(np.zeros((4, 1)))
 
 
 @pytest.mark.parametrize("covariance_type", ["spherical", "diag"])

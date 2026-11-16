@@ -61,13 +61,15 @@ sequence, one after another; `lengths` gives the length of each, a positive
 integer. `fit` first refuses an `n_components` less than 1, then passes `X`
 and `lengths` to `_utils.split_X_lengths`, which raises `ValueError` for any
 other entry and for a total that is not the number of samples, so no start is
-computed from invalid `lengths`.
+computed from invalid `lengths`. After `_init` and `_check`, and before the
+first E-step, `_check_X` checks `X` against the model.
 
 ```mermaid
 flowchart TD
     A["fit(X, lengths)"] --> B["_init: starting parameters<br/>(named in init_params, or not yet set)"]
     B --> C["_check: shapes and values"]
-    C --> D["_do_estep"]
+    C --> X["_check_X: X against the model"]
+    X --> D["_do_estep"]
     D --> E["_compute_lower_bound"]
     E --> F["_do_mstep: new parameters<br/>(those named in params)"]
     F --> G{"ConvergenceMonitor:<br/>n_iter reached, or gain below tol?"}
@@ -100,6 +102,7 @@ A model class supplies these hooks; the loop never changes per class:
 |---|---|
 | `_init` | sets the starting parameters named in `init_params`, and any that is not yet set (k-means for Gaussian means, for instance) |
 | `_check` | validates shapes (`GaussianHMM`'s `means_` among them); in the five expectation-maximization models, also that probabilities sum to one with no negative entry and that emission parameters are finite |
+| `_check_X` | checks `X` against the model after `_check`, reading only: its number of columns, or for the categorical models that each symbol is a whole number from 0 to `n_features - 1` and that `X` is not boolean; then, for the multinomial and Poisson models, that each count is a non-negative whole number. The base class checks nothing, so a model that brings its own likelihood takes `X` as it is |
 | `_compute_likelihood` / `_compute_log_likelihood` | at least one implemented; the base class derives a missing one from the other |
 | `_initialize_sufficient_statistics` | the empty dictionary of statistics |
 | `_accumulate_sufficient_statistics` | adds one sequence's statistics |
@@ -111,16 +114,19 @@ A model class supplies these hooks; the loop never changes per class:
 `n_features` is set from `X` by `fit`, or from the emission parameter by
 `_check`. `_get_n_features` returns it, or before either has run the count the
 emission parameter implies; `aic`, `bic` and a spherical `covars_` read it
-there. `implementation` is read through
-`_by_implementation`, which raises `ValueError` for a value other than `"log"`
-or `"scaling"`.
+there. `_check_X` compares the columns of `X` with the count the emission
+parameter implies, not with `n_features`, which an earlier fit may have left;
+the categorical models, whose `n_features` is a constructor parameter and
+whose `X` holds symbols, test the symbols against `_get_n_features`.
+`implementation` is read through `_by_implementation`, which raises
+`ValueError` for a value other than `"log"` or `"scaling"`.
 
 `score` runs the forward pass alone; `score_samples`, `predict_proba` and
 `decode(algorithm="map")` run the forward and backward passes; none of them
-fits. `decode` with
-`algorithm="viterbi"` calls the kernel's `viterbi`. `sample` is a Python loop
-over the transition matrix and `_generate_sample_from_state`; it refuses fewer
-than one sample.
+fits. Each, and `decode`, runs `_check` and then `_check_X` on `X` before
+it is split into sequences. `decode` with `algorithm="viterbi"` calls the
+kernel's `viterbi`. `sample` is a Python loop over the transition matrix and
+`_generate_sample_from_state`; it refuses fewer than one sample.
 
 ## The C++ kernel
 

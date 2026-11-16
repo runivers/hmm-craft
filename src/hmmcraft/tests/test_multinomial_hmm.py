@@ -73,6 +73,48 @@ class TestMultinomialHMM:
         assert_allclose(posteriors.sum(axis=1), np.ones(n_samples))
 
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
+    @pytest.mark.parametrize("X, match", [
+        ([[1.5, 0.5, 3, 0], [3, 1, 1, 0]], "X must contain counts"),
+        ([[-1, 2, 4, 0], [3, 1, 1, 0]], "X must contain counts"),
+        ([[1, 1, 3], [3, 1, 1]], "X must have n_features=4"),
+        ([[1, 1, 3, 0, 0], [3, 1, 1, 0, 0]], "X must have n_features=4"),
+    ], ids=["fraction", "negative", "one-column-fewer", "one-column-more"])
+    def test_score_refuses_X_that_is_not_counts(self, X, match,
+                                                implementation):
+        """
+        ``score`` refuses, naming ``X``, a count that is negative or not a
+        whole number (scored as impossible otherwise) and ``X`` of another
+        number of columns (refused by SciPy otherwise).
+        """
+        h = self.new_hmm(implementation)
+        with np.errstate(all="ignore"), \
+                pytest.raises(ValueError, match=match):
+            h.score(np.array(X))
+
+    @pytest.mark.parametrize("implementation", ["scaling", "log"])
+    @pytest.mark.parametrize("dtype", [float, bool, object])
+    def test_counts_of_any_dtype_score_as_integers(self, dtype,
+                                                   implementation):
+        """
+        Counts held as whole floats, booleans or objects score as the same
+        counts held as integers.
+        """
+        h = self.new_hmm(implementation)
+        X = np.array([[1, 1, 0, 0], [0, 1, 1, 0], [1, 0, 0, 1]])
+        assert h.score(X.astype(dtype)) == h.score(X)
+
+    @pytest.mark.parametrize("implementation", ["scaling", "log"])
+    def test_rows_off_n_trials_score_with_their_own_total(
+            self, implementation):
+        """
+        Rows whose counts do not add up to ``n_trials``, the count 0
+        included, still score: each row with its own total.
+        """
+        h = self.new_hmm(implementation)
+        X = np.array([[1, 1, 0, 0], [0, 0, 0, 7], [2, 0, 1, 0]])
+        assert np.isfinite(h.score(X))
+
+    @pytest.mark.parametrize("implementation", ["scaling", "log"])
     def test_sample(self, implementation, n_samples=1000):
         h = self.new_hmm(implementation)
         X, state_sequence = h.sample(n_samples)

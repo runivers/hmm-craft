@@ -63,6 +63,22 @@ class _TestGaussian:
 
         assert_log_likelihood_increasing(model, X, lengths, n_iter=10)
 
+    @pytest.mark.parametrize("method", ["score", "predict"])
+    @pytest.mark.parametrize("n_columns", [1, 3])
+    def test_prediction_refuses_X_of_another_n_features(
+            self, n_columns, method):
+        """
+        A model fitted on two features refuses ``X`` with one column fewer
+        or one more, naming ``X``.
+        """
+        rs = np.random.RandomState(10)
+        X = rs.normal(size=(30, 2)) + 3 * rs.randint(0, 2, (30, 1))
+        model = vhmm.VariationalGaussianHMM(
+            2, self.covariance_type, n_iter=5, random_state=0).fit(X)
+        with np.errstate(all="ignore"), \
+                pytest.raises(ValueError, match="X must have"):
+            getattr(model, method)(rs.normal(size=(10, n_columns)))
+
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
     def test_fit_mcgrory_titterington1d(self, implementation):
         random_state = check_random_state(234234)

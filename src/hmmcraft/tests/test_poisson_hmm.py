@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from numpy.testing import assert_allclose
+from numpy.testing import assert_allclose, assert_array_equal
 from scipy import special
 from scipy.stats import poisson
 from sklearn.utils import check_random_state
@@ -54,6 +54,68 @@ class TestPoissonHMM:
                 log_alpha[:, None] + np.log(h.transmat_), axis=0)
         assert_allclose(h.score(X), special.logsumexp(log_alpha),
                         rtol=1e-12)
+
+    def _counts(self):
+        """200 counts sampled from the model of ``new_hmm``."""
+        return self.new_hmm("log").sample(200, random_state=0)[0]
+
+    @pytest.mark.parametrize("implementation", ["scaling", "log"])
+    @pytest.mark.parametrize("transform", [
+        lambda counts: counts / 2, lambda counts: counts - 1,
+    ], ids=["halved", "minus-one"])
+    def test_fit_refuses_X_that_is_not_counts(self, transform,
+                                              implementation):
+        """
+        ``fit`` refuses counts that are not whole numbers or are negative,
+        naming ``X``, instead of fitting every rate to NaN.
+        """
+        h = hmm.PoissonHMM(self.n_components, n_iter=5, random_state=0,
+                           implementation=implementation)
+        with np.errstate(all="ignore"), \
+                pytest.raises(ValueError, match="X must contain counts"):
+            h.fit(transform(self._counts()))
+
+    @pytest.mark.parametrize("implementation", ["scaling", "log"])
+    @pytest.mark.parametrize("X, match", [
+        ([[2, 1.5, 3], [1, 0, 4]], "X must contain counts"),
+        ([[2, -1, 3], [1, 0, 4]], "X must contain counts"),
+        ([[2], [1]], "X must have n_features=3"),
+    ], ids=["fraction", "negative", "one-column"])
+    def test_score_refuses_X_that_is_not_counts(self, X, match,
+                                                implementation):
+        """
+        ``score`` refuses, naming ``X``, a count that is negative or not a
+        whole number, and ``X`` of another number of columns.
+        """
+        h = self.new_hmm(implementation)
+        with np.errstate(all="ignore"), \
+                pytest.raises(ValueError, match=match):
+            h.score(np.array(X))
+
+    @pytest.mark.parametrize("implementation", ["scaling", "log"])
+    def test_whole_float_counts_fit_as_integers(self, implementation):
+        """
+        Counts held as whole floats fit and score as the same counts held
+        as integers.
+        """
+        counts = self._counts()
+
+        def fitted(X):
+            return hmm.PoissonHMM(self.n_components, n_iter=5,
+                                  random_state=0,
+                                  implementation=implementation).fit(X)
+
+        expected, h = fitted(counts), fitted(counts * 1.0)
+        assert_array_equal(h.lambdas_, expected.lambdas_)
+        assert h.score(counts) == expected.score(counts)
+
+    @pytest.mark.parametrize("implementation", ["scaling", "log"])
+    def test_boolean_counts_fit_and_score(self, implementation):
+        """Counts of 0 and 1 held as booleans fit and score finitely."""
+        X = self._counts() > 2
+        h = hmm.PoissonHMM(self.n_components, n_iter=5, random_state=0,
+                           implementation=implementation).fit(X)
+        assert np.isfinite(h.score(X))
 
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
     def test_score_samples(self, implementation, n_samples=1000):
