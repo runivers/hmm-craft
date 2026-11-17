@@ -9,14 +9,17 @@
 # ci_bit_equality.sh):
 #   REF      hmmlearn 0.3.3 from its tag, as its setup.py builds it
 #   REF_OFF  the same source with the option added
-#   FORK     this package, as its setup.py builds it
+#   FORK     this package, as its setup.py builds it: its kernel, like REF,
+#            without the option
 # and three comparisons of scripts/bit_equality.py dumps:
 #   A  REF against REF_OFF, no exception allowed: what the option changes in
 #      hmmlearn 0.3.3's results on this machine
 #   B  REF against FORK, the gate's exceptions: this package against
-#      hmmlearn 0.3.3 as upstream builds it
-#   C  REF_OFF against FORK, the gate's exceptions: the same with the option
-#      on both sides, so a difference here does not come from the option
+#      hmmlearn 0.3.3 as upstream builds it, the option on neither side, so
+#      a difference here does not come from the option
+#   C  REF_OFF against FORK, the gate's exceptions: the option on one side
+#      only, so C is expected to differ where A does, outside the arrays
+#      those exceptions cover
 # scripts/probe_contraction.py then reports, per build, whether the kernel
 # fuses a product into a sum, and what numpy does. It reports the same for the
 # kernels of two published wheels for this platform, installed in a fourth
@@ -195,7 +198,9 @@ option_count() {
 }
 
 # The builds are what their names say: the option on every compile line of
-# REF_OFF and FORK, on none of REF, and at least one compile line each.
+# REF_OFF, on none of REF and FORK, and at least one compile line each. Only
+# the compile lines of ext/_hmmc.cpp are counted, not those of any other
+# extension module of this package.
 options() {
     echo "REF: $(option_count "$out/build_ref.log")"
     echo "REF_OFF: $(option_count "$out/build_ref_off.log")"
@@ -204,16 +209,16 @@ options() {
         echo "-- $build"
         compile_lines "$out/build_$build.log"
     done
-    case "$(option_count "$out/build_ref.log")" in
-        "0 of 0" | [1-9]*) return 1 ;;
-    esac
-    for build in ref_off fork; do
-        count=$(option_count "$out/build_$build.log")
-        if [ "${count%% of *}" = 0 ] \
-            || [ "${count%% of *}" != "${count##* of }" ]; then
-            return 1
-        fi
+    for build in ref fork; do
+        case "$(option_count "$out/build_$build.log")" in
+            "0 of 0" | [1-9]*) return 1 ;;
+        esac
     done
+    count=$(option_count "$out/build_ref_off.log")
+    if [ "${count%% of *}" = 0 ] \
+        || [ "${count%% of *}" != "${count##* of }" ]; then
+        return 1
+    fi
 }
 
 machine() {
@@ -267,8 +272,9 @@ summary() {
     echo "Steps without a result: ${failed:-none}"
     echo "cell $cell on $(uname -sm); $(tr '\n' ' ' < "$out/pins.txt")"
     echo
-    echo "$option on the kernel's compile lines (expected: none for REF,"
-    echo "every line for REF_OFF and FORK); the lines are in options.log"
+    echo "$option on the compile lines of ext/_hmmc.cpp, no other file"
+    echo "(expected: every line for REF_OFF, none for REF and FORK); the lines"
+    echo "are in options.log"
     sed -n '1,3s/^/  /p' "$out/options.log"
     echo
     echo "The kernel file of each build, sha256:"
@@ -301,9 +307,11 @@ summary() {
     echo "  C  REF_OFF against FORK, $allow: $(result compare_c)"
     echo
     echo "A 0: the option changes none of hmmlearn 0.3.3's results in this"
-    echo "check on this machine. A 1: it changes them; B then differs as"
-    echo "well, and C is still expected to be 0. C 1: this package differs"
-    echo "from hmmlearn 0.3.3 for a reason other than the option."
+    echo "check on this machine, and C is expected to be 0 as well. A 1: it"
+    echo "changes them; C then differs as well, unless every difference is"
+    echo "in an array the gate's exceptions cover, and B is still expected to"
+    echo "be 0. B 1: this package differs from hmmlearn 0.3.3 for a reason"
+    echo "other than the option."
     echo
     echo "numpy (probe_contraction.py): probe_numpy.log"
     grep -E '^(einsum|feature sums): ' "$out/probe_numpy.log" | sed 's/^/  /'

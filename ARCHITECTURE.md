@@ -188,10 +188,7 @@ raises `ValueError`, and so does a matrix with no rows (a sequence without
 samples) or no columns (a model without states): the recursions use unchecked
 accessors, and hmmlearn 0.3.3's kernel indexed outside its arrays there. Each
 function releases the GIL while it loops. The kernel's source is hmmlearn
-0.3.3's apart from that check and the module's package name. `setup.py`
-passes the compiler `-ffp-contract=off` on every platform but Windows, where
-MSVC does not take the option: a product and the sum it feeds are rounded one
-after the other and are not fused into one instruction.
+0.3.3's apart from that check and the module's package name.
 
 ## What the package promises
 
