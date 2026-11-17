@@ -48,9 +48,9 @@ def log_multivariate_normal_density(X, means, covars, covariance_type='diag'):
     )
 
 
-def _read_as_is(a, ndim):
-    """Whether the C++ loops take ``a`` as it is: a plain float64 array."""
-    return (type(a) is np.ndarray and a.dtype == _FLOAT64 and a.ndim == ndim
+def _read_as_is(a, ndim, dtype=_FLOAT64):
+    """Whether ``a`` is read as it is: a plain C-ordered ``dtype`` array."""
+    return (type(a) is np.ndarray and a.dtype == dtype and a.ndim == ndim
             and a.flags.c_contiguous and a.flags.aligned and a.size > 0)
 
 

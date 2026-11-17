@@ -58,6 +58,74 @@ def _weighted_outer_sum(posteriors, X):
     return np.einsum('ij,ik,il->jkl', posteriors, X, X)
 
 
+_INT64 = np.dtype(np.int64)
+# The most entries of the (rows, n_components, n_features) arrays one
+# multinomial call makes: two arrays of 2 MiB.
+_MULTINOMIAL_ENTRIES = 2 ** 18
+
+
+def _special_reports_nothing():
+    """Whether scipy.special is set to report no error of its functions."""
+    return all(action == "ignore"
+               for kind, action in special.geterr().items()
+               if kind != "memory")
+
+
+def _reports_as_errors():
+    """numpy's error state with each report it would make as an error."""
+    # The Poisson and multinomial hooks run their shorter lines in this
+    # state. numpy has something to report for those lines when it has for
+    # scipy.stats: the same operations on the same values. Each report the
+    # caller's error state asks for is an error there; scipy.stats then
+    # computes every state and reports in the caller's way. A state whose
+    # values hold NaN is computed again by scipy.stats too.
+    return {kind: "ignore" if action == "ignore" else "raise"
+            for kind, action in np.geterr().items()}
+
+
+def _states_with_nan(values):
+    """The states whose column of ``values`` holds a NaN."""
+    return np.flatnonzero(np.isnan(values).any(axis=0))
+
+
+def _poisson_direct(X, lambdas, n_components):
+    """Whether xlogy and gammaln stand for scipy.stats.poisson here."""
+    return ((_read_as_is(X, 2, _INT64) or _read_as_is(X, 2))
+            and _read_as_is(lambdas, 2)
+            and lambdas.shape == (n_components, X.shape[1])
+            and _special_reports_nothing())
+
+
+def _are_counts(X):
+    """scipy.stats.poisson's test of a count, for every entry of X."""
+    if X.dtype == _INT64:
+        return X.min() >= 0
+    return ((X >= 0) & (np.floor(X) == X)).all()
+
+
+def _multinomial_together(X, emissionprob, n_components):
+    """Whether one scipy.stats call scores X against every state here."""
+    return (_read_as_is(X, 2, _INT64) and _read_as_is(emissionprob, 2)
+            and emissionprob.shape == (n_components, X.shape[1])
+            and emissionprob.size <= _MULTINOMIAL_ENTRIES
+            and _special_reports_nothing())
+
+
+def _multinomial_logpmf(X, n_trials, emissionprob):
+    """multinomial.logpmf of each row for each state, in pieces of rows."""
+    # scipy.stats computes each row and state on its own, so one call for
+    # every state gives the values of one call per state. A piece of rows
+    # per call keeps its (rows, n_components, n_features) arrays small.
+    logprobs = np.empty((len(X), len(emissionprob)))
+    rows = _MULTINOMIAL_ENTRIES // emissionprob.size
+    for start in range(0, len(X), rows):
+        stop = start + rows
+        logprobs[start:stop] = multinomial.logpmf(
+            X[start:stop, None, :], n=n_trials[start:stop, None],
+            p=emissionprob[None, :, :])
+    return logprobs
+
+
 def _make_wrapper(func):
     return functools.wraps(func)(lambda *args, **kwargs: func(*args, **kwargs))
 
@@ -481,7 +549,23 @@ class BaseMultinomialHMM(BaseHMM):
     def _compute_likelihood(self, X):
         probs = np.empty((len(X), self.n_components))
         n_trials = X.sum(axis=1)
-        for c in range(self.n_components):
+        states = range(self.n_components)
+        if _multinomial_together(X, self.emissionprob_, self.n_components):
+            # A report, or a NaN in a state, is left to scipy.stats: see
+            # _reports_as_errors.
+            try:
+                with np.errstate(**_reports_as_errors()):
+                    logprobs = _multinomial_logpmf(
+                        X, n_trials, self.emissionprob_)
+                    for c in states:
+                        # numpy's exp is given what scipy.stats gives it:
+                        # one state's values, contiguous.
+                        probs[:, c] = np.exp(
+                            np.ascontiguousarray(logprobs[:, c]))
+                    states = _states_with_nan(probs)
+            except FloatingPointError:
+                pass
+        for c in states:
             probs[:, c] = multinomial.pmf(
                 X, n=n_trials, p=self.emissionprob_[c, :])
         return probs
@@ -489,7 +573,18 @@ class BaseMultinomialHMM(BaseHMM):
     def _compute_log_likelihood(self, X):
         logprobs = np.empty((len(X), self.n_components))
         n_trials = X.sum(axis=1)
-        for c in range(self.n_components):
+        states = range(self.n_components)
+        if _multinomial_together(X, self.emissionprob_, self.n_components):
+            # A report, or a NaN in a state, is left to scipy.stats: see
+            # _reports_as_errors.
+            try:
+                with np.errstate(**_reports_as_errors()):
+                    logprobs = _multinomial_logpmf(
+                        X, n_trials, self.emissionprob_)
+                    states = _states_with_nan(logprobs)
+            except FloatingPointError:
+                pass
+        for c in states:
             logprobs[:, c] = multinomial.logpmf(
                 X, n=n_trials, p=self.emissionprob_[c, :])
         return logprobs
@@ -533,15 +628,56 @@ class BasePoissonHMM(BaseHMM):
             "l": nc * nf,
         }
 
+    # scipy.stats.poisson tests every count (non-negative, whole) and every
+    # rate (non-negative) and, for those that pass, evaluates
+    # xlogy(k, mu) - gammaln(k + 1) - mu. When all pass, the lines below are
+    # that expression with gammaln(k + 1) computed once for all states. They
+    # are used for the arrays the tests compare with scipy.stats as bytes:
+    # plain int64 or float64 counts and float64 rates in C order (scipy adds
+    # 1 to other integer types in a type that depends on the numpy version),
+    # while scipy.special reports no error of its own.
+
     def _compute_likelihood(self, X):
         probs = np.empty((len(X), self.n_components))
-        for c in range(self.n_components):
+        states = range(self.n_components)
+        if _poisson_direct(X, self.lambdas_, self.n_components):
+            # A report, or a NaN in a state, is left to scipy.stats: see
+            # _reports_as_errors.
+            try:
+                with np.errstate(**_reports_as_errors()):
+                    if _are_counts(X) and (self.lambdas_ >= 0).all():
+                        log_factorial = special.gammaln(X + 1)
+                        for c in states:
+                            rates = self.lambdas_[c]
+                            probs[:, c] = np.clip(np.exp(
+                                special.xlogy(X, rates) - log_factorial
+                                - rates), 0, 1).prod(axis=1)
+                        states = _states_with_nan(probs)
+            except FloatingPointError:
+                pass
+        for c in states:
             probs[:, c] = poisson.pmf(X, self.lambdas_[c]).prod(axis=1)
         return probs
 
     def _compute_log_likelihood(self, X):
         logprobs = np.empty((len(X), self.n_components))
-        for c in range(self.n_components):
+        states = range(self.n_components)
+        if _poisson_direct(X, self.lambdas_, self.n_components):
+            # A report, or a NaN in a state, is left to scipy.stats: see
+            # _reports_as_errors.
+            try:
+                with np.errstate(**_reports_as_errors()):
+                    if _are_counts(X) and (self.lambdas_ >= 0).all():
+                        log_factorial = special.gammaln(X + 1)
+                        for c in states:
+                            rates = self.lambdas_[c]
+                            logprobs[:, c] = (
+                                special.xlogy(X, rates) - log_factorial
+                                - rates).sum(axis=1)
+                        states = _states_with_nan(logprobs)
+            except FloatingPointError:
+                pass
+        for c in states:
             logprobs[:, c] = poisson.logpmf(X, self.lambdas_[c]).sum(axis=1)
         return logprobs
 

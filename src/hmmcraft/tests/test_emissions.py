@@ -1,7 +1,10 @@
-"""The statistic of the full and tied covariances, ``hmmcraft._emissions``.
+"""The emission hooks' shorter paths, ``hmmcraft._emissions``.
 
-On the machines where it is used, a C++ loop computes the statistic for the
-arrays it is proven for; numpy's einsum computes it for the rest.
+On the machines where it is used, a C++ loop computes the statistic of the
+full and tied covariances for the arrays it is proven for; numpy's einsum
+computes it for the rest. The Poisson and multinomial hooks make fewer
+``scipy.stats`` calls for the arrays they are proven for, with the bytes,
+warnings and errors of one call per state.
 """
 
 import copy
@@ -10,9 +13,11 @@ import sys
 
 import numpy as np
 import pytest
+import scipy.stats
+from scipy import special
 
 from hmmcraft import _emissions, _emissionsc
-from hmmcraft.hmm import GaussianHMM
+from hmmcraft.hmm import GaussianHMM, MultinomialHMM, PoissonHMM
 from hmmcraft.vhmm import VariationalGaussianHMM
 
 from .test_emissionsc import _one_rounding_per_operation
@@ -353,3 +358,632 @@ def test_full_and_tied_fits_are_the_same_with_and_without_the_statistic_loop(
     without_loop = _continue(copy.deepcopy(model), X, lengths)
     assert with_loop.keys() == without_loop.keys()
     assert with_loop == without_loop
+
+
+# The Poisson and multinomial hooks: fewer scipy.stats calls for the arrays
+# they are proven for, one call per state (hmmlearn 0.3.3's lines) for the
+# rest, for every input with a report and for every state holding NaN.
+
+
+class _Recorded:
+    """A scipy.stats distribution whose ``logpmf`` and ``pmf`` calls are
+    recorded as ``(name, number of dimensions of x)``."""
+
+    def __init__(self, name, distribution, calls):
+        self._name = name
+        self._distribution = distribution
+        self._calls = calls
+
+    def logpmf(self, x, *args, **kwargs):
+        self._calls.append((f"{self._name}.logpmf", np.ndim(x)))
+        return self._distribution.logpmf(x, *args, **kwargs)
+
+    def pmf(self, x, *args, **kwargs):
+        self._calls.append((f"{self._name}.pmf", np.ndim(x)))
+        return self._distribution.pmf(x, *args, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(self._distribution, name)
+
+
+@pytest.fixture
+def scipy_calls(monkeypatch):
+    """Record each scipy.stats Poisson and multinomial call made through
+    ``hmmcraft._emissions``: a call for one state has a 2-D ``x``, a
+    multinomial call for every state a 3-D one.
+
+    The test runs in numpy's default error state, the one a caller has
+    unless they change it; this test package sets every report to "warn".
+    """
+    calls = []
+    monkeypatch.setattr(_emissions, "poisson",
+                        _Recorded("poisson", scipy.stats.poisson, calls))
+    monkeypatch.setattr(
+        _emissions, "multinomial",
+        _Recorded("multinomial", scipy.stats.multinomial, calls))
+    with np.errstate(divide="warn", over="warn", under="ignore",
+                     invalid="warn"):
+        yield calls
+
+
+def _poisson_per_state(X, lambdas, n_components, hook):
+    """hmmlearn 0.3.3's Poisson hooks, as written: one scipy.stats call per
+    state. The reference the package must reproduce as bytes, with its
+    warnings and errors; it is not edited with the package."""
+    out = np.empty((len(X), n_components))
+    for c in range(n_components):
+        if hook == "log":
+            out[:, c] = _emissions.poisson.logpmf(X, lambdas[c]).sum(axis=1)
+        else:
+            out[:, c] = _emissions.poisson.pmf(X, lambdas[c]).prod(axis=1)
+    return out
+
+
+def _multinomial_per_state(X, emissionprob, n_components, hook):
+    """hmmlearn 0.3.3's multinomial hooks, as written: one scipy.stats call
+    per state."""
+    out = np.empty((len(X), n_components))
+    n_trials = X.sum(axis=1)
+    for c in range(n_components):
+        if hook == "log":
+            out[:, c] = _emissions.multinomial.logpmf(
+                X, n=n_trials, p=emissionprob[c, :])
+        else:
+            out[:, c] = _emissions.multinomial.pmf(
+                X, n=n_trials, p=emissionprob[c, :])
+    return out
+
+
+FAMILIES = {
+    "poisson": (PoissonHMM, "lambdas_", _poisson_per_state),
+    "multinomial": (MultinomialHMM, "emissionprob_", _multinomial_per_state),
+}
+HOOKS = ["log", "pmf"]
+
+
+def _model(family, params, n_components):
+    """A model built by hand, its emission parameters stored as they are,
+    past the conversion of the attribute's setter."""
+    model_class, name, _ = FAMILIES[family]
+    model = model_class(n_components)
+    vars(model)[name] = params
+    return model
+
+
+def _hook(model, hook):
+    return {"log": model._compute_log_likelihood,
+            "pmf": model._compute_likelihood}[hook]
+
+
+def _per_state_call(family, hook):
+    """The scipy.stats call that 0.3.3 makes once per state."""
+    return (f"{family}.{'logpmf' if hook == 'log' else 'pmf'}", 2)
+
+
+def _compare(calls, family, hook, X, params, n_components=None):
+    """Assert that the hook gives the outcome of one scipy.stats call per
+    state, and return that outcome and the calls made for it; ``calls``
+    then holds the hook's own calls."""
+    if n_components is None:
+        n_components = len(params)
+    per_state = FAMILIES[family][2]
+    want = _outcome(per_state, X, params, n_components, hook)
+    per_state_calls = calls[:]
+    del calls[:]
+    got = _outcome(_hook(_model(family, params, n_components), hook), X)
+    assert got == want
+    return want, per_state_calls
+
+
+def _calls_left_to_scipy_stats(outcome, per_state_calls):
+    """The calls of one scipy.stats call per state that the hook makes too:
+    all of them when they report a floating-point error, else those of the
+    states whose values hold NaN."""
+    result, caught = outcome
+    if caught or result[:2] == ("error", "FloatingPointError"):
+        return per_state_calls
+    values = np.frombuffer(result[-1]).reshape(result[3])
+    has_nan = np.isnan(values).any(axis=0)
+    return [call for call, nan in zip(per_state_calls, has_nan) if nan]
+
+
+def _poisson_inputs(n_samples, n_components, n_features, dtype=np.int64):
+    """Seeded rates, and counts drawn from them."""
+    rs = np.random.RandomState(0)
+    lambdas = 5 * rs.rand(n_components, n_features)
+    states = rs.randint(n_components, size=n_samples)
+    X = rs.poisson(lambdas[states]).astype(dtype)
+    return X, lambdas
+
+
+def _multinomial_inputs(n_samples, n_components, n_features, totals=5):
+    """Seeded probabilities, and counts drawn from them: ``totals`` trials
+    in every row, or a number of its own in each ("per row"), the first
+    row all zeros."""
+    rs = np.random.RandomState(0)
+    emissionprob = rs.dirichlet(np.ones(n_features), n_components)
+    states = rs.randint(n_components, size=n_samples)
+    if totals == "per row":
+        totals = rs.randint(0, 9, size=n_samples)
+        totals[0] = 0
+    else:
+        totals = np.full(n_samples, totals)
+    X = np.array([rs.multinomial(total, emissionprob[state])
+                  for total, state in zip(totals, states)], dtype=np.int64)
+    return X.reshape(n_samples, n_features), emissionprob
+
+
+INPUTS = {"poisson": _poisson_inputs, "multinomial": _multinomial_inputs}
+SHAPES = [(n_samples, n_components, n_features)
+          for n_samples, n_components in [(1, 1), (2, 3), (9, 2), (40, 5)]
+          for n_features in [1, 2, 3, 8, 9, 17]]
+
+
+def _with(a, index, value, dtype=None):
+    """A copy of ``a``, in ``dtype`` if given, with ``value`` at
+    ``index``."""
+    a = a.astype(dtype or a.dtype)
+    a[index] = value
+    return a
+
+
+def _unaligned_copy(a):
+    """A copy of ``a`` whose data start one byte past an aligned
+    address."""
+    raw = np.frombuffer(bytearray(a.nbytes + 1), dtype=a.dtype,
+                        offset=1).reshape(a.shape)
+    raw[...] = a
+    assert not raw.flags.aligned
+    return raw
+
+
+def test_poisson_emissions_of_a_hand_written_case(scipy_calls):
+    """Two zero counts at rates 1 and 2: the log-probability is exactly -3,
+    the probability exp(-1) * exp(-2), in a new C-ordered float64 array;
+    scipy.stats is not called."""
+    model = _model("poisson", np.array([[1.0, 2.0]]), 1)
+    X = np.array([[0, 0]], dtype=np.int64)
+    for hook, value in [("log", -3.0), ("pmf", np.exp(-1.0) * np.exp(-2.0))]:
+        got = _hook(model, hook)(X)
+        assert got.dtype == np.float64 and got.shape == (1, 1)
+        assert got.flags.c_contiguous and got.flags.writeable
+        assert got.tobytes() == np.array([[value]]).tobytes()
+    assert scipy_calls == []
+
+
+@pytest.mark.parametrize("hook", HOOKS)
+@pytest.mark.parametrize("dtype", [np.int64, np.float64],
+                         ids=["int64", "float64"])
+@pytest.mark.parametrize("n_samples, n_components, n_features", SHAPES)
+def test_poisson_emissions_equal_scipy_stats_per_state_as_bytes(
+        scipy_calls, n_samples, n_components, n_features, dtype, hook):
+    """Plain int64 or float64 counts and float64 rates give the bytes of one
+    scipy.stats call per state, without a scipy.stats call."""
+    _compare(scipy_calls, "poisson", hook,
+             *_poisson_inputs(n_samples, n_components, n_features, dtype))
+    assert scipy_calls == []
+
+
+POISSON_WITHOUT_REPORT = {
+    "a zero rate under a positive count": (
+        [[2, 0, 5], [4, 0, 3], [1, 6, 0], [3, 4, 0]], np.int64,
+        [[3.1, 0.0, 4.5], [1.6, 5.3, 0.0]]),
+    "a zero rate under a zero count": (
+        [[0, 3]], np.int64, [[0.0, 2.0], [1.0, 1.0]]),
+    "counts of 2**53": ([[2 ** 53, 1]], np.int64, [[1.0, 2.0], [3.0, 4.0]]),
+    "float counts of 2**53": (
+        [[2.0 ** 53, 1.0]], np.float64, [[1.0, 2.0], [3.0, 4.0]]),
+    "a negative zero count": (
+        [[-0.0, 1.0]], np.float64, [[1.0, 2.0], [3.0, 4.0]]),
+    "an infinite rate under a zero count": (
+        [[0, 1]], np.int64, [[np.inf, 1.0], [2.0, 3.0]]),
+}
+
+
+@pytest.mark.parametrize("hook", HOOKS)
+@pytest.mark.parametrize("name", list(POISSON_WITHOUT_REPORT))
+def test_poisson_values_scipy_gives_without_a_report_stay_direct(
+        scipy_calls, name, hook):
+    """A count or rate at a limit that scipy.stats evaluates without a
+    report, ``-inf`` included, keeps the shorter path and scipy's bytes."""
+    X, dtype, lambdas = POISSON_WITHOUT_REPORT[name]
+    want, _ = _compare(scipy_calls, "poisson", hook,
+                       np.array(X, dtype=dtype), np.array(lambdas))
+    assert want[1] == []
+    assert scipy_calls == []
+
+
+# name: (family, X, its dtype, parameters, hooks, error state)
+REPORTS = {
+    "an infinite rate under a positive count": (
+        "poisson", [[1, 0]], np.int64,
+        [[1.0, 2.0], [np.inf, 2.0], [0.5, 1.0]], HOOKS, {}),
+    "two rates whose sum overflows": (
+        "poisson", [[0, 0]], np.int64,
+        [[1e308, 1e308], [1.0, 1.0], [2.0, 2.0]], ["log"], {}),
+    "a log that overflows to a probability of 0": (
+        "poisson", [[2.5e305]], np.float64, [[1e-10], [1.0], [2.0]],
+        HOOKS, {}),
+    "a probability that underflows, reported": (
+        "poisson", [[1000]], np.int64, [[1.0], [2.0], [3.0]], ["pmf"],
+        {"under": "warn"}),
+    "a negative count over a zero probability": (
+        "multinomial", [[-1, 1, 1], [1, 1, 1]], np.int64,
+        [[0.0, 0.4, 0.6], [0.2, 0.3, 0.5], [0.5, 0.25, 0.25]], HOOKS, {}),
+}
+REPORT_CASES = [(name, hook) for name, case in REPORTS.items()
+                for hook in case[4]]
+
+
+def _report_case(name):
+    family, X, dtype, params, _, state = REPORTS[name]
+    return family, np.array(X, dtype=dtype), np.array(params), state
+
+
+@pytest.mark.parametrize("name, hook", REPORT_CASES)
+def test_a_report_sends_every_state_to_scipy_stats(scipy_calls, name, hook):
+    """A floating-point report the caller asks for, here a warning, comes
+    from scipy.stats: every state is computed by one call per state, with
+    its warnings."""
+    family, X, params, state = _report_case(name)
+    with np.errstate(**state):
+        want, per_state_calls = _compare(scipy_calls, family, hook, X,
+                                         params)
+    assert want[0][0] == "array" and want[1] != []
+    assert per_state_calls == [_per_state_call(family, hook)] * 3
+    assert [call for call in scipy_calls if call[1] == 2] == per_state_calls
+
+
+@pytest.mark.parametrize("name, hook", REPORT_CASES)
+def test_a_raised_report_is_the_error_of_one_call_per_state(
+        scipy_calls, name, hook):
+    """Under ``all="raise"`` the hook raises the FloatingPointError of one
+    scipy.stats call per state, with its text, not chained to an error of
+    the shorter path."""
+    family, X, params, _ = _report_case(name)
+    with np.errstate(all="raise"):
+        want, _ = _compare(scipy_calls, family, hook, X, params)
+        with pytest.raises(FloatingPointError) as raised:
+            _hook(_model(family, params, 3), hook)(X)
+    assert want[0] == ("error", "FloatingPointError", str(raised.value))
+    assert raised.value.__context__ is None
+    assert raised.value.__cause__ is None
+
+
+@pytest.mark.parametrize("name, hook", REPORT_CASES)
+def test_what_the_caller_ignores_is_not_a_report(scipy_calls, name, hook):
+    """Under ``all="ignore"`` the same inputs keep the shorter path; only a
+    state whose values hold NaN is computed again by scipy.stats."""
+    family, X, params, _ = _report_case(name)
+    with np.errstate(all="ignore"):
+        want, per_state_calls = _compare(scipy_calls, family, hook, X,
+                                         params)
+    assert want[1] == []
+    assert ([call for call in scipy_calls if call[1] == 2]
+            == _calls_left_to_scipy_stats(want, per_state_calls))
+
+
+@pytest.mark.parametrize("hook", HOOKS)
+def test_a_poisson_state_holding_nan_is_computed_again_by_scipy_stats(
+        scipy_calls, hook):
+    """An infinite count: ``-inf`` at rate 0.5, kept; at rate 1 a NaN that
+    nothing reports, so that state alone is computed by scipy.stats."""
+    want, per_state_calls = _compare(
+        scipy_calls, "poisson", hook, np.array([[np.inf]]),
+        np.array([[0.5], [1.0]]))
+    assert want[1] == []
+    assert scipy_calls == per_state_calls[1:]
+
+
+POISSON_REFUSED = {
+    "a fractional count": lambda X, L: (_with(X, (1, 2), 0.5, np.float64), L),
+    "a negative count": lambda X, L: (_with(X, (1, 2), -1), L),
+    "a negative float count": lambda X, L: (
+        _with(X, (1, 2), -1.0, np.float64), L),
+    "a NaN count": lambda X, L: (_with(X, (1, 2), np.nan, np.float64), L),
+    "uint8 X holding 255": lambda X, L: (_with(X, (1, 2), 255, np.uint8), L),
+    "int8 X holding 127": lambda X, L: (_with(X, (1, 2), 127, np.int8), L),
+    "int32 X": lambda X, L: (X.astype(np.int32), L),
+    "uint64 X": lambda X, L: (X.astype(np.uint64), L),
+    "boolean X": lambda X, L: (X > 2, L),
+    "object X": lambda X, L: (X.astype(object), L),
+    "float32 X": lambda X, L: (X.astype(np.float32), L),
+    "longdouble X": lambda X, L: (X.astype(np.longdouble), L),
+    "byte-swapped X": lambda X, L: (X.astype(">i8"), L),
+    "F-ordered X": lambda X, L: (np.asfortranarray(X), L),
+    "stepped X": lambda X, L: (np.repeat(X, 2, axis=1)[:, ::2], L),
+    "reversed X": lambda X, L: (X[::-1], L),
+    "unaligned X": lambda X, L: (_unaligned_copy(X), L),
+    "subclass X": lambda X, L: (X.view(_Subclass), L),
+    "matrix X": lambda X, L: (_matrix(X), L),
+    "masked X": lambda X, L: (np.ma.masked_array(X), L),
+    "list X": lambda X, L: (X.tolist(), L),
+    "1-D X": lambda X, L: (X[0], L),
+    "3-D X": lambda X, L: (X[None], L),
+    "no samples": lambda X, L: (X[:0], L),
+    "no features": lambda X, L: (X[:, :0], L),
+    "integer rates": lambda X, L: (X, np.round(L).astype(np.int64)),
+    "float32 rates": lambda X, L: (X, L.astype(np.float32)),
+    "F-ordered rates": lambda X, L: (X, np.asfortranarray(L)),
+    "stepped rates": lambda X, L: (X, np.repeat(L, 2, axis=1)[:, ::2]),
+    "one column of rates": lambda X, L: (
+        X, np.ascontiguousarray(L[:, :1])),
+    "a row of rates short": lambda X, L: (X, L[:-1], 3),
+    "a row of rates too many": lambda X, L: (X, np.vstack([L, L[:1]]), 3),
+    "a negative rate": lambda X, L: (X, _with(L, (1, 2), -1.0)),
+    "a NaN rate": lambda X, L: (X, _with(L, (1, 2), np.nan)),
+    "subclass rates": lambda X, L: (X, L.view(_Subclass)),
+    "list rates": lambda X, L: (X, L.tolist()),
+}
+
+
+@pytest.mark.parametrize("hook", HOOKS)
+@pytest.mark.parametrize("name", list(POISSON_REFUSED))
+def test_inputs_the_direct_poisson_form_is_not_proven_for_take_scipy_stats(
+        scipy_calls, name, hook):
+    """Another type, dtype, layout, shape or value of the counts or the
+    rates is scored by one scipy.stats call per state: its values, its
+    warnings or its exception."""
+    _, per_state_calls = _compare(
+        scipy_calls, "poisson", hook,
+        *POISSON_REFUSED[name](*_poisson_inputs(6, 3, 4)))
+    assert scipy_calls == per_state_calls
+
+
+POISSON_TAKEN = {
+    "read-only arrays": lambda X, L: (_read_only(X), _read_only(L)),
+    "a row slice": lambda X, L: (np.vstack([X, X])[2:8], L),
+    "a piece of np.split": lambda X, L: (np.split(X, [2])[1], L),
+    "one state": lambda X, L: (X, L[:1]),
+    "one feature": lambda X, L: (np.asfortranarray(X[:, :1]),
+                                 np.asfortranarray(L[:, :1])),
+    "one sample": lambda X, L: (X[:1], L),
+}
+
+
+@pytest.mark.parametrize("hook", HOOKS)
+@pytest.mark.parametrize("dtype", [np.int64, np.float64],
+                         ids=["int64", "float64"])
+@pytest.mark.parametrize("name", list(POISSON_TAKEN))
+def test_arrays_numpy_treats_alike_reach_the_direct_poisson_form(
+        scipy_calls, name, dtype, hook):
+    """Counts and rates that are C-ordered arrays of the dtypes proven, as
+    they are, take the shorter path with scipy's bytes."""
+    _compare(scipy_calls, "poisson", hook,
+             *POISSON_TAKEN[name](*_poisson_inputs(6, 3, 4, dtype)))
+    assert scipy_calls == []
+
+
+def _shorter_path_calls(family, hook):
+    """The scipy.stats calls of the shorter path for a few rows."""
+    return [] if family == "poisson" else [("multinomial.logpmf", 3)]
+
+
+ERROR_STATES = {"default": {}, "all=warn": {"all": "warn"},
+                "all=raise": {"all": "raise"}, "all=call": {"all": "call"}}
+
+
+@pytest.mark.parametrize("hook", HOOKS)
+@pytest.mark.parametrize("family", list(FAMILIES))
+@pytest.mark.parametrize("state", list(ERROR_STATES))
+def test_count_emissions_take_the_shorter_path_in_every_error_state(
+        scipy_calls, state, family, hook):
+    """Data with nothing to report take the shorter path whatever the error
+    state: no warning, no error, no call of an error handler."""
+    handled = []
+    X, params = INPUTS[family](9, 2, 3)
+    with np.errstate(call=lambda kind, flag: handled.append(kind),
+                     **ERROR_STATES[state]):
+        want, _ = _compare(scipy_calls, family, hook, X, params)
+    assert want[0][0] == "array" and want[1] == [] and handled == []
+    assert scipy_calls == _shorter_path_calls(family, hook)
+
+
+@pytest.mark.parametrize("hook", HOOKS)
+@pytest.mark.parametrize("family", list(FAMILIES))
+def test_scipy_special_reports_leave_the_count_emissions_to_scipy_stats(
+        scipy_calls, family, hook):
+    """While scipy.special reports errors of its own, every state is
+    computed by one scipy.stats call per state, with those reports."""
+    X, params = INPUTS[family](6, 3, 4)
+    X[0] = [1, 1, 1, 2]
+    params[0] = [0.0, 0.5, 0.25, 0.25]
+    with special.errstate(singular="warn"):
+        want, per_state_calls = _compare(scipy_calls, family, hook, X,
+                                         params)
+    assert any(category == "SpecialFunctionWarning"
+               for category, _ in want[1])
+    assert scipy_calls == per_state_calls
+
+
+def test_multinomial_emissions_of_a_hand_written_case(scipy_calls):
+    """One state that always emits the first symbol: probability 1 for one
+    draw of it and 0 for one of the second, from one call for every
+    state."""
+    model = _model("multinomial", np.array([[1.0, 0.0]]), 1)
+    X = np.array([[1, 0], [0, 1]], dtype=np.int64)
+    for hook, values in [("log", [[0.0], [-np.inf]]),
+                         ("pmf", [[1.0], [0.0]])]:
+        got = _hook(model, hook)(X)
+        assert got.dtype == np.float64 and got.shape == (2, 1)
+        assert got.flags.c_contiguous and got.flags.writeable
+        assert got.tobytes() == np.array(values).tobytes()
+    assert scipy_calls == [("multinomial.logpmf", 3)] * 2
+
+
+@pytest.mark.parametrize("hook", HOOKS)
+@pytest.mark.parametrize("totals", [1, 5, "per row"])
+@pytest.mark.parametrize("n_samples, n_components, n_features", SHAPES)
+def test_multinomial_emissions_equal_scipy_stats_per_state_as_bytes(
+        scipy_calls, n_samples, n_components, n_features, totals, hook):
+    """Plain int64 counts and float64 probabilities give the bytes of one
+    scipy.stats call per state from one call for every state."""
+    _compare(scipy_calls, "multinomial", hook,
+             *_multinomial_inputs(n_samples, n_components, n_features,
+                                  totals))
+    assert scipy_calls == [("multinomial.logpmf", 3)]
+
+
+@pytest.mark.parametrize("hook", HOOKS)
+@pytest.mark.parametrize("rows, n_calls", [(1, 9), (2, 5), (7, 2)])
+def test_multinomial_rows_are_scored_in_pieces_with_the_same_bytes(
+        scipy_calls, monkeypatch, rows, n_calls, hook):
+    """The rows are scored a piece at a time, as many rows per call as the
+    bound on the entries allows; the bytes do not change."""
+    X, emissionprob = _multinomial_inputs(9, 3, 4, "per row")
+    monkeypatch.setattr(_emissions, "_MULTINOMIAL_ENTRIES",
+                        rows * emissionprob.size)
+    _compare(scipy_calls, "multinomial", hook, X, emissionprob)
+    assert scipy_calls == [("multinomial.logpmf", 3)] * n_calls
+
+
+@pytest.mark.parametrize("hook", HOOKS)
+def test_a_row_over_the_bound_is_scored_by_one_call_per_state(
+        scipy_calls, monkeypatch, hook):
+    """When one row has more entries than the bound, every state is scored
+    by its own call."""
+    X, emissionprob = _multinomial_inputs(9, 3, 4, "per row")
+    monkeypatch.setattr(_emissions, "_MULTINOMIAL_ENTRIES",
+                        emissionprob.size - 1)
+    _, per_state_calls = _compare(scipy_calls, "multinomial", hook, X,
+                                  emissionprob)
+    assert scipy_calls == per_state_calls
+    assert per_state_calls == [_per_state_call("multinomial", hook)] * 3
+
+
+MULTINOMIAL_VALUES = {
+    "a negative count over a zero probability": (
+        [[-1, 1, 1], [1, 1, 1]], [[0.0, 0.4, 0.6], [0.2, 0.3, 0.5]]),
+    "a negative probability": (
+        [[1, 2, 3], [0, 0, 1]], [[0.2, 0.3, 0.5], [-0.1, 0.6, 0.5]]),
+    "a NaN probability": (
+        [[1, 2, 3], [0, 0, 1]], [[np.nan, 0.5, 0.5], [0.2, 0.3, 0.5]]),
+    "a row summing to 0.999": (
+        [[1, 2, 3], [0, 0, 1]], [[0.2, 0.3, 0.5], [0.2, 0.3, 0.499]]),
+    "a total of the largest int64": (
+        [[np.iinfo(np.int64).max, 0, 0], [1, 1, 1]],
+        [[0.2, 0.3, 0.5], [0.5, 0.25, 0.25]]),
+}
+
+
+@pytest.mark.parametrize("hook", HOOKS)
+@pytest.mark.parametrize("name", list(MULTINOMIAL_VALUES))
+def test_a_report_or_a_nan_sends_multinomial_states_to_scipy_stats(
+        scipy_calls, name, hook):
+    """After the call for every state, a report sends every state to one
+    call per state and a NaN its own state; the bytes, warnings and errors
+    are those of one call per state, in either scipy version."""
+    X, emissionprob = MULTINOMIAL_VALUES[name]
+    want, per_state_calls = _compare(
+        scipy_calls, "multinomial", hook, np.array(X, dtype=np.int64),
+        np.array(emissionprob))
+    assert [call for call in scipy_calls if call[1] == 3] == [
+        ("multinomial.logpmf", 3)]
+    assert ([call for call in scipy_calls if call[1] == 2]
+            == _calls_left_to_scipy_stats(want, per_state_calls))
+
+
+MULTINOMIAL_REFUSED = {
+    "whole float64 counts": lambda X, P: (X.astype(np.float64), P),
+    "a fractional count": lambda X, P: (_with(X, (1, 2), 0.5, np.float64),
+                                        P),
+    "int32 X": lambda X, P: (X.astype(np.int32), P),
+    "uint8 X": lambda X, P: (X.astype(np.uint8), P),
+    "boolean X": lambda X, P: (X > 0, P),
+    "F-ordered X": lambda X, P: (np.asfortranarray(X), P),
+    "stepped X": lambda X, P: (np.repeat(X, 2, axis=1)[:, ::2], P),
+    "reversed X": lambda X, P: (X[::-1], P),
+    "unaligned X": lambda X, P: (_unaligned_copy(X), P),
+    "subclass X": lambda X, P: (X.view(_Subclass), P),
+    "list X": lambda X, P: (X.tolist(), P),
+    "1-D X": lambda X, P: (X[0], P),
+    "no samples": lambda X, P: (X[:0], P),
+    "float32 probabilities": lambda X, P: (X, P.astype(np.float32)),
+    "F-ordered probabilities": lambda X, P: (X, np.asfortranarray(P)),
+    "stepped probabilities": lambda X, P: (
+        X, np.repeat(P, 2, axis=1)[:, ::2]),
+    "a row of probabilities short": lambda X, P: (X, P[:-1], 3),
+    "object probabilities": lambda X, P: (X, P.astype(object)),
+    "list probabilities": lambda X, P: (X, P.tolist()),
+}
+
+
+@pytest.mark.parametrize("hook", HOOKS)
+@pytest.mark.parametrize("name", list(MULTINOMIAL_REFUSED))
+def test_inputs_the_one_call_form_is_not_proven_for_take_a_call_per_state(
+        scipy_calls, name, hook):
+    """Another type, dtype, layout or shape of the counts or the
+    probabilities is scored by one scipy.stats call per state."""
+    _, per_state_calls = _compare(
+        scipy_calls, "multinomial", hook,
+        *MULTINOMIAL_REFUSED[name](*_multinomial_inputs(6, 3, 4, "per row")))
+    assert scipy_calls == per_state_calls
+
+
+class _PoissonPerState(PoissonHMM):
+    """PoissonHMM with hmmlearn 0.3.3's hooks."""
+
+    def _compute_log_likelihood(self, X):
+        return _poisson_per_state(X, self.lambdas_, self.n_components, "log")
+
+    def _compute_likelihood(self, X):
+        return _poisson_per_state(X, self.lambdas_, self.n_components, "pmf")
+
+
+class _MultinomialPerState(MultinomialHMM):
+    """MultinomialHMM with hmmlearn 0.3.3's hooks."""
+
+    def _compute_log_likelihood(self, X):
+        return _multinomial_per_state(X, self.emissionprob_,
+                                      self.n_components, "log")
+
+    def _compute_likelihood(self, X):
+        return _multinomial_per_state(X, self.emissionprob_,
+                                      self.n_components, "pmf")
+
+
+def _count_fit_data(family, dtype):
+    """Two sequences sampled from upstream's test models."""
+    if family == "poisson":
+        model = PoissonHMM(2)
+        model.startprob_ = np.array([0.6, 0.4])
+        model.transmat_ = np.array([[0.7, 0.3], [0.4, 0.6]])
+        model.lambdas_ = np.array([[3.1, 1.4, 4.5], [1.6, 5.3, 0.1]])
+    else:
+        model = MultinomialHMM(2, n_trials=5)
+        model.startprob_ = np.array([.6, .4])
+        model.transmat_ = np.array([[.8, .2], [.2, .8]])
+        model.emissionprob_ = np.array([[.5, .3, .1, .1], [.1, .1, .4, .4]])
+    X, _ = model.sample(100, random_state=np.random.RandomState(0))
+    return X.astype(dtype), [60, 40]
+
+
+@pytest.mark.parametrize("implementation", ["log", "scaling"])
+@pytest.mark.parametrize("family, dtype", [
+    ("poisson", np.int64), ("poisson", np.float64),
+    ("multinomial", np.int64),
+], ids=["poisson-int64", "poisson-float64", "multinomial"])
+def test_count_fits_are_the_same_as_with_one_scipy_call_per_state(
+        scipy_calls, family, dtype, implementation):
+    """A fit, its score, decodes and state probabilities have the same bytes
+    with the package's hooks as with one scipy.stats call per state."""
+    X, lengths = _count_fit_data(family, dtype)
+    model_class, per_state_class = {
+        "poisson": (PoissonHMM, _PoissonPerState),
+        "multinomial": (MultinomialHMM, _MultinomialPerState)}[family]
+    kwargs = {"n_trials": 5} if family == "multinomial" else {}
+    model = per_state_class(2, implementation=implementation, n_iter=1,
+                            tol=0.0, random_state=0, **kwargs)
+    model.fit(X, lengths)
+    shorter = copy.deepcopy(model)
+    shorter.__class__ = model_class
+    del scipy_calls[:]
+    with_package_hooks = _continue(shorter, X, lengths)
+    if family == "poisson":
+        assert scipy_calls == []
+    else:
+        assert scipy_calls
+        assert all(ndim == 3 for _, ndim in scipy_calls)
+    per_state = _continue(copy.deepcopy(model), X, lengths)
+    assert with_package_hooks.keys() == per_state.keys()
+    assert with_package_hooks == per_state
