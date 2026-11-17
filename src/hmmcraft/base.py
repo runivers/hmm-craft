@@ -20,6 +20,28 @@ _log = logging.getLogger(__name__)
 #: Supported decoder algorithms.
 DECODER_ALGORITHMS = frozenset(("viterbi", "map"))
 
+# The start of the message of the error the kernel's forward_scaling raises
+# when the probabilities of a sample sum to less than 1e-300 over the states
+# (ext/_hmmc.cpp). pybind11 raises it as ValueError, as it does the kernel's
+# shape and empty-input errors, so the message tells them apart.
+_SCALING_UNDERFLOW = "forward pass failed with underflow"
+
+
+def _is_scaling_underflow(exc):
+    """Return whether *exc* is the scaled forward pass's underflow error."""
+    return str(exc).startswith(_SCALING_UNDERFLOW)
+
+
+def _warn_fallback(fallen, n_sequences):
+    """Log that the sequences at indices *fallen* used the log functions."""
+    _log.warning(
+        "implementation='scaling' underflowed on %d of %d sequences (the "
+        "first at index %d); they were computed with the log functions.",
+        len(fallen),
+        n_sequences,
+        fallen[0],
+    )
+
 
 class ConvergenceMonitor:
     """
@@ -336,11 +358,16 @@ class _AbstractHMM(BaseEstimator):
         return impl(
             X=X, lengths=lengths, compute_posteriors=compute_posteriors)
 
-    def _score_log(self, X, lengths=None, *, compute_posteriors):
+    def _score_log(
+        self, X, lengths=None, *, compute_posteriors, underflow=None
+    ):
         """
         Compute the log probability under the model, as well as posteriors if
         *compute_posteriors* is True (otherwise, an empty array is returned
         for the latter).
+
+        *underflow* is the error the scaled forward pass raised for *X*; it
+        is raised again when the log-likelihood of a sequence is not finite.
         """
         log_prob = 0
         sub_posteriors = [np.empty((0, self.n_components))]
@@ -348,6 +375,8 @@ class _AbstractHMM(BaseEstimator):
             log_frameprob = self._compute_log_likelihood(sub_X)
             log_probij, fwdlattice = _hmmc.forward_log(
                 self.startprob_, self.transmat_, log_frameprob)
+            if underflow is not None and not np.isfinite(log_probij):
+                raise underflow
             log_prob += log_probij
             if compute_posteriors:
                 bwdlattice = _hmmc.backward_log(
@@ -359,10 +388,28 @@ class _AbstractHMM(BaseEstimator):
     def _score_scaling(self, X, lengths=None, *, compute_posteriors):
         log_prob = 0
         sub_posteriors = [np.empty((0, self.n_components))]
-        for sub_X in _utils.split_X_lengths(X, lengths):
+        sub_Xs = _utils.split_X_lengths(X, lengths)
+        fallen = []
+        for i, sub_X in enumerate(sub_Xs):
             frameprob = self._compute_likelihood(sub_X)
-            log_probij, fwdlattice, scaling_factors = _hmmc.forward_scaling(
-                self.startprob_, self.transmat_, frameprob)
+            try:
+                log_probij, fwdlattice, scaling_factors = (
+                    _hmmc.forward_scaling(
+                        self.startprob_, self.transmat_, frameprob
+                    )
+                )
+            except ValueError as exc:
+                if not _is_scaling_underflow(exc):
+                    raise
+                # Computed with the log functions; they raise exc again when
+                # they give no finite log-likelihood either.
+                log_probij, posteriors = self._score_log(
+                    sub_X, compute_posteriors=compute_posteriors, underflow=exc
+                )
+                fallen.append(i)
+                log_prob += log_probij
+                sub_posteriors.append(posteriors)
+                continue
             log_prob += log_probij
             if compute_posteriors:
                 bwdlattice = _hmmc.backward_scaling(
@@ -370,6 +417,8 @@ class _AbstractHMM(BaseEstimator):
                     frameprob, scaling_factors)
                 sub_posteriors.append(
                     self._compute_posteriors_scaling(fwdlattice, bwdlattice))
+        if fallen:
+            _warn_fallback(fallen, len(sub_Xs))
 
         return log_prob, np.concatenate(sub_posteriors)
 
@@ -655,7 +704,7 @@ class _AbstractHMM(BaseEstimator):
     def _fit_scaling(self, X):
         raise NotImplementedError("Must be overridden in subclass")
 
-    def _fit_log(self, X):
+    def _fit_log(self, X, *, underflow=None):
         raise NotImplementedError("Must be overridden in subclass")
 
     def _compute_posteriors_scaling(self, fwdlattice, bwdlattice):
@@ -945,6 +994,10 @@ class _AbstractHMM(BaseEstimator):
                  'trans': np.zeros((self.n_components, self.n_components))}
         return stats
 
+    # True only while _do_estep accumulates a sequence it computed with the
+    # log functions under implementation="scaling"; never kept on an instance.
+    _accumulate_as_log = False
+
     def _accumulate_sufficient_statistics(
             self, stats, X, lattice, posteriors, fwdlattice, bwdlattice):
         """
@@ -975,6 +1028,8 @@ class _AbstractHMM(BaseEstimator):
         impl = self._by_implementation(
             log=self._accumulate_sufficient_statistics_log,
             scaling=self._accumulate_sufficient_statistics_scaling)
+        if self._accumulate_as_log:
+            impl = self._accumulate_sufficient_statistics_log
 
         return impl(stats=stats, X=X, lattice=lattice, posteriors=posteriors,
                     fwdlattice=fwdlattice, bwdlattice=bwdlattice)
@@ -1036,16 +1091,44 @@ class _AbstractHMM(BaseEstimator):
         self._estep_begin()
         curr_logprob = 0
         occupancy = np.zeros(self.n_components)
-        for sub_X in _utils.split_X_lengths(X, lengths):
-            lattice, logprob, posteriors, fwdlattice, bwdlattice = impl(sub_X)
+        sub_Xs = _utils.split_X_lengths(X, lengths)
+        fallen = []
+        for i, sub_X in enumerate(sub_Xs):
+            fell_back = False
+            try:
+                lattice, logprob, posteriors, fwdlattice, bwdlattice = impl(
+                    sub_X
+                )
+            except ValueError as exc:
+                if (
+                    self.implementation != "scaling"
+                    or not _is_scaling_underflow(exc)
+                ):
+                    raise
+                # The sequence is computed with the log functions, which
+                # raise exc again when they give no finite log-likelihood,
+                # and its statistics with the log accumulator.
+                lattice, logprob, posteriors, fwdlattice, bwdlattice = (
+                    self._fit_log(sub_X, underflow=exc)
+                )
+                fell_back = True
+                fallen.append(i)
             occupancy += posteriors.sum(axis=0)
+            if fell_back:
+                self._accumulate_as_log = True
             # Derived HMM classes will implement the following method to
             # update their probability distributions, so keep
             # a single call to this method for simplicity.
-            self._accumulate_sufficient_statistics(
-                stats, sub_X, lattice, posteriors, fwdlattice,
-                bwdlattice)
+            try:
+                self._accumulate_sufficient_statistics(
+                    stats, sub_X, lattice, posteriors, fwdlattice, bwdlattice
+                )
+            finally:
+                if fell_back:
+                    del self._accumulate_as_log
             curr_logprob += logprob
+        if fallen:
+            _warn_fallback(fallen, len(sub_Xs))
         self.state_occupancy_ = occupancy
         return stats, curr_logprob
 
@@ -1163,10 +1246,12 @@ class BaseHMM(_AbstractHMM):
         posteriors = self._compute_posteriors_scaling(fwdlattice, bwdlattice)
         return frameprob, log_prob, posteriors, fwdlattice, bwdlattice
 
-    def _fit_log(self, X):
+    def _fit_log(self, X, *, underflow=None):
         log_frameprob = self._compute_log_likelihood(X)
         log_prob, fwdlattice = _hmmc.forward_log(
             self.startprob_, self.transmat_, log_frameprob)
+        if underflow is not None and not np.isfinite(log_prob):
+            raise underflow
         bwdlattice = _hmmc.backward_log(
             self.startprob_, self.transmat_, log_frameprob)
         posteriors = self._compute_posteriors_log(fwdlattice, bwdlattice)
@@ -1382,10 +1467,12 @@ class VariationalBaseHMM(_AbstractHMM):
         posteriors = self._compute_posteriors_scaling(fwdlattice, bwdlattice)
         return frameprob, logprob, posteriors, fwdlattice, bwdlattice
 
-    def _fit_log(self, X):
+    def _fit_log(self, X, *, underflow=None):
         framelogprob = self._compute_subnorm_log_likelihood(X)
         logprob, fwdlattice = _hmmc.forward_log(
             self.startprob_subnorm_, self.transmat_subnorm_, framelogprob)
+        if underflow is not None and not np.isfinite(logprob):
+            raise underflow
         bwdlattice = _hmmc.backward_log(
             self.startprob_subnorm_, self.transmat_subnorm_, framelogprob)
         posteriors = self._compute_posteriors_log(fwdlattice, bwdlattice)

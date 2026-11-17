@@ -12,13 +12,15 @@ scikit-learn and threadpoolctl versions:
 
 ``dump`` fits a fixed list of models on synthetic data (a seeded generator,
 no file read) and writes every fitted array, the score, both decodes, the
-posteriors and a sample, one ``.npz`` per model. It refuses to run unless the
-thread-count variables are all ``1``: where a start is seeded, the k-means
-partial sums are added in the order the threads finish. ``compare`` checks
-the two dumps byte for byte. A difference is accepted only where the table
-``EXCEPTIONS`` names it, only if listed by ``--allow``, and only if it has
-exactly the shape that entry describes. Exit status of ``compare``: 0 equal,
-1 a difference, 2 the two dumps cannot be compared.
+posteriors and a sample, one ``.npz`` per model. It then runs the underflow
+cases: models whose scaled forward pass underflows on one sample, in a
+prediction and in a fit with ``implementation="scaling"``. It refuses to run
+unless the thread-count variables are all ``1``: where a start is seeded, the
+k-means partial sums are added in the order the threads finish. ``compare``
+checks the two dumps byte for byte. A difference is accepted only where the
+table ``EXCEPTIONS`` names it, only if listed by ``--allow``, and only if it
+has exactly the shape that entry describes. Exit status of ``compare``: 0
+equal, 1 a difference, 2 the two dumps cannot be compared.
 
 Only numpy, threadpoolctl and the package under test are used, so the script
 runs under ``python -I`` in either environment.
@@ -68,7 +70,22 @@ EXCEPTIONS = {
            "normalize(axis=0) of a zero-sum slice is 0, not NaN"),
     "E6": ("fork additions",
            "state_occupancy_ and the covars_floor parameter"),
+    "E7": (
+        "hmm-craft issue 40",
+        (
+            "a sequence that underflows with implementation='scaling' is "
+            "computed with the log functions"
+        ),
+    ),
 }
+# The error hmmlearn 0.3.3 raises where E7 applies.
+UNDERFLOW_ERROR = [
+    "ValueError",
+    (
+        "forward pass failed with underflow; consider using "
+        "implementation='log' instead"
+    ),
+]
 
 FORK_ONLY_ARRAYS = ("state_occupancy_",)
 FORK_ONLY_PARAMS = {"covars_floor": None}
@@ -189,6 +206,27 @@ def make_data():
     }
 
 
+# The underflow families: a copy of a family with one row far from every
+# state. No generator is drawn from.
+_FAR_ROW = 50
+_FAR_VALUE = 1000
+_FAR_SOURCES = {"far-gauss3": "gauss3", "far-gmm": "gmm", "far-pois": "pois"}
+
+
+def make_underflow_data(data):
+    """
+    Return ``{name: dict(X=, lengths=, truth=)}`` for the underflow families,
+    each a copy of its source family in ``data`` with row ``_FAR_ROW`` (in the
+    first sequence) set to ``_FAR_VALUE``.
+    """
+    out = {}
+    for name, source in _FAR_SOURCES.items():
+        X = data[source]["X"].copy()
+        X[_FAR_ROW] = _FAR_VALUE
+        out[name] = dict(data[source], X=X)
+    return out
+
+
 def _digest(*arrays):
     h = hashlib.sha256()
     for a in arrays:
@@ -251,6 +289,64 @@ def build_cases():
                                 "params": params,
                                 "tol": tol, "stat_key": stat_key,
                                 "stat_defined": stat_defined})
+    return cases
+
+
+# The underflow cases: (class, data family, start, family of the warm start).
+# "fixed" is the fixed start of build_model; "tiny" and "zero" move the
+# fixed start's emission column _TINY_COLUMN into the next and set it to
+# _TINY or to zero; "warm" is the seeded scaling fit on the clean family,
+# refitted without initialization.
+_UNDERFLOW_CLASSES = (
+    ("GaussianHMM", "far-gauss3", "fixed", None),
+    ("GMMHMM", "far-gmm", "fixed", None),
+    ("PoissonHMM", "far-pois", "fixed", None),
+    ("CategoricalHMM", "cat", "tiny", None),
+    ("MultinomialHMM", "multi", "tiny", None),
+    ("VariationalGaussianHMM", "far-gauss3", "warm", "gauss3"),
+    ("VariationalCategoricalHMM", "cat", "warm", "cat"),
+    ("CategoricalHMM", "cat", "zero", None),
+)
+# Below the kernel's threshold of 1e-300, above zero. Column 0, not the last:
+# some scipy versions replace the last probability of a categorical row.
+_TINY = 1e-320
+_TINY_COLUMN = 0
+# The emission count of the warm VariationalCategoricalHMM's column 0.
+_TINY_COUNT = 1e-5
+
+
+def build_underflow_cases():
+    """
+    Return the underflow cases. ``expect`` is ``"fallback"`` where the log
+    functions give a finite log-likelihood, ``"error"`` where none can.
+    """
+    cases = []
+    for cls, data, start, clean in _UNDERFLOW_CLASSES:
+        covs = COVARIANCE_TYPES if cls in _COVARIANCE_CLASSES else (None,)
+        for cov in covs:
+            for step in ("predict", "fit"):
+                if step == "predict" and cls == "VariationalCategoricalHMM":
+                    # Prediction reads emissionprob_, which the warm start
+                    # leaves as the clean fit made it: nothing underflows.
+                    continue
+                cases.append(
+                    {
+                        "name": "|".join(
+                            ["underflow", step, cls, data, cov or "-", start]
+                        ),
+                        "kind": "underflow",
+                        "step": step,
+                        "cls": cls,
+                        "data": data,
+                        "clean": clean,
+                        "cov": cov,
+                        "start": start,
+                        "impl": "scaling",
+                        "params": None,
+                        "tol": "default",
+                        "expect": "error" if start == "zero" else "fallback",
+                    }
+                )
     return cases
 
 
@@ -382,8 +478,8 @@ def _error(exc):
     return [type(exc).__name__, str(exc)]
 
 
-def _probe(model, X, lengths, arrays, errors, prefix=""):
-    """Run every read-only call on a fitted model, recording each result."""
+def _recorders(arrays, errors, prefix):
+    """Return ``run`` and ``put``, which record into ``arrays``, ``errors``."""
 
     def run(step, func):
         try:
@@ -396,6 +492,12 @@ def _probe(model, X, lengths, arrays, errors, prefix=""):
         if value is not None:
             arrays[prefix + key] = _as_array(key, value)
 
+    return run, put
+
+
+def _probe_inference(model, X, lengths, arrays, errors, prefix=""):
+    """Score, both decodes and the posteriors, recording each result."""
+    run, put = _recorders(arrays, errors, prefix)
     put("score", run("score", lambda: model.score(X, lengths)))
     for algorithm in ("viterbi", "map"):
         out = run(f"decode_{algorithm}",
@@ -405,6 +507,12 @@ def _probe(model, X, lengths, arrays, errors, prefix=""):
             put(f"decode_{algorithm}_states", out[1])
     put("predict_proba", run("predict_proba",
                              lambda: model.predict_proba(X, lengths)))
+
+
+def _probe(model, X, lengths, arrays, errors, prefix=""):
+    """Run every read-only call on a fitted model, recording each result."""
+    _probe_inference(model, X, lengths, arrays, errors, prefix)
+    run, put = _recorders(arrays, errors, prefix)
     out = run("sample",
               lambda: model.sample(N_SAMPLES, random_state=SAMPLE_SEED))
     if out is not None:
@@ -485,6 +593,55 @@ def _dump_fit(modules, case, data, pickle_dir):
         if pickle_dir is not None:
             blob = pickle.dumps(model)
             (pickle_dir / f"{case['index']:04d}.pkl").write_bytes(blob)
+    return {"meta": case, "arrays": arrays, "errors": errors, "params": params}
+
+
+def _underflow_model(modules, case, data):
+    """The model of an underflow case, before the call that underflows."""
+    if case["start"] == "warm":
+        clean = data[case["clean"]]
+        model = build_model(modules, dict(case, start="seeded"), clean)
+        model.fit(clean["X"], clean["lengths"])
+        model.init_params = ""
+        if case["cls"] == "VariationalCategoricalHMM":
+            model.emissionprob_posterior_[:, _TINY_COLUMN] = _TINY_COUNT
+        return model
+    model = build_model(modules, dict(case, start="fixed"), data[case["data"]])
+    if case["start"] in ("tiny", "zero"):
+        emission = np.array(model.emissionprob_)
+        emission[:, _TINY_COLUMN + 1] += emission[:, _TINY_COLUMN]
+        emission[:, _TINY_COLUMN] = _TINY if case["start"] == "tiny" else 0
+        model.emissionprob_ = emission
+    return model
+
+
+def _dump_underflow(modules, case, data):
+    """
+    A prediction case predicts on the first sequence alone, with
+    ``implementation="log"`` (the plain keys) and then ``"scaling"`` (keys
+    prefixed ``scaling:``); a fit case fits on every sequence and, when the
+    fit returns, probes the fitted model.
+    """
+    arrays, errors = {}, {}
+    family = data[case["data"]]
+    X, lengths = family["X"], family["lengths"]
+    np.random.seed(0)
+    model = _underflow_model(modules, case, data)
+    params = None
+    if case["step"] == "predict":
+        first = X[: lengths[0]]
+        for impl, prefix in (("log", ""), ("scaling", "scaling:")):
+            model.implementation = impl
+            _probe_inference(model, first, None, arrays, errors, prefix)
+    else:
+        try:
+            model.fit(X, lengths)
+        except Exception as exc:  # noqa: BLE001
+            errors["fit"] = _error(exc)
+        arrays.update(_model_arrays(model))
+        if "fit" not in errors:
+            params = _params_json(model)
+            _probe(model, X, lengths, arrays, errors)
     return {"meta": case, "arrays": arrays, "errors": errors, "params": params}
 
 
@@ -702,6 +859,17 @@ def dump(package, out, load_pickles=None):
             results.append(_dump_utility(package, case))
         if load_pickles is not None:
             results += _pickle_pass(package, Path(load_pickles), data)
+        # Last, so the cases above keep their file numbers.
+        data.update(make_underflow_data(data))
+        for case in build_underflow_cases():
+            family = data[case["data"]]
+            lengths = family["lengths"].tolist()
+            if case["step"] == "predict":
+                lengths = lengths[:1]
+            case = dict(
+                case, lengths=lengths, n_features=int(family["X"].shape[1])
+            )
+            results.append(_dump_underflow(modules, case, data))
     data_sha256 = {name: _digest(d["X"], d["lengths"])
                    for name, d in data.items()}
     for case in build_utility_cases():
@@ -709,7 +877,11 @@ def dump(package, out, load_pickles=None):
     environment["pickles_loaded"] = load_pickles is not None
     write_dump(out, environment, data_sha256, results)
     n_fits = sum(r["meta"]["kind"] == "fit" for r in results)
-    print(f"wrote {len(results)} cases ({n_fits} fits) to {out}")
+    n_underflow = sum(r["meta"]["kind"] == "underflow" for r in results)
+    print(
+        f"wrote {len(results)} cases ({n_fits} fits, {n_underflow} "
+        f"underflow cases) to {out}"
+    )
     return 0
 
 
@@ -739,6 +911,12 @@ _PROBE_STEPS = (
     "score", "decode_viterbi", "decode_map", "predict_proba", "sample",
     "covars_")
 _PICKLED = "pickled:"
+# The prediction steps E7 applies to -> the keys each records.
+_E7_STEPS = {
+    "score": ("score",),
+    "predict_proba": ("predict_proba",),
+    "decode_map": ("decode_map_logprob", "decode_map_states"),
+}
 
 
 class Result:
@@ -770,6 +948,10 @@ class Result:
 def _same(a, b):
     return a.dtype == b.dtype and a.shape == b.shape and (
         a.tobytes() == b.tobytes())
+
+
+def _finite(value):
+    return value.dtype.kind != "f" or bool(np.isfinite(value).all())
 
 
 def _describe(ref, fork):
@@ -905,6 +1087,8 @@ class _Case:
 
     def apply_exceptions(self):
         allow = self.allow
+        if "E7" in allow and self._e7_applies():
+            self._rule_e7()
         e4_clean = False
         if self.pending and "E4" in allow and self._e4_applies():
             e4_clean = self._rule_e4()
@@ -942,6 +1126,90 @@ class _Case:
                 self.pending.pop(key)
         self.result.fire("E4", self.name)
         return True
+
+    # E7 -----------------------------------------------------------------
+
+    def _e7_applies(self):
+        return (
+            self.meta["kind"] == "underflow"
+            and self.meta["expect"] == "fallback"
+        )
+
+    def _rule_e7(self):
+        if self.meta["step"] == "fit":
+            self._rule_e7_fit()
+            return
+        ref, fork = self.ref, self.fork
+        for step, keys in _E7_STEPS.items():
+            name = "scaling:" + step
+            if ref["errors"].get(name) != UNDERFLOW_ERROR:
+                self.problem(
+                    "E7",
+                    "the reference did not raise the underflow "
+                    f"error in {step}: {ref['errors'].get(name)}",
+                )
+                continue
+            if name in fork["errors"]:
+                self.problem(
+                    "E7", f"the fork raised in {step}: {fork['errors'][name]}"
+                )
+                continue
+            twins = {key: ref["arrays"].get(key) for key in keys}
+            if step == "decode_map":
+                # 0.3.3's twin sums the posteriors (E3): the fork's value is
+                # the sum of their logs.
+                posteriors = ref["arrays"].get("predict_proba")
+                twins["decode_map_logprob"] = (
+                    None
+                    if posteriors is None
+                    else (
+                        _map_sum(posteriors, self.meta["lengths"], logged=True)
+                    )
+                )
+            ok = True
+            for key, twin in twins.items():
+                value = fork["arrays"].get("scaling:" + key)
+                if value is None or twin is None:
+                    self.problem(
+                        "E7", f"scaling:{key} or its log twin is missing"
+                    )
+                    ok = False
+                elif not _finite(value):
+                    self.problem("E7", f"scaling:{key} is not finite")
+                    ok = False
+                elif not _same(twin, value):
+                    self.problem(
+                        "E7",
+                        f"scaling:{key} differs from the reference's "
+                        "log twin: " + _describe(twin, value),
+                    )
+                    ok = False
+            if ok:
+                for key in ("errors:" + name,) + tuple(
+                    "scaling:" + k for k in keys
+                ):
+                    if key in self.pending:
+                        self.excuse("E7", key)
+
+    def _rule_e7_fit(self):
+        if self.ref["errors"].get("fit") != UNDERFLOW_ERROR:
+            self.problem(
+                "E7",
+                "the reference's fit did not raise the "
+                f"underflow error: {self.ref['errors']}",
+            )
+            return
+        if self.fork["errors"]:
+            self.problem(
+                "E7", f"the fork's fit or probe raised: {self.fork['errors']}"
+            )
+            return
+        bad = [k for k, v in self.fork["arrays"].items() if not _finite(v)]
+        if bad:
+            self.problem("E7", f"non-finite in the fork: {bad}")
+            return
+        self.pending.clear()
+        self.result.fire("E7", self.name)
 
     # E6 -----------------------------------------------------------------
 

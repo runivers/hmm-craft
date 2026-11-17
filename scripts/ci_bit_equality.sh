@@ -26,7 +26,7 @@ mkvenv=${MKVENV:-"$python -m venv"}
 upstream=${UPSTREAM:-https://github.com/hmmlearn/hmmlearn}
 tag=0.3.3
 tag_commit=67c5a95009afe95317923c9fbe75f47962037f48
-allow=E1,E2,E3,E4,E5,E6
+allow=E1,E2,E3,E4,E5,E6,E7
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 case $cell in floor | latest) ;; *) echo "unknown cell: $cell" >&2; exit 2 ;; esac

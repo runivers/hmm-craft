@@ -545,3 +545,289 @@ def test_verdict_says_bit_equal_only_when_no_exception_fired(tmp_path):
     assert result.code == 0 and result.fired["E3"] == 1
     last = be.format_result(result).splitlines()[-1]
     assert last == "result: equal apart from the named exceptions (exit 0)"
+
+
+# E7: a sequence that underflows with implementation="scaling" ---------------
+
+UNDERFLOW = [
+    "ValueError",
+    (
+        "forward pass failed with underflow; consider "
+        "using implementation='log' instead"
+    ),
+]
+ONE_SEQUENCE = [6]
+E7_PREDICT_ERRORS = ("score", "decode_map", "predict_proba")
+
+
+def _underflow_meta(step, expect="fallback", kind="underflow"):
+    return {
+        "name": "u",
+        "kind": kind,
+        "step": step,
+        "cls": "GaussianHMM",
+        "data": "d",
+        "clean": None,
+        "cov": "diag",
+        "start": "fixed",
+        "impl": "scaling",
+        "params": None,
+        "tol": "default",
+        "expect": expect,
+        "lengths": ONE_SEQUENCE,
+        "n_features": NF,
+    }
+
+
+def underflow_predict_pair():
+    """
+    A prediction case on one sequence: the log twin under the plain keys,
+    the scaling run under ``scaling:``. The reference raises the underflow
+    error in each scaled step but Viterbi; the fork returns the log twin.
+    """
+    rs = np.random.RandomState(2)
+    post = rs.dirichlet(np.ones(NC), size=ONE_SEQUENCE[0])
+    viterbi = {
+        "decode_viterbi_logprob": np.asarray(rs.rand()),
+        "decode_viterbi_states": rs.randint(0, NC, ONE_SEQUENCE[0]),
+    }
+    twin = dict(
+        viterbi,
+        score=np.asarray(rs.rand()),
+        decode_map_states=post.argmax(axis=1),
+        predict_proba=post,
+    )
+    ref_arrays = dict(
+        twin, decode_map_logprob=be._map_sum(post, ONE_SEQUENCE, logged=False)
+    )
+    fork_arrays = dict(
+        twin, decode_map_logprob=be._map_sum(post, ONE_SEQUENCE, logged=True)
+    )
+    for key, value in viterbi.items():
+        ref_arrays["scaling:" + key] = value.copy()
+    fork_arrays.update(
+        {
+            "scaling:" + key: np.copy(value)
+            for key, value in list(fork_arrays.items())
+        }
+    )
+    ref = {
+        "meta": _underflow_meta("predict"),
+        "arrays": ref_arrays,
+        "errors": {"scaling:" + s: list(UNDERFLOW) for s in E7_PREDICT_ERRORS},
+        "params": None,
+    }
+    fork = {
+        "meta": _underflow_meta("predict"),
+        "arrays": copy.deepcopy(fork_arrays),
+        "errors": {},
+        "params": None,
+    }
+    return ref, fork
+
+
+def underflow_fit_pair():
+    """A fit case: the reference raised the underflow error, the fork fit."""
+    fitted = fit_case("u")
+    ref = {
+        "meta": _underflow_meta("fit"),
+        "arrays": {
+            "means_": fitted["arrays"]["means_"].copy(),
+            "monitor_history": np.zeros(0),
+        },
+        "errors": {"fit": list(UNDERFLOW)},
+        "params": None,
+    }
+    fork = with_occupancy(
+        dict(copy.deepcopy(fitted), meta=_underflow_meta("fit"))
+    )
+    return ref, fork
+
+
+def test_e7_excuses_a_prediction_equal_to_the_log_twin(tmp_path):
+    ref, fork = underflow_predict_pair()
+    result = run(tmp_path / "off", [ref], [fork], allow=("E3",))
+    assert result.code == 1
+    result = run(tmp_path / "on", [ref], [fork], allow=("E3", "E7"))
+    assert result.code == 0, result.differences
+    assert result.fired["E7"] == 7
+    assert result.fired["E3"] == 1
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "scaling:score",
+        "scaling:predict_proba",
+        "scaling:decode_map_logprob",
+        "scaling:decode_map_states",
+    ],
+)
+def test_e7_fails_on_one_ulp_or_one_state(tmp_path, key):
+    ref, fork = underflow_predict_pair()
+    value = fork["arrays"][key]
+    if value.dtype.kind == "f":
+        value.reshape(-1)[0] = np.nextafter(value.reshape(-1)[0], np.inf)
+    else:
+        value[0] = (value[0] + 1) % NC
+    result = run(tmp_path, [ref], [fork], allow=("E3", "E7"))
+    assert result.code == 1
+    keys = {d.key for d in result.differences}
+    assert "E7" in keys and key in keys
+    assert any(key in d.text for d in result.differences if d.key == "E7")
+
+
+@pytest.mark.parametrize("reference", ["value", "text", "type"])
+def test_e7_needs_the_reference_to_raise_the_underflow_error(
+    tmp_path, reference
+):
+    ref, fork = underflow_predict_pair()
+    if reference == "value":
+        del ref["errors"]["scaling:score"]
+        ref["arrays"]["scaling:score"] = fork["arrays"]["scaling:score"]
+    elif reference == "text":
+        ref["errors"]["scaling:score"] = ["ValueError", "shape mismatch"]
+    else:
+        ref["errors"]["scaling:score"] = ["RuntimeError", UNDERFLOW[1]]
+    result = run(tmp_path, [ref], [fork], allow=("E3", "E7"))
+    assert result.code == 1
+    assert "E7" in {d.key for d in result.differences}
+
+
+def test_e7_fails_when_the_fork_raises_as_before(tmp_path):
+    ref, fork = underflow_predict_pair()
+    fork["errors"] = copy.deepcopy(ref["errors"])
+    for step in (
+        "score",
+        "predict_proba",
+        "decode_map_logprob",
+        "decode_map_states",
+    ):
+        del fork["arrays"]["scaling:" + step]
+    result = run(tmp_path, [ref], [fork], allow=("E3", "E7"))
+    assert result.code == 1
+    assert "E7" in {d.key for d in result.differences}
+    assert not result.fired["E7"]
+
+
+def test_e7_fails_on_a_non_finite_value_equal_to_its_twin(tmp_path):
+    ref, fork = underflow_predict_pair()
+    for arrays in (ref["arrays"], fork["arrays"]):
+        arrays["score"] = np.asarray(-np.inf)
+    fork["arrays"]["scaling:score"] = np.asarray(-np.inf)
+    result = run(tmp_path, [ref], [fork], allow=("E3", "E7"))
+    assert result.code == 1
+    assert {d.key for d in result.differences} == {
+        "E7",
+        "scaling:score",
+        "errors:scaling:score",
+    }
+
+
+def test_e7_excuses_a_fit_that_returns_finite(tmp_path):
+    ref, fork = underflow_fit_pair()
+    assert run(tmp_path / "off", [ref], [fork], allow=("E6",)).code == 1
+    result = run(tmp_path / "on", [ref], [fork], allow=("E6", "E7"))
+    assert result.code == 0, result.differences
+    assert result.fired["E7"] == 1
+
+
+@pytest.mark.parametrize("change", ["fork-raised", "fork-inf", "other-text"])
+def test_e7_fit_fails_outside_its_shape(tmp_path, change):
+    ref, fork = underflow_fit_pair()
+    if change == "fork-raised":
+        fork["errors"] = {"fit": list(UNDERFLOW)}
+    elif change == "fork-inf":
+        fork["arrays"]["means_"][0, 0] = np.inf
+    else:
+        ref["errors"] = {"fit": ["ValueError", "shape mismatch"]}
+    result = run(tmp_path, [ref], [fork], allow=("E6", "E7"))
+    assert result.code == 1
+    assert "E7" in {d.key for d in result.differences}
+    assert not result.fired["E7"]
+
+
+def test_e7_does_not_apply_to_an_ordinary_fit(tmp_path):
+    ref, fork = underflow_fit_pair()
+    for side in (ref, fork):
+        side["meta"] = dict(
+            side["meta"],
+            kind="fit",
+            stat_key="post",
+            stat_defined=True,
+            index=0,
+        )
+    result = run(tmp_path, [ref], [fork], allow=tuple(be.EXCEPTIONS))
+    assert result.code == 1
+    assert not result.fired["E7"]
+
+
+def test_e7_does_not_apply_where_the_error_is_expected(tmp_path):
+    ref, fork = underflow_predict_pair()
+    for side in (ref, fork):
+        side["meta"] = dict(side["meta"], expect="error")
+    fork["errors"] = copy.deepcopy(ref["errors"])
+    fork["arrays"] = copy.deepcopy(ref["arrays"])
+    for allow in ((), tuple(be.EXCEPTIONS)):
+        assert (
+            run(
+                tmp_path / f"same{len(allow)}", [ref], [fork], allow=allow
+            ).code
+            == 0
+        )
+    ref, fork = underflow_predict_pair()
+    for side in (ref, fork):
+        side["meta"] = dict(side["meta"], expect="error")
+    for allow in ((), tuple(be.EXCEPTIONS)):
+        result = run(
+            tmp_path / f"fork{len(allow)}", [ref], [fork], allow=allow
+        )
+        assert result.code == 1
+        assert not result.fired["E7"]
+
+
+def test_underflow_cases_have_unique_names_and_cover_the_classes():
+    cases = be.build_underflow_cases()
+    names = [c["name"] for c in cases]
+    assert len(cases) == 33
+    assert len(names) == len(set(names))
+    assert not set(names) & {c["name"] for c in be.build_cases()}
+    assert len(be.build_cases()) == 374
+    assert {c["cls"] for c in cases} == set(be._CLASSES)
+    for cls in be._COVARIANCE_CLASSES:
+        assert {c["cov"] for c in cases if c["cls"] == cls} == set(
+            be.COVARIANCE_TYPES
+        )
+    assert {c["step"] for c in cases} == {"predict", "fit"}
+    assert sum(c["expect"] == "error" for c in cases) == 2
+    assert all(
+        c["kind"] == "underflow" and c["impl"] == "scaling" for c in cases
+    )
+    assert json.dumps(cases)
+
+
+def test_underflow_data_differ_from_their_source_in_one_row():
+    data = be.make_data()
+    before = {name: d["X"].tobytes() for name, d in data.items()}
+    state = np.random.get_state()
+    far = be.make_underflow_data(data)
+    after = np.random.get_state()
+    assert all(_same_state(a, b) for a, b in zip(state, after))
+    assert {name: d["X"].tobytes() for name, d in data.items()} == before
+    assert set(far) == {"far-gauss3", "far-gmm", "far-pois"}
+    for name, family in far.items():
+        source = data[name[len("far-") :]]
+        changed = (family["X"] != source["X"]).any(axis=1)
+        assert changed.nonzero()[0].tolist() == [be._FAR_ROW]
+        assert family["lengths"].tobytes() == source["lengths"].tobytes()
+        assert family["truth"] is source["truth"]
+
+
+def _same_state(a, b):
+    return np.array_equal(a, b) if isinstance(a, np.ndarray) else a == b
+
+
+def test_ci_script_allows_every_exception():
+    script = (be.Path(be.__file__).parent / "ci_bit_equality.sh").read_text()
+    (line,) = [x for x in script.splitlines() if x.startswith("allow=")]
+    assert line.split("=", 1)[1].split(",") == list(be.EXCEPTIONS)

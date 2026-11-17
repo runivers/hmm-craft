@@ -10,6 +10,8 @@ Unreleased
 - Fixed: tests of the variational models no longer fail for some random seeds.
 - Fixed: mistakes in parameters and ``X`` raise a ``ValueError`` naming them; ``MultinomialHMM``
   starts a missing ``emissionprob_``; prediction no longer modifies a non-variational model.
+- Fixed: ``implementation="scaling"`` computes a sequence that underflows with the log functions
+  instead of raising, unless they give no finite log-likelihood for it, which raises as before.
 - Changed: ``ValueError``, not a result, for invalid parameters or ``X`` and for ``sample(0)``; the
   non-variational models convert parameters to arrays when assigned; no ``MultinomialHMM`` warning.
 - Documented: the shapes ``GMMHMM`` accepts for its priors, per covariance type; when
