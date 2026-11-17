@@ -457,12 +457,17 @@ class TestGaussianHMMWithSphericalCovars(GaussianHMMTestMixin):
         h.transmat_ = [[0.4, 0.6], [0.6, 0.4]]
         h.means_ = [[0], [5]]
         h.covars_ = [[1], [1]]
-        if implementation == "scaling":
-            with pytest.raises(ValueError):
-                h.fit(data2d, lengths)
-
-        else:
-            h.fit(data2d, lengths)
+        # With "scaling", the iterations whose forward pass underflows on
+        # the outlier compute the sequence with the log functions.
+        h.fit(data2d, lengths)
+        for value in (
+            h.startprob_,
+            h.transmat_,
+            h.means_,
+            h.covars_,
+            list(h.monitor_.history),
+        ):
+            assert np.isfinite(value).all()
 
 
 class TestGaussianHMMWithDiagonalCovars(GaussianHMMTestMixin):

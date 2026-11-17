@@ -91,6 +91,19 @@ flowchart TD
    computes the expected transition counts (`compute_log_xi_sum` or
    `compute_scaling_xi_sum`).
 
+With `implementation="scaling"`, the kernel's `forward_scaling` raises
+`ValueError` when the probabilities of a sample sum to less than 1e-300 over
+the states. `_do_estep` recognises that error by the start of its message
+(`_SCALING_UNDERFLOW`), never by its type, which the kernel's shape and
+empty-input errors share, and computes that sequence with the log functions
+instead (`_fit_log`): its statistics are accumulated with the log accumulator,
+selected by the private class attribute `_accumulate_as_log`, which
+`_do_estep` sets on the instance for that one call and deletes after it. When
+the log forward pass gives no finite log-likelihood either, the original error
+is raised again before the backward pass. One warning is logged per E-step in
+which a sequence fell back. The other sequences are computed as before, in
+`lengths` order.
+
 It also sums the posteriors into `state_occupancy_`, the expected number of
 samples in each state. `BaseHMM` returns the summed log-likelihood as the
 lower bound; `VariationalBaseHMM` subtracts the KL divergences of its
@@ -140,11 +153,15 @@ holds one as a list loads it as an array. `_check` therefore only reads.
 
 `score` runs the forward pass alone; `score_samples`, `predict_proba` and
 `decode(algorithm="map")` run the forward and backward passes; none of them
-fits. Each, and `decode`, runs `_check` and then `_check_X` on `X` before
-it is split into sequences; in the five expectation-maximization models
-neither writes to the model. `decode` with `algorithm="viterbi"` calls the
-kernel's `viterbi`. `sample` is a Python loop over the transition matrix and
-`_generate_sample_from_state`; it refuses fewer than one sample.
+fits. With `implementation="scaling"` they compute a sequence whose scaled
+forward pass underflows with the log functions (`_score_log`), as the E-step
+does, and log one warning per call; `decode` scores each sequence on its own,
+so it logs one per such sequence. Each, and `decode`, runs `_check` and then
+`_check_X` on `X` before it is split into sequences; in the five
+expectation-maximization models neither writes to the model. `decode` with
+`algorithm="viterbi"` calls the kernel's `viterbi`. `sample` is a Python loop
+over the transition matrix and `_generate_sample_from_state`; it refuses fewer
+than one sample.
 
 ## The C++ kernel
 
@@ -164,12 +181,14 @@ float64 array.
 | `compute_scaling_xi_sum` | forward lattice, transition matrix, backward lattice, emission probabilities | the expected transition counts |
 | `viterbi` | start probabilities, transition matrix, emission log-probabilities | the log-probability of the best path and the path |
 
-A shape that does not match raises `ValueError`, and so does a matrix with no
-rows (a sequence without samples) or no columns (a model without states): the
-recursions use unchecked accessors, and hmmlearn 0.3.3's kernel indexed
-outside its arrays there. Each function releases the GIL while it loops. The
-kernel's source is hmmlearn 0.3.3's apart from that check and the module's
-package name.
+`forward_scaling` raises `ValueError` when the probabilities of a sample sum
+to less than 1e-300 over the states, with a message that starts "forward pass
+failed with underflow", as hmmlearn 0.3.3's does. A shape that does not match
+raises `ValueError`, and so does a matrix with no rows (a sequence without
+samples) or no columns (a model without states): the recursions use unchecked
+accessors, and hmmlearn 0.3.3's kernel indexed outside its arrays there. Each
+function releases the GIL while it loops. The kernel's source is hmmlearn
+0.3.3's apart from that check and the module's package name.
 
 ## What the package promises
 
@@ -198,8 +217,11 @@ with AVX-512 and numpy before 2.0.2: the log-determinant of the `full` and
 `tied` log-densities is taken in place on a contiguous copy, which, as read
 from numpy's code, always gets numpy's vector loop there, whatever the
 allocator; its last bits can then differ from 0.3.3's.
-`GaussianHMM(covars_floor=...)` changes fits only when it is set. In the check
-above, every other fit equals 0.3.3's.
+`GaussianHMM(covars_floor=...)` changes fits only when it is set. With
+`implementation="scaling"`, a fit on a sequence whose scaled forward pass
+underflows returns here, where hmmlearn 0.3.3 raised the underflow error and
+computed no result (exception E7). In the check above, every other fit equals
+0.3.3's.
 
 **Step 2** holds the later changes that move a fit hmmlearn 0.3.3 computes
 correctly and repeatably. Each one comes behind an option whose default keeps 0.3.3's result,

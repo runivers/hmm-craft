@@ -18,6 +18,7 @@ check that finds them.
 | What a prediction leaves in the model | In the five expectation-maximization models, `score`, `score_samples`, `predict`, `predict_proba`, `decode`, `sample`, `aic` and `bic` check the model and write nothing to it. 0.3.3's check stored `startprob_`, `transmat_` and the emission parameter again, converted to arrays (for `GMMHMM`, a copy of `weights_`, `means_` and `covars_` on every call), set `n_features`, and for `GMMHMM` filled in the defaults of `covars_prior` and `covars_weight` and stored every prior broadcast to an array. A parameter is now converted when it is assigned, by the function the check used, where 0.3.3 converted it at the first check: after `model.startprob_ = p` with `p = [0.6, 0.4]`, a later change to `p` is not read, where 0.3.3 read it until the first prediction; the same holds for an array given to the `weights_`, `means_` or `covars_` of a `GMMHMM`, which is copied. A list that does not make an array, such as a ragged one, raises `ValueError` when it is assigned, or when a pickle holding it is loaded, not at the first prediction. A model pickled with a parameter as a list, as 0.3.3 pickles a model built by hand and never checked, loads with it as an array. After a prediction on a model built by hand, `n_features` is not set (it stays `None` for a `CategoricalHMM` built without it), and `get_params()` shows the `GMMHMM` priors as they were given; a prior that does not broadcast to its shape is still refused on prediction. A `fit` after a prediction is the `fit` without it. A `CategoricalHMM` built without `n_features`, with an `emissionprob_` that has more symbols than `X` shows and `"e"` not in `init_params`, raises in `fit` that `emissionprob_` must have the shape of the symbols seen, with or without a `score` before it (pass `n_features`). A fitted `GaussianHMM` given `means_` and `covars_` of another width raises "Unexpected number of dimensions" in `fit` on `X` of that width. 0.3.3 fitted both after a prediction, which had set `n_features`. With `"e"` in `init_params` that `CategoricalHMM` starts as many symbols as `X` shows, where after a prediction 0.3.3 kept the number of symbols of the `emissionprob_` it replaced. `get_stationary_distribution()` returns its value for a `transmat_` given as a list before any prediction; 0.3.3 raised `AttributeError` until one. Once a `means_` of a valid shape is set on a `GaussianHMM`, its width gives the number of features to `aic`, `bic` and a `spherical` `covars_`, before any prediction too; 0.3.3 used an `n_features` left from an earlier fit until the first prediction replaced it, so its first `aic` could differ from the next. `sample()` without `random_state` still advances the model's own random state. The variational models are unchanged: their check still converts and stores their parameters, as 0.3.3's did. Predictions give the same results. | none |
 | Log-determinant | The `full` and `tied` log-densities take the log of the Cholesky factor's diagonal in place on a contiguous copy (`numpy.log(d, out=d)`), not of the strided diagonal. On a CPU with AVX-512, numpy before 2.0.2 has two float64 `log` loops, a vector loop and a scalar one. It gives a strided input the scalar loop when the output starts after the input's start but no more than one stride times the input's length past it, whether or not the two overlap, so hmmlearn 0.3.3 gets one loop or the other by where the allocator places the output. The two loops are different code, so their last bits can differ, and 0.3.3 could then refit one model to different last bits in one process; no run has reproduced such a refit. When the output is the input itself, both AVX-512 loops numpy before 2.0.2 dispatches to take the vector loop whatever the allocator, so this package always gets it there, and its last bits can differ from 0.3.3's. With AVX-512 and numpy 2.0.2 or later, the strided diagonal and the copy both get the vector loop; without AVX-512, both get the scalar one. The check below shows no change in either case, for the versions it names. The boundary and the loop choice were read in the float64 `log` loops of the Linux x86_64 wheels: numpy 1.26.0 and 2.0.1 measure a strided input one stride past its last element, numpy 2.0.2, 2.1.0 and 2.5.4 up to it. `scripts/probe_log_loops.py` shows whether a machine has the two loops. In both cells of `scripts/ci_bit_equality.sh`, on Linux x86_64 CPUs with AVX-512 (`avx512f`) and Python 3.12.16, it found that with numpy 1.26.0 some of its seeded values get a log from the strided input, output right after it, that differs as bytes from the log in place; none do once numpy's AVX-512 targets are turned off, and none with numpy 2.5.4 with them on. | none |
 | Covariances without means | A `GaussianHMM` with `"c"` but not `"m"` in `params` accumulates the state mass it needs, which 0.3.3 did not. With the default `covars_weight=1` and `means_weight=0`, variances (`covars_prior` + the posterior-weighted sum of squares) / 1e-5, for `spherical` averaged over the features: a division by the 1e-5 floor with no posterior mass. For `full` and `tied`, infinite covariances after the first M-step and `ValueError` from the second iteration, when `covars_weight` is at most `n_features`. `scripts/probe_covariance_only_fit.py` checks each clause on hmmlearn 0.3.3 built from its tag (Python 3.12.3, one thread; numpy 1.26.0, scipy 1.11.2, scikit-learn 1.3.1, threadpoolctl 3.8.0, and numpy 2.5.4, scipy 1.18.1, scikit-learn 1.9.1, threadpoolctl 3.8.0). This is one of the two changes to a fit that have no option; the other is the log-determinant above. | none |
+| Underflow with `implementation="scaling"` | A sequence whose scaled forward pass underflows, because the probabilities of one of its samples sum to less than 1e-300 over the states, is computed with the log functions: in `score`, `score_samples`, `predict_proba`, `aic`, `bic`, `decode` and `predict` with `algorithm="map"`, and in each iteration of `fit`, for every model class. 0.3.3 raised `ValueError` ("forward pass failed with underflow"). The result for that sequence, and in `fit` its statistics, are those of `implementation="log"`; the other sequences are computed as before. One warning is logged (logger `hmmcraft.base`) per call and per iteration of `fit` in which a sequence was computed this way; `decode(algorithm="map")` logs one per such sequence. When the log functions give no finite log-likelihood either, as for a sample with probability zero in every state, the same `ValueError` is raised. A subclass that overrides `_accumulate_sufficient_statistics` receives the log-space `lattice`, `fwdlattice` and `bwdlattice` for such a sequence while `implementation` is `"scaling"`. Calls that returned give the same results. | none |
 | `state_occupancy_` | New attribute after `fit`, for every model: the expected number of samples in each state, from the last E-step. | none (new) |
 | `covars_floor` | New `GaussianHMM` parameter. A positive number floors the covariances after every M-step that updates them: variances (`"spherical"`, `"diag"`) and eigenvalues (`"full"`, `"tied"`) below it are raised to it. It is independent of `min_covar`, which keeps its one effect, the term added to the covariance that starts the fit. | `covars_floor=None` (default): 0.3.3's fit |
 
@@ -57,12 +58,26 @@ nothing else.
   (three features and one), Gaussian mixture, categorical, multinomial and
   Poisson emissions. Two further Gaussian families carry a state that collapses
   onto repeated rows and a feature with no spread, so that a covariance floor
-  binds. The hash of every input is recorded and compared.
+  binds. Three more copy the three-feature Gaussian, the Gaussian mixture and
+  the Poisson families with one sample of the first sequence (row 50) set to
+  1000, far from every state. The hash of every input is recorded and
+  compared.
 * **Fits.** All seven model classes, every covariance type, both
   implementations (`"log"`, `"scaling"`), a fixed start (`init_params=""`,
   parameters set from the generator's values moved by a fixed amount) and a
   seeded start (`random_state=0`), ten iterations. For `GaussianHMM` the
   `params` `"stmc"` (with and without `tol=-inf`), `"stm"`, `"st"` and `"stc"`.
+* **Underflow cases.** 33 cases with `implementation="scaling"` in which the
+  scaled forward pass underflows: each predicts on the first sequence alone,
+  with `"log"` as well, or fits on both sequences. The models start from the
+  fixed start on the far families (`GaussianHMM`, `GMMHMM`, `PoissonHMM`),
+  from the fixed start with the first emission probability of every state
+  set to 1e-320 (`CategoricalHMM`, `MultinomialHMM`), or from the seeded
+  scaling fit on the clean family, refitted without initialization (the
+  variational models; for `VariationalCategoricalHMM` the first posterior
+  emission count of every state set to 1e-5, and no prediction case). In two
+  `CategoricalHMM` cases that probability is zero: both packages must raise
+  the same error.
 * **Compared.** Every fitted attribute, `monitor_.history`, the score, both
   decodes, `predict_proba`, a sample drawn with `random_state=1`, `covars_`, the
   parameters, and the exception type of a call that raises. The sufficient
@@ -81,6 +96,7 @@ nothing else.
 | E4 | covariances without means | `params` with `"c"` and not `"m"`: not compared, the fit must not raise and every array must be finite |
 | E5 | `normalize` axis 0 | zero-sum slices: NaN before, 0 now |
 | E6 | additions | `state_occupancy_` and the parameter `covars_floor` with value `None` |
+| E7 | scaling underflow | the underflow cases: 0.3.3 raises the underflow error and this package returns; a prediction on one sequence is finite and equal byte for byte to 0.3.3's result with `implementation="log"` (the MAP log-probability as E3 recomputes it); a fit must not raise and every array must be finite |
 
 ### Running it
 
@@ -91,7 +107,8 @@ its tag and one with this package installed:
     python -I scripts/bit_equality.py dump --package hmmlearn --out REF
     python -I scripts/bit_equality.py dump --package hmmcraft --out FORK \
         --load-pickles REF
-    python -I scripts/bit_equality.py compare REF FORK --allow E1,E2,E3,E4,E5,E6
+    python -I scripts/bit_equality.py compare REF FORK \
+        --allow E1,E2,E3,E4,E5,E6,E7
 
 The exit status is 0 for equal, 1 for a difference (each one is printed) and 2
 when the dumps cannot be compared. The tests of the check run with
@@ -102,8 +119,8 @@ when the dumps cannot be compared. The tests of the check run with
 Synthetic data as above (`RandomState(10)`, model seed 0, sample seed 1),
 Python 3.12.3, Linux x86_64, one thread, 374 fits and the utility arrays, the
 tree at version `0.3.3.post47+g489eb03db` (the last commit that changes the
-package or the check; later commits change documentation only), every
-exception listed above allowed:
+package or the check; later commits change documentation only), E1 to E6
+allowed:
 
 | Environment | numpy | scipy | scikit-learn | Result |
 |---|---|---|---|---|
@@ -121,6 +138,12 @@ and Intel, gives the same result on the same data and thread count, with
 Python 3.12.16, threadpoolctl 3.8.0 and the versions in the table: in the
 minimum-versions cell with numpy's AVX-512 targets turned off, as the script
 does, and in the newest-versions cell with them on.
+
+At the tree that adds the underflow cases and E7, which includes every change
+to the package since the tree above, the check gives equal apart from E1 to E7
+on the same data, with Python 3.12.3, one thread, 374 fits, the 33 underflow
+cases and the utility arrays, in both environments: numpy 1.26.0, scipy
+1.11.2, scikit-learn 1.3.1, and numpy 2.5.5, scipy 1.18.1, scikit-learn 1.9.1.
 
 This is the whole claim: no result is stated for other data, other versions,
 other thread counts or another platform.

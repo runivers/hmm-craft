@@ -1016,3 +1016,428 @@ def test_stationary_distribution_of_a_list_transmat():
     expected.transmat_ = transmat
     assert (_as_bytes(h.get_stationary_distribution())
             == _as_bytes(expected.get_stationary_distribution()))
+
+
+# A sequence that underflows under implementation="scaling" -------------------
+
+UNDERFLOW_TEXT = (
+    "forward pass failed with underflow; consider using "
+    "implementation='log' instead"
+)
+
+
+def _far_gaussian():
+    """
+    A two-state ``GaussianHMM`` fitted on standard normal data, and the same
+    data with one sample far from both states.
+    """
+    X = np.random.RandomState(10).normal(size=(100, 1))
+    model = hmm.GaussianHMM(2, random_state=0).fit(X)
+    X[50] = 50.0
+    return model, X
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda h, X: h.score(X),
+        lambda h, X: h.score_samples(X),
+        lambda h, X: h.predict_proba(X),
+        lambda h, X: h.decode(X, algorithm="map"),
+        lambda h, X: h.decode(X, algorithm="viterbi"),
+        lambda h, X: h.aic(X),
+        lambda h, X: h.bic(X),
+    ],
+    ids=[
+        "score",
+        "score_samples",
+        "predict_proba",
+        "decode-map",
+        "decode-viterbi",
+        "aic",
+        "bic",
+    ],
+)
+def test_scaling_underflow_predicts_as_log(call):
+    """
+    A sequence whose scaled forward pass underflows is computed with the log
+    functions: every prediction equals the ``"log"`` result byte for byte.
+    """
+    model, X = _far_gaussian()
+    model.implementation = "log"
+    expected = call(model, X)
+    model.implementation = "scaling"
+    assert _as_bytes(call(model, X)) == _as_bytes(expected)
+    assert "_accumulate_as_log" not in vars(model)
+
+
+def _three_sequences():
+    rs = np.random.RandomState(10)
+    A, B, C = (rs.normal(size=(n, 1)) for n in (40, 30, 50))
+    B[7] = 50.0
+    return A, B, C
+
+
+def test_scaling_underflow_leaves_the_other_sequences_unchanged():
+    """
+    Of three sequences, only the one that underflows is computed with the log
+    functions: the posteriors of the other two are those of a scaling run
+    without it, and the log-likelihood adds the three in sequence order.
+    """
+    model, _ = _far_gaussian()
+    A, B, C = _three_sequences()
+    model.implementation = "log"
+    log_b, post_b = model.score_samples(B)
+    model.implementation = "scaling"
+    log_a, post_a = model.score_samples(A)
+    log_c, post_c = model.score_samples(C)
+    _, post_ac = model.score_samples(np.concatenate([A, C]), [40, 50])
+    log_prob, post = model.score_samples(
+        np.concatenate([A, B, C]), [40, 30, 50]
+    )
+    assert _as_bytes(np.concatenate([post[:40], post[70:]])) == _as_bytes(
+        post_ac
+    )
+    assert _as_bytes(post[:40]) == _as_bytes(post_a)
+    assert _as_bytes(post[70:]) == _as_bytes(post_c)
+    assert _as_bytes(post[40:70]) == _as_bytes(post_b)
+    assert _as_bytes(log_prob) == _as_bytes(0 + log_a + log_b + log_c)
+    assert _as_bytes(model.score(np.concatenate([A, B, C]), [40, 30, 50])) == (
+        _as_bytes(log_prob)
+    )
+
+
+def _upstream_far_data():
+    """The data of ``test_underflow_from_scaling``: one sample at 10000."""
+    prng = np.random.RandomState(10)
+    data = np.concatenate(
+        [
+            prng.normal(0, 1, 100),
+            prng.normal(5, 1, 100),
+            prng.normal(0, 1, 100),
+            prng.normal(5, 1, 100),
+        ]
+    )
+    data[40] = 10000
+    return data[:, None]
+
+
+def _fixed_gaussian(cov, implementation, n_iter=1):
+    h = hmm.GaussianHMM(
+        2,
+        n_iter=n_iter,
+        covariance_type=cov,
+        implementation=implementation,
+        init_params="",
+    )
+    h.startprob_ = [0.0, 1]
+    h.transmat_ = [[0.4, 0.6], [0.6, 0.4]]
+    h.means_ = [[0], [5]]
+    h.covars_ = {
+        "spherical": [1, 1],
+        "diag": [[1], [1]],
+        "full": [[[1]], [[1]]],
+        "tied": [[1]],
+    }[cov]
+    return h
+
+
+def _underflow_fit_cases():
+    """(id, factory(implementation), X): one fit iteration that falls back."""
+    gauss = _upstream_far_data()
+    clean = np.random.RandomState(10).normal(size=(200, 2))
+    clean[100:] += 4
+    far = clean.copy()
+    far[50] = 1000.0
+    counts = np.random.RandomState(10).poisson([2.0, 5.0], size=(100, 2))
+    counts[30] = 1000
+    multi = np.random.RandomState(10).multinomial(5, [0.3, 0.3, 0.4], size=60)
+    multi[20] = [1000, 0, 0]
+    symbols = np.random.RandomState(10).randint(0, 3, size=(60, 1))
+
+    def gmm(cov):
+        start = hmm.GMMHMM(
+            2, n_mix=2, n_iter=1, covariance_type=cov, random_state=0
+        ).fit(clean)
+
+        def factory(implementation):
+            h = hmm.GMMHMM(
+                2,
+                n_mix=2,
+                n_iter=1,
+                covariance_type=cov,
+                implementation=implementation,
+                init_params="",
+                random_state=0,
+            )
+            h.startprob_, h.transmat_ = start.startprob_, start.transmat_
+            h.weights_, h.means_ = start.weights_, start.means_
+            h.covars_ = start.covars_
+            return h
+
+        return factory
+
+    def poisson(implementation):
+        h = hmm.PoissonHMM(
+            2, n_iter=1, implementation=implementation, init_params=""
+        )
+        h.startprob_ = [0.5, 0.5]
+        h.transmat_ = [[0.7, 0.3], [0.3, 0.7]]
+        h.lambdas_ = [[2.0, 5.0], [5.0, 2.0]]
+        return h
+
+    def multinomial(implementation):
+        h = hmm.MultinomialHMM(
+            2, n_iter=1, implementation=implementation, init_params=""
+        )
+        h.startprob_ = [0.5, 0.5]
+        h.transmat_ = [[0.7, 0.3], [0.3, 0.7]]
+        h.emissionprob_ = [[0.3, 0.3, 0.4], [0.4, 0.4, 0.2]]
+        return h
+
+    def categorical(implementation):
+        # A probability below the kernel's threshold, above zero.
+        h = hmm.CategoricalHMM(
+            2, n_iter=1, implementation=implementation, init_params=""
+        )
+        h.startprob_ = [0.5, 0.5]
+        h.transmat_ = [[0.7, 0.3], [0.3, 0.7]]
+        h.emissionprob_ = [[0.5, 0.5, 1e-320], [0.4, 0.6, 1e-320]]
+        return h
+
+    def variational_gaussian(cov):
+        def factory(implementation):
+            m = vhmm.VariationalGaussianHMM(
+                2,
+                covariance_type=cov,
+                implementation="log",
+                n_iter=5,
+                random_state=0,
+            ).fit(clean)
+            m.implementation, m.init_params, m.n_iter = implementation, "", 1
+            return m
+
+        return factory
+
+    def variational_categorical(implementation):
+        m = vhmm.VariationalCategoricalHMM(
+            2, implementation="log", n_iter=5, random_state=0
+        ).fit(symbols)
+        m.implementation, m.init_params, m.n_iter = implementation, "", 1
+        m.emissionprob_posterior_ = m.emissionprob_posterior_.copy()
+        m.emissionprob_posterior_[:, 2] = 1e-5
+        return m
+
+    covs = ("spherical", "diag", "full", "tied")
+    cases = [
+        (
+            f"GaussianHMM-{cov}",
+            lambda impl, cov=cov: _fixed_gaussian(cov, impl),
+            gauss,
+        )
+        for cov in covs
+    ]
+    cases += [(f"GMMHMM-{cov}", gmm(cov), far) for cov in covs]
+    cases += [
+        ("PoissonHMM", poisson, counts),
+        ("MultinomialHMM", multinomial, multi),
+        ("CategoricalHMM", categorical, symbols),
+    ]
+    cases += [
+        (f"VariationalGaussianHMM-{cov}", variational_gaussian(cov), far)
+        for cov in covs
+    ]
+    cases += [("VariationalCategoricalHMM", variational_categorical, symbols)]
+    return cases
+
+
+UNDERFLOW_FIT_CASES = _underflow_fit_cases()
+UNDERFLOW_FIT_IDS = [case[0] for case in UNDERFLOW_FIT_CASES]
+
+
+def _fit_state(model):
+    """Every fitted array, ``state_occupancy_`` included, and the history."""
+    state = {
+        k: _as_bytes(v)
+        for k, v in vars(model).items()
+        if k.endswith("_") and k != "monitor_"
+    }
+    state["monitor_.history"] = list(model.monitor_.history)
+    return state
+
+
+@pytest.mark.parametrize("case", UNDERFLOW_FIT_CASES, ids=UNDERFLOW_FIT_IDS)
+def test_scaling_underflow_fits_as_log(case):
+    """
+    An iteration of ``fit`` whose only sequence underflows computes it with
+    the log functions, statistics included: the fit equals the ``"log"``
+    fit byte for byte, in every model class.
+    """
+    _, factory, X = case
+    expected = factory("log").fit(X)
+    model = factory("scaling").fit(X)
+    assert _fit_state(model) == _fit_state(expected)
+    assert "_accumulate_as_log" not in vars(model)
+
+
+def _accumulate_recorder(model, fail_when_log=False):
+    """
+    Make ``model`` record the arguments of each accumulation, with whether
+    the log statistics were asked for.
+    """
+    cls = type(model)
+
+    class Recorder(cls):
+        def _accumulate_sufficient_statistics(
+            self, stats, X, lattice, posteriors, fwdlattice, bwdlattice
+        ):
+            as_log = self._accumulate_as_log
+            self.seen.append(
+                (
+                    _as_bytes(
+                        (X, lattice, posteriors, fwdlattice, bwdlattice)
+                    ),
+                    as_log,
+                )
+            )
+            if fail_when_log and as_log:
+                raise RuntimeError("accumulation failed")
+            super()._accumulate_sufficient_statistics(
+                stats, X, lattice, posteriors, fwdlattice, bwdlattice
+            )
+
+    model.__class__ = Recorder
+    model.seen = []
+    return model
+
+
+@pytest.mark.parametrize("cov", ["spherical", "diag", "full", "tied"])
+def test_scaling_underflow_accumulates_only_that_sequence_as_log(cov):
+    """
+    In a fit over three sequences of which the second underflows, the first
+    and third are accumulated with the arguments of a scaling fit without
+    the second, the second with those of a ``"log"`` fit of it alone, and
+    the log statistics are asked for during the second call only.
+    """
+    data = _upstream_far_data()
+    first, second, third = data[:100].copy(), data[100:250].copy(), data[250:]
+    first[40] = 0.3
+    second[5] = 10000
+    three = _accumulate_recorder(_fixed_gaussian(cov, "scaling")).fit(
+        np.concatenate([first, second, third]), [100, 150, 150]
+    )
+    two = _accumulate_recorder(_fixed_gaussian(cov, "scaling")).fit(
+        np.concatenate([first, third]), [100, 150]
+    )
+    alone = _accumulate_recorder(_fixed_gaussian(cov, "log")).fit(second)
+    assert [as_log for _, as_log in three.seen] == [False, True, False]
+    assert three.seen[0][0] == two.seen[0][0]
+    assert three.seen[2][0] == two.seen[1][0]
+    assert three.seen[1][0] == alone.seen[0][0]
+    assert "_accumulate_as_log" not in vars(three)
+    assert set(vars(three)) == set(vars(two))
+
+
+def test_scaling_underflow_flag_is_cleared_when_accumulation_raises():
+    """The private flag does not outlive an accumulation that raises."""
+    model = _accumulate_recorder(
+        _fixed_gaussian("diag", "scaling"), fail_when_log=True
+    )
+    with pytest.raises(RuntimeError, match="accumulation failed"):
+        model.fit(_upstream_far_data())
+    assert "_accumulate_as_log" not in vars(model)
+    assert model._accumulate_as_log is False
+
+
+def _impossible(implementation="scaling"):
+    """A categorical model in which symbol 2 has probability zero."""
+    h = hmm.CategoricalHMM(
+        2, init_params="", implementation=implementation, n_iter=3
+    )
+    h.startprob_ = np.array([0.5, 0.5])
+    h.transmat_ = np.array([[0.7, 0.3], [0.3, 0.7]])
+    h.emissionprob_ = np.array([[0.5, 0.5, 0.0], [0.4, 0.6, 0.0]])
+    return h
+
+
+IMPOSSIBLE = np.array([[0], [1], [2], [1], [0]])
+
+
+@pytest.mark.parametrize("lengths", [None, [2, 5]], ids=["alone", "second"])
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda h, X, n: h.score(X, n),
+        lambda h, X, n: h.score_samples(X, n),
+        lambda h, X, n: h.predict_proba(X, n),
+        lambda h, X, n: h.decode(X, n, algorithm="map"),
+        lambda h, X, n: h.aic(X, n),
+        lambda h, X, n: h.fit(X, n),
+    ],
+    ids=[
+        "score",
+        "score_samples",
+        "predict_proba",
+        "decode-map",
+        "aic",
+        "fit",
+    ],
+)
+def test_scaling_underflow_of_an_impossible_sequence_still_raises(
+    call, lengths
+):
+    """
+    A sequence the log functions give no finite log-likelihood for raises
+    the kernel's underflow error as before, with no warning first.
+    """
+    X = (
+        IMPOSSIBLE
+        if lengths is None
+        else np.concatenate([IMPOSSIBLE[:2], IMPOSSIBLE])
+    )
+    h = _impossible()
+    with pytest.raises(ValueError) as info:
+        call(h, X, lengths)
+    assert str(info.value) == UNDERFLOW_TEXT
+    assert "_accumulate_as_log" not in vars(h)
+
+
+def _underflow_records(caplog):
+    return [
+        r
+        for r in caplog.records
+        if r.name == "hmmcraft.base" and "underflowed" in r.getMessage()
+    ]
+
+
+def test_scaling_underflow_logs_one_warning_per_call(caplog):
+    """
+    A scoring call in which a sequence falls back logs one warning naming
+    how many of how many sequences did and the first index; a scaling call
+    without underflow logs none.
+    """
+    model, _ = _far_gaussian()
+    A, B, C = _three_sequences()
+    model.implementation = "scaling"
+    with caplog.at_level("WARNING", logger="hmmcraft.base"):
+        model.score(np.concatenate([A, C]), [40, 50])
+        assert _underflow_records(caplog) == []
+        model.score(np.concatenate([A, B, C]), [40, 30, 50])
+    records = _underflow_records(caplog)
+    assert len(records) == 1
+    assert records[0].levelname == "WARNING"
+    assert "1 of 3 sequences" in records[0].getMessage()
+    assert "index 1" in records[0].getMessage()
+
+
+def test_scaling_underflow_logs_one_warning_per_e_step(caplog):
+    """An E-step in which sequences fall back logs one warning."""
+    data = _upstream_far_data()
+    with caplog.at_level("WARNING", logger="hmmcraft.base"):
+        _fixed_gaussian("diag", "scaling").fit(data, [200, 200])
+        records = _underflow_records(caplog)
+        assert len(records) == 1
+        assert "1 of 2 sequences" in records[0].getMessage()
+        caplog.clear()
+        _fixed_gaussian("diag", "scaling").fit(data[200:])
+        assert _underflow_records(caplog) == []
