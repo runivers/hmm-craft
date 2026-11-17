@@ -121,6 +121,37 @@ def _numpy_log_density(X, means, covars, covariance_type):
     return function[covariance_type](X, means, covars)
 
 
+def _value_bytes(a):
+    """The bytes of an array's values.
+
+    An x87 extended float (``np.longdouble`` on x86) holds its value in the
+    first 10 bytes of each element; the rest is padding whose content numpy
+    does not define, so two equal results can differ there.
+    """
+    width = a.dtype.itemsize
+    if (a.dtype.kind == "f" and np.finfo(a.dtype).nmant == 63
+            and width > 10):
+        elements = np.ascontiguousarray(a).view(np.uint8).reshape(-1, width)
+        return elements[:, :10].tobytes()
+    return a.tobytes()
+
+
+def test_value_bytes_ignore_the_padding_of_an_extended_float():
+    """Two arrays of the same values give the same value bytes, whatever
+    the padding an x87 extended float leaves in its storage holds."""
+    a = np.arange(4, dtype=np.longdouble) / 3
+    b = a.copy()
+    width = a.dtype.itemsize
+    if np.finfo(np.longdouble).nmant == 63 and width > 10:
+        b.view(np.uint8).reshape(-1, width)[:, 10:] = 0xA5
+        assert a.tobytes() != b.tobytes()
+        assert _value_bytes(a) == _value_bytes(b)
+    else:
+        assert _value_bytes(a) == a.tobytes()
+    assert _value_bytes(a) != _value_bytes(a + 1)
+    assert _value_bytes(np.arange(3.0)) == np.arange(3.0).tobytes()
+
+
 def _outcome(function, *args):
     """What one call gives, everything that a caller can see recorded.
 
@@ -138,7 +169,7 @@ def _outcome(function, *args):
             outcome = ("array", type(result).__name__, result.dtype.str,
                        result.shape, result.flags.c_contiguous,
                        result.flags.owndata, result.flags.writeable,
-                       result.flags.aligned, result.tobytes())
+                       result.flags.aligned, _value_bytes(result))
     return outcome, [(w.category.__name__, str(w.message)) for w in caught]
 
 
