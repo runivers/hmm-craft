@@ -12,7 +12,7 @@ from sklearn.utils import check_random_state
 from threadpoolctl import threadpool_limits
 
 from . import _emissions, _utils
-from .base import BaseHMM, _block_estep, _ConvertedAttribute
+from .base import _ABSENT, BaseHMM, _block_estep, _ConvertedAttribute
 from .utils import normalize
 
 __all__ = [
@@ -130,8 +130,9 @@ class CategoricalHMM(_emissions.BaseCategoricalHMM, BaseHMM):
             :attr:`emissionprob_`.
 
         n_features: int, optional
-            The number of categorical symbols in the HMM.  Will be inferred
-            from the data if not set.
+            The number of categorical symbols in the HMM. If not set, taken
+            from ``emissionprob_`` when it is kept (``"e"`` not in
+            ``init_params``), otherwise from the data.
 
         algorithm : {"viterbi", "map"}, optional
             Decoder algorithm.
@@ -805,6 +806,11 @@ class GMMHMM(_emissions.BaseGMMHMM):
             if self.covars_weight is None:
                 self.covars_weight = 0.0
 
+    # The priors fit broadcasts to the width of X (_prior_shapes): keep the
+    # two lists in step.
+    _derived_from_X = ("n_features", "weights_prior", "means_prior",
+                       "means_weight", "covars_prior", "covars_weight")
+
     def _prior_shapes(self, nf):
         """
         Return ``(name, shape)`` for each prior, in the order they are
@@ -832,6 +838,17 @@ class GMMHMM(_emissions.BaseGMMHMM):
         for name, shape in self._prior_shapes(self.n_features):
             setattr(self, name,
                     np.broadcast_to(getattr(self, name), shape).copy())
+
+    def _value_after_refused_fit(self, name, before, current):
+        # _init_covar_priors fills a None covariance prior with a number;
+        # the prior keeps that number, without the width of the refused X,
+        # so a later fit reads the value it read before. A prior broadcast
+        # to an empty shape (n_mix=0) holds no number and goes back to None.
+        if (name in ("covars_prior", "covars_weight") and before is None
+                and current is not None and current is not _ABSENT
+                and np.size(current) > 0):
+            return float(np.asarray(current).flat[0])
+        return super()._value_after_refused_fit(name, before, current)
 
     def _check(self):
         super()._check()

@@ -19,6 +19,8 @@ from . import _kl_divergence as _kl
 from .utils import log_normalize, normalize
 
 _log = logging.getLogger(__name__)
+# An attribute the instance does not have, as opposed to one set to None.
+_ABSENT = object()
 #: Supported decoder algorithms.
 DECODER_ALGORITHMS = frozenset(("viterbi", "map"))
 
@@ -284,6 +286,10 @@ class _AbstractHMM(BaseEstimator):
     Base class for Hidden Markov Models learned via Expectation-Maximization
     and Variational Bayes.
     """
+
+    # What the start of fit derives from X; a fit refused before its first
+    # iteration puts it back (_restore_derived_from_X).
+    _derived_from_X = ("n_features",)
 
     def __init__(self, n_components, algorithm, random_state, n_iter,
                  tol, verbose, params, init_params, implementation):
@@ -717,6 +723,13 @@ class _AbstractHMM(BaseEstimator):
         the parameters, pass proper ``init_params`` keyword argument
         to estimator's constructor.
 
+        If ``fit`` raises before its first iteration, ``n_features`` is put
+        back as it was before the call, unless the emission parameter gives
+        the number the call set; so are the priors of a ``GMMHMM``, a
+        covariance prior that the call filled in keeping its number. The
+        parameters its start drew, and the ``n_trials`` of a
+        ``MultinomialHMM``, stay.
+
         Parameters
         ----------
         X : array-like, shape (n_samples, n_features)
@@ -755,12 +768,18 @@ class _AbstractHMM(BaseEstimator):
 
         # A fit that runs no EM iteration must not keep an earlier fit's value.
         vars(self).pop("state_occupancy_", None)
-        self._init(X, lengths)
-        self._check()
-        self._store_checked()
-        # X against the parameters _check has validated, before the first
-        # E-step reads it.
-        self._check_X(X)
+        saved = {name: vars(self).get(name, _ABSENT)
+                 for name in self._derived_from_X}
+        try:
+            self._init(X, lengths)
+            self._check()
+            self._store_checked()
+            # X against the parameters _check has validated, before the
+            # first E-step reads it.
+            self._check_X(X)
+        except BaseException:
+            self._restore_derived_from_X(saved)
+            raise
         self.monitor_._reset()
 
         for iter in range(self.n_iter):
@@ -861,15 +880,57 @@ class _AbstractHMM(BaseEstimator):
         """
         raise ValueError("the number of features is unknown: set n_features")
 
+    def _restore_derived_from_X(self, saved):
+        """
+        Put back what the start of a refused :meth:`fit` derived from ``X``.
+
+        *saved* maps each name in ``_derived_from_X`` to its value before
+        the call, or ``_ABSENT``. Each attribute the call changed gets the
+        value :meth:`_value_after_refused_fit` gives, an absent one is
+        removed again; ``n_features`` stays when the emission parameter
+        gives the number the call set.
+        """
+        for name, before in saved.items():
+            current = vars(self).get(name, _ABSENT)
+            if current is before:
+                continue
+            if (name == "n_features"
+                    and self._emissions_give_n_features(current)):
+                continue
+            value = self._value_after_refused_fit(name, before, current)
+            if value is _ABSENT:
+                vars(self).pop(name, None)
+            else:
+                setattr(self, name, value)
+
+    def _emissions_give_n_features(self, n_features):
+        """
+        Return whether the emission parameter gives *n_features*; a missing
+        or malformed parameter gives no number.
+        """
+        if n_features is _ABSENT or n_features is None:
+            return False
+        try:
+            return self._n_features_from_emissions() == n_features
+        except ValueError:
+            return False
+
+    def _value_after_refused_fit(self, name, before, current):
+        """
+        Return the value a refused :meth:`fit` leaves for *name*: by
+        default *before*, its value before the call (``_ABSENT``: none).
+        """
+        return before
+
     def _check_and_set_n_features(self, X):
         _, n_features = X.shape
-        if hasattr(self, "n_features"):
-            if self.n_features != n_features:
-                raise ValueError(
-                    f"Unexpected number of dimensions, got {n_features} but "
-                    f"expected {self.n_features}")
-        else:
+        # None counts as not set, as in _get_n_features.
+        if getattr(self, "n_features", None) is None:
             self.n_features = n_features
+        elif self.n_features != n_features:
+            raise ValueError(
+                f"Unexpected number of dimensions, got {n_features} but "
+                f"expected {self.n_features}")
 
     def _get_n_fit_scalars_per_param(self):
         """

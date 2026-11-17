@@ -163,6 +163,12 @@ def _means_shape(model, name="means_"):
 
 class BaseCategoricalHMM(_AbstractHMM):
 
+    # A refused fit puts nothing back: n_features is tested with <=, so a
+    # later fit with fewer symbols succeeds with the count left.
+    _derived_from_X = ()
+    # The emission parameter whose width is the number of symbols.
+    _emissionprob_name = "emissionprob_"
+
     def __init_subclass__(cls):
         for name in [
                 "decode",
@@ -185,7 +191,21 @@ class BaseCategoricalHMM(_AbstractHMM):
             setattr(cls, name, wrapper)
 
     def _n_features_from_emissions(self):
-        return _n_features_of(self, "emissionprob_")
+        return _n_features_of(self, self._emissionprob_name)
+
+    def _kept_n_features(self):
+        """
+        Return the number of symbols of the emission parameter that the
+        start of :meth:`fit` keeps, or ``None`` when it draws a new one or
+        the parameter is not set.
+        """
+        # init_params is read directly: _needs_init logs.
+        if "e" in self.init_params:
+            return None
+        try:
+            return self._n_features_from_emissions()
+        except ValueError:
+            return None
 
     def _check_X(self, X):
         # No column test: the deprecated (n_samples, k) layout is read as
@@ -217,7 +237,17 @@ class BaseCategoricalHMM(_AbstractHMM):
                     f"Largest symbol is {X.max()} but the model only emits "
                     f"symbols up to {self.n_features - 1}")
         else:
-            self.n_features = X.max() + 1
+            n_features = X.max() + 1
+            kept = self._kept_n_features()
+            if kept is not None and n_features > kept:
+                raise ValueError(
+                    f"Largest symbol is {X.max()} but the model only emits "
+                    f"symbols up to {kept - 1}")
+            # A kept emission parameter gives the number of symbols, which X
+            # may show fewer of; when they are equal the count of X is
+            # stored, of its type.
+            self.n_features = (kept if kept is not None and kept > n_features
+                               else n_features)
 
     def _get_n_fit_scalars_per_param(self):
         nc = self.n_components

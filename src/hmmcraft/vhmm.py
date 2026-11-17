@@ -63,6 +63,8 @@ class VariationalCategoricalHMM(BaseCategoricalHMM, VariationalBaseHMM):
     VariationalCategoricalHMM(n_components=2)
     """
 
+    _emissionprob_name = "emissionprob_posterior_"
+
     def __init__(self, n_components=1,
                  startprob_prior=None, transmat_prior=None,
                  emissionprob_prior=None, n_features=None,
@@ -89,8 +91,9 @@ class VariationalCategoricalHMM(BaseCategoricalHMM, VariationalBaseHMM):
             :attr:`emissionprob_`.
 
         n_features: int, optional
-            The number of categorical symbols in the HMM.  Will be inferred
-            from the data if not set.
+            The number of categorical symbols in the HMM. If not set, taken
+            from ``emissionprob_posterior_`` when it is kept (``"e"`` not in
+            ``init_params``), otherwise from the data.
 
         algorithm : {"viterbi", "map"}, optional
             Decoder algorithm.
@@ -569,7 +572,7 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
             raise ValueError(
                 f"{self.covariance_type} is invalid")
         nc = self.n_components
-        nf = self.n_features
+        nf = self._get_n_features()
         return {
             "s": nc - 1,
             "t": nc * (nc - 1),
@@ -598,7 +601,8 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
             raise ValueError(
                 f"{self.covariance_type} is invalid")
 
-        means_shape = (self.n_components, self.n_features)
+        nf = self._get_n_features()
+        means_shape = (self.n_components, nf)
 
         self.means_prior_ = np.asarray(self.means_prior_, dtype=float)
         self.means_posterior_ = np.asarray(self.means_posterior_, dtype=float)
@@ -641,11 +645,11 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
 
         expected = None
         if self.covariance_type == "full":
-            expected = (self.n_components, self.n_features, self.n_features)
+            expected = (self.n_components, nf, nf)
         elif self.covariance_type == "tied":
-            expected = (self.n_features, self.n_features)
+            expected = (nf, nf)
         elif self.covariance_type == "diag":
-            expected = (self.n_components, self.n_features)
+            expected = (self.n_components, nf)
         elif self.covariance_type == "spherical":
             expected = (self.n_components, )
         # Now check the W's
@@ -668,7 +672,7 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
         if self.covariance_type in ("diag", "spherical"):
             scale_posterior_ = fill_covars(
                 self.scale_posterior_, self.covariance_type,
-                self.n_components, self.n_features)
+                self.n_components, self._get_n_features())
         try:
             with np.errstate(all="ignore"):
                 W_k = np.linalg.inv(scale_posterior_)
@@ -686,7 +690,7 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
         # In general, things are neater if we pretend the covariance is
         # full / tied.  Or, we could treat each case separately, and reduce
         # the number of operations. That's left for the future :-)
-        nf = self.n_features
+        nf = self._get_n_features()
 
         term1 = special.digamma(
             .5 * (self.dof_posterior_ - np.arange(0, nf)[:, None])
@@ -695,7 +699,7 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
         scale_posterior_ = self.scale_posterior_
         if self.covariance_type in ("diag", "spherical"):
             scale_posterior_ = fill_covars(self.scale_posterior_,
-                    self.covariance_type, self.n_components, self.n_features)
+                    self.covariance_type, self.n_components, nf)
         W_k = np.linalg.inv(scale_posterior_)
         term1 += nf * np.log(2) + _utils.logdet(W_k)
         term1 /= 2.
@@ -815,6 +819,7 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
         # First, get the contribution from the state transitions
         # and initial probabilities
         lower_bound = super()._compute_lower_bound(log_prob)
+        nf = self._get_n_features()
 
         # The compute the contributions of the emissions
         emissions_lower_bound = 0
@@ -825,9 +830,9 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
         scale_prior_ = self.scale_prior_
         if self.covariance_type != "full":
             scale_posterior_ = fill_covars(self.scale_posterior_,
-                    self.covariance_type, self.n_components, self.n_features)
+                    self.covariance_type, self.n_components, nf)
             scale_prior_ = fill_covars(self.scale_prior_,
-                    self.covariance_type, self.n_components, self.n_features)
+                    self.covariance_type, self.n_components, nf)
 
         W_k = np.linalg.inv(scale_posterior_)
 

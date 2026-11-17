@@ -63,7 +63,12 @@ integer. `fit` first refuses an `n_components` less than 1, then passes `X`
 and `lengths` to `_utils.split_X_lengths`, which raises `ValueError` for any
 other entry and for a total that is not the number of samples, so no start is
 computed from invalid `lengths`. After `_init`, `_check` and `_store_checked`,
-and before the first E-step, `_check_X` checks `X` against the model.
+and before the first E-step, `_check_X` checks `X` against the model. If one
+of these four raises, `fit` puts back what its start derived from `X`, as the
+class lists it in `_derived_from_X`: `n_features`, unless
+`_n_features_from_emissions` gives the number it set; for `GMMHMM` also its
+priors (a covariance prior filled from `None` keeps its number). The
+categorical models list nothing. Then the error propagates.
 
 ```mermaid
 flowchart TD
@@ -192,7 +197,7 @@ A model class supplies these hooks; the loop never changes per class:
 | `_do_mstep` | sets the parameters named in `params` from the statistics |
 | `_generate_sample_from_state` | draws one observation, for `sample` |
 | `_get_n_fit_scalars_per_param` | the free parameters, for the warning on too little data and for `aic` and `bic` |
-| `_n_features_from_emissions` | the number of features the emission parameter implies (`means_`, `means_posterior_`, `emissionprob_` or `lambdas_`) |
+| `_n_features_from_emissions` | the number of features the emission parameter implies (`means_`, `means_posterior_`, `emissionprob_`, `emissionprob_posterior_` or `lambdas_`) |
 
 `n_features` is set by `fit` alone, from `X` (`GaussianHMM` stores the width
 of `means_` in `_store_checked`); a prediction never sets it.
@@ -204,7 +209,11 @@ read.
 `_check_X` compares the columns of `X` with the count the emission parameter
 implies, not with `n_features`, which an earlier fit may have left; the
 categorical models, whose `n_features` is a constructor parameter and whose
-`X` holds symbols, test the symbols against `_get_n_features`.
+`X` holds symbols, test the symbols against `_get_n_features`. Built
+without `n_features`, the categorical models take it in `fit` from a kept
+emission parameter (`"e"` not in `init_params`), refusing a larger symbol,
+and count it from `X` otherwise; `VariationalGaussianHMM` reads it through
+`_get_n_features`.
 `implementation` is read through `_by_implementation`, which raises
 `ValueError` for a value other than `"log"` or `"scaling"`.
 

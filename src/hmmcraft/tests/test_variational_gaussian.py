@@ -547,6 +547,61 @@ def test_covars_before_n_features():
     assert model.covars_.tobytes() == expected.tobytes()
 
 
+def _copy_fitted(source, model):
+    """Give *model* every fitted attribute of *source* but the monitor."""
+    for name, value in vars(source).items():
+        if name.endswith("_") and name not in ("monitor_",
+                                               "state_occupancy_"):
+            setattr(model, name, value)
+
+
+def _width_refusal(covariance_type="full"):
+    """
+    ``(model, wider, X4)``: *model* has the parameters of a fit on three
+    features and no ``n_features``; *wider* is fitted on ``X4``, which has
+    four.
+    """
+    rs = np.random.RandomState(0)
+    X3 = rs.normal(size=(50, 3))
+    X4 = rs.normal(size=(50, 4))
+    narrow = vhmm.VariationalGaussianHMM(
+        2, covariance_type, random_state=0, n_iter=1).fit(X3)
+    wider = vhmm.VariationalGaussianHMM(
+        2, covariance_type, random_state=0, n_iter=1).fit(X4)
+    model = vhmm.VariationalGaussianHMM(
+        2, covariance_type, init_params="", random_state=0)
+    _copy_fitted(narrow, model)
+    return model, wider, X4
+
+
+def test_score_after_a_width_refusal_and_wider_posteriors():
+    """
+    After a ``fit`` refused on ``X`` of another width, the parameters of
+    that width set by hand score ``X`` as the model they come from.
+    """
+    model, wider, X4 = _width_refusal()
+    with pytest.raises(ValueError):
+        model.fit(X4)
+    _copy_fitted(wider, model)
+    assert model.score(X4) == wider.score(X4)
+
+
+def test_spherical_covars_after_a_refused_fit_is_as_before():
+    """
+    A ``fit`` refused on ``X`` of another width leaves the number of
+    features as it was: ``covars_`` of a ``spherical`` model keeps the
+    shape and values it had before the call.
+    """
+    model, _, X4 = _width_refusal("spherical")
+    before = model.covars_
+    assert before.shape == (2, 3, 3)
+    with pytest.raises(ValueError):
+        model.fit(X4)
+    after = model.covars_
+    assert after.shape == before.shape
+    assert after.tobytes() == before.tobytes()
+
+
 @pytest.mark.parametrize("means", [None, np.zeros(2)], ids=["unset", "1-D"])
 def test_spherical_covars_name_means_posterior(means):
     """

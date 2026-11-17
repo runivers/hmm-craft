@@ -116,6 +116,38 @@ class TestVariationalCategorical:
             assert_log_likelihood_increasing(model, sequences, lengths, 10)
 
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
+    def test_fit_counts_symbols_from_a_kept_posterior(self, implementation):
+        """
+        Without ``n_features``, ``fit`` takes the number of symbols from a
+        kept ``emissionprob_posterior_`` with more symbols than ``X``
+        shows, and fits as the model given that number; a symbol the
+        posterior does not emit is refused, naming it, and ``n_features``
+        stays unset.
+        """
+        X = np.random.RandomState(10).randint(0, 2, (30, 1))
+        expected = self._fitted(3, implementation)
+        expected.init_params = ""
+        expected.fit(X)
+        model = self._fitted(3, implementation)
+        model.init_params = ""
+        model.n_features = None
+        model.fit(X)
+        assert model.n_features == 3
+        assert model.monitor_.history == expected.monitor_.history
+        assert vars(model).keys() == vars(expected).keys()
+        for name, value in vars(expected).items():
+            if name.endswith("_") and name != "monitor_":
+                fitted = np.asarray(vars(model)[name])
+                assert fitted.dtype == np.asarray(value).dtype
+                assert fitted.tobytes() == np.asarray(value).tobytes()
+        model = self._fitted(3, implementation)
+        model.init_params = ""
+        model.n_features = None
+        with pytest.raises(ValueError, match="Largest symbol is 3"):
+            model.fit(np.array([[0], [3], [1]]))
+        assert model.n_features is None
+
+    @pytest.mark.parametrize("implementation", ["scaling", "log"])
     def test_init_incorrect_priors(self, implementation):
         sequences, lengths = self.get_from_one_beal(7, 100, None)
 
@@ -172,7 +204,7 @@ class TestVariationalCategorical:
                 implementation=implementation)
             model.emissionprob_prior_ = np.full((4, 4), 7/4)
             model.emissionprob_posterior_ = np.full((4, 4), .25)
-            model.n_features_ = 10
+            model.n_features = 10
             assert_log_likelihood_increasing(model, sequences, lengths, 10)
 
         # Too small n_features
@@ -183,7 +215,7 @@ class TestVariationalCategorical:
             model.emissionprob_prior_ = np.full((4, 4), 7/4)
             model.emissionprob_posterior_ = np.full((4, 4), .25)
 
-            model.n_features_ = 1
+            model.n_features = 1
             assert_log_likelihood_increasing(model, sequences, lengths, 10)
 
         # Test that setting the desired prior value works

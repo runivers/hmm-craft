@@ -251,3 +251,157 @@ def test_undocumented_prior_shape_raises(covariance_type, prior, shape):
     """
     with pytest.raises(ValueError):
         _fit(covariance_type, **{prior: np.full(shape, NUMBERS[prior])})
+
+
+PRIORS = list(NUMBERS)
+
+
+def _identity(covariance_type, n_components, n_mix, n_features):
+    """Identity covariances of a model, in the shape of its type."""
+    eye = np.eye(n_features)
+    return {
+        "full": np.tile(eye, (n_components, n_mix, 1, 1)),
+        "tied": np.tile(eye, (n_components, 1, 1)),
+        "diag": np.ones((n_components, n_mix, n_features)),
+        "spherical": np.ones((n_components, n_mix)),
+    }[covariance_type]
+
+
+def _started(covariance_type, means, **priors):
+    """
+    A model with ``init_params="st"``, equal mixture weights, *means* and
+    identity covariances.
+    """
+    nc, nm, nf = means.shape
+    h = GMMHMM(
+        nc,
+        nm,
+        covariance_type=covariance_type,
+        init_params="st",
+        random_state=0,
+        **priors,
+    )
+    h.weights_ = np.full((nc, nm), 1 / nm)
+    h.means_ = means
+    h.covars_ = _identity(covariance_type, nc, nm, nf)
+    return h
+
+
+def _fit_bytes(model, X):
+    """The fitted arrays, the five priors and the score, as bytes."""
+    arrays = {
+        name: value
+        for name, value in vars(model).items()
+        if name.endswith("_") and name not in ("monitor_", "state_occupancy_")
+    }
+    arrays.update({name: getattr(model, name) for name in PRIORS})
+    arrays["score"] = model.score(X)
+    return {
+        name: (np.asarray(v).dtype.str, np.shape(v), np.asarray(v).tobytes())
+        for name, v in arrays.items()
+    }
+
+
+def test_type_change_after_a_refusal_keeps_the_filled_covars_weight():
+    """
+    A ``tied`` model refused on ``X`` of another width, then changed to
+    ``full`` with parameters of that width, fits with the ``covars_weight``
+    the refused call filled in, ``-(n_mix + n_features + 1)`` for four
+    features: as a ``full`` model given that number.
+    """
+    rs = np.random.RandomState(0)
+    model = _started("tied", rs.normal(size=(1, 2, 3)))
+    X4 = rs.normal(size=(50, 4))
+    with pytest.raises(ValueError):
+        model.fit(X4)
+    means = rs.normal(size=(1, 2, 4))
+    model.covariance_type = "full"
+    model.means_ = means
+    model.covars_ = np.tile(np.eye(4), (1, 2, 1, 1))
+    model.fit(X4)
+    expected = _started(
+        "full", means, covars_prior=0.0, covars_weight=-7.0
+    ).fit(X4)
+    assert _fit_bytes(model, X4) == _fit_bytes(expected, X4)
+
+
+@pytest.mark.parametrize(
+    "covariance_type, covars_weight", [("full", -3.0), ("tied", -4.0)]
+)
+def test_refit_at_another_width_keeps_the_filled_covars_weight(
+    covariance_type, covars_weight
+):
+    """
+    A model refused on one column, given ``n_features`` of its means and
+    fitted on ``X`` of that width, fits with the ``covars_weight`` filled in
+    for one feature: ``-(1 + 1 + 1)`` for ``full``, ``-(n_mix + 1 + 1)``
+    for ``tied``.
+    """
+    rs = np.random.RandomState(0)
+    means = rs.normal(size=(2, 2, 3))
+    model = _started(covariance_type, means)
+    X1 = rs.normal(size=(50, 1))
+    X3 = rs.normal(size=(50, 3))
+    with pytest.raises(ValueError):
+        model.fit(X1)
+    model.n_features = 3
+    model.fit(X3)
+    expected = _started(
+        covariance_type, means, covars_prior=0.0, covars_weight=covars_weight
+    ).fit(X3)
+    assert _fit_bytes(model, X3) == _fit_bytes(expected, X3)
+
+
+@pytest.mark.parametrize(
+    "covariance_type, n_mix, X_width, priors, error, covars_prior, "
+    "covars_weight",
+    [
+        ("full", 2, 4, {}, ValueError, 0.0, -6.0),
+        ("tied", 2, 4, {}, ValueError, 0.0, -7.0),
+        ("diag", 2, 4, {}, ValueError, -1.5, 0.0),
+        ("spherical", 2, 4, {}, ValueError, -2.0, 0.0),
+        ("diag", 2, 3, {"means_prior": np.zeros(5)}, ValueError, -1.5, 0.0),
+        # the start counts the parameters of each known type
+        ("bogus", 2, 3, {}, KeyError, None, None),
+        # scikit-learn's KMeans refuses n_clusters=0
+        ("diag", 0, 3, {}, ValueError, None, None),
+    ],
+    ids=[
+        "full-width",
+        "tied-width",
+        "diag-width",
+        "spherical-width",
+        "diag-means_prior",
+        "bogus-type",
+        "diag-no-mixture-component",
+    ],
+)
+def test_refused_fit_leaves_a_filled_covariance_prior_as_its_number(
+    covariance_type, n_mix, X_width, priors, error, covars_prior, covars_weight
+):
+    """
+    A ``fit`` refused after it filled in a ``None`` ``covars_prior`` or
+    ``covars_weight`` leaves the number it filled in, a float without a
+    shape: refused on the width of ``X``, or by another prior. A
+    ``covariance_type`` that fills nothing leaves both ``None``, and so
+    does ``n_mix=0``, whose priors are broadcast to an empty shape; the
+    caller gets the error of the refusal.
+    """
+    rs = np.random.RandomState(0)
+    means = rs.normal(size=(2, 2, 3))
+    valid = "diag" if covariance_type == "bogus" else covariance_type
+    model = _started(valid, means, **priors)
+    model.covariance_type = covariance_type
+    model.n_mix = n_mix
+    with pytest.raises(error):
+        model.fit(rs.normal(size=(50, X_width)))
+    for name, number in [
+        ("covars_prior", covars_prior),
+        ("covars_weight", covars_weight),
+    ]:
+        value = getattr(model, name)
+        if number is None:
+            assert value is None
+        else:
+            assert type(value) is float
+            assert value == number

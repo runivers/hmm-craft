@@ -658,6 +658,35 @@ def test_n_features_none_is_taken_from_emissions(name):
     assert h.n_features is None
 
 
+@pytest.mark.parametrize("name", ["GaussianHMM", "GMMHMM", "MultinomialHMM",
+                                  "PoissonHMM", "VariationalGaussianHMM"])
+def test_fit_reads_n_features_none_as_unset(name):
+    """
+    ``fit`` reads an ``n_features`` set to ``None`` as not set: the model
+    fits, and the fit and the number of features it stores equal, byte for
+    byte, those of the same model without the attribute.
+    """
+    def build():
+        if name == "VariationalGaussianHMM":
+            _, factory, X = MODEL_CASES[MODEL_IDS.index(name)]
+            return factory(2), X
+        h, X = _hand_built(name)
+        if name == "GMMHMM":
+            # A mixture component of this start loses its last weight by
+            # the tenth iteration, which divides by zero.
+            h.n_iter = 5
+        return h, X
+
+    expected, X = build()
+    expected.fit(X)
+    h, X = build()
+    h.n_features = None
+    h.fit(X)
+    assert _fit_state(h) == _fit_state(expected)
+    assert h.n_features == expected.n_features
+    assert type(h.n_features) is type(expected.n_features)
+
+
 def _refused_X(name, X):
     """``X`` changed so that the model fitted on ``X`` refuses it."""
     if name in ("CategoricalHMM", "VariationalCategoricalHMM"):
@@ -665,6 +694,41 @@ def _refused_X(name, X):
     if name in ("MultinomialHMM", "PoissonHMM"):
         return -1 - X
     return X[:, :1]
+
+
+def _refused_then_fitted(name):
+    """
+    ``(model, wrong, right)``: a model with ``init_params="st"`` whose
+    emission parameters have three features, 50 rows of ``X`` with four
+    columns, which it refuses, and 50 rows with three, which it fits.
+    """
+    rs = np.random.RandomState(0)
+    if name == "MultinomialHMM":
+        h = hmm.MultinomialHMM(n_components=2, n_trials=5, init_params="st",
+                               random_state=0)
+        h.emissionprob_ = np.array([[0.1, 0.4, 0.5], [0.6, 0.3, 0.1]])
+        return (h, rs.multinomial(5, [0.25] * 4, size=50),
+                rs.multinomial(5, [0.2, 0.3, 0.5], size=50))
+    if name == "PoissonHMM":
+        h = hmm.PoissonHMM(n_components=2, init_params="st", random_state=0)
+        h.lambdas_ = np.array([[3.1, 1.4, 4.5], [1.6, 5.3, 0.1]])
+        return h, rs.poisson(3, size=(50, 4)), rs.poisson(3, size=(50, 3))
+    if name == "GMMHMM":
+        h = hmm.GMMHMM(n_components=2, n_mix=2, init_params="st",
+                       random_state=0)
+        h.weights_ = np.array([[0.5, 0.5], [0.5, 0.5]])
+        h.means_ = rs.normal(size=(2, 2, 3))
+        h.covars_ = np.ones((2, 2, 3))
+    else:
+        h = hmm.GaussianHMM(n_components=2, init_params="st",
+                            random_state=0)
+        h.means_ = rs.normal(size=(2, 3))
+        h.covars_ = np.ones((2, 3))
+    return h, rs.normal(size=(50, 4)), rs.normal(size=(50, 3))
+
+
+GMM_PRIORS = ["weights_prior", "means_prior", "means_weight",
+              "covars_prior", "covars_weight"]
 
 
 @pytest.mark.parametrize("case", MODEL_CASES, ids=MODEL_IDS)
@@ -685,6 +749,48 @@ def test_X_check_writes_nothing(case):
     assert vars(model).keys() == before.keys()
     assert all(vars(model)[k] is v for k, v in before.items())
     assert all(vars(model)[k].tobytes() == b for k, b in arrays.items())
+
+
+@pytest.mark.parametrize("before", ["absent", None], ids=["absent", "None"])
+@pytest.mark.parametrize(
+    "name", ["MultinomialHMM", "PoissonHMM", "GMMHMM", "GaussianHMM"])
+def test_fit_after_a_refused_fit_equals_a_fresh_fit(name, before):
+    """
+    A ``fit`` refused on ``X`` of another width leaves ``n_features`` as it
+    was before the call, absent or ``None`` (a ``GaussianHMM`` keeps the
+    width of its ``means_``), and the priors of a ``GMMHMM`` as they were,
+    a covariance prior filled in from ``None`` as its number. A ``fit`` on
+    ``X`` of the model's width then equals a new model's fit, byte for
+    byte.
+    """
+    model, wrong, right = _refused_then_fitted(name)
+    if before is None:
+        model.n_features = None
+    priors = {p: getattr(model, p) for p in GMM_PRIORS
+              if name == "GMMHMM"}
+    with pytest.raises(ValueError):
+        model.fit(wrong)
+    if name == "GaussianHMM":
+        assert model.n_features == 3
+    elif before is None:
+        assert model.n_features is None
+    else:
+        assert "n_features" not in vars(model)
+    if name == "GMMHMM":
+        for p in ["weights_prior", "means_prior", "means_weight"]:
+            assert getattr(model, p) is priors[p]
+        # the defaults of a "diag" model
+        assert type(model.covars_prior) is float
+        assert model.covars_prior == -1.5
+        assert type(model.covars_weight) is float
+        assert model.covars_weight == 0.0
+    model.fit(right)
+    fresh, _, fresh_right = _refused_then_fitted(name)
+    fresh.fit(fresh_right)
+    assert _fit_state(model) == _fit_state(fresh)
+    assert model.n_features == fresh.n_features
+    for p in priors:
+        assert _as_bytes(getattr(model, p)) == _as_bytes(getattr(fresh, p))
 
 
 EM_NAMES = ["GaussianHMM", "GMMHMM", "CategoricalHMM", "MultinomialHMM",
