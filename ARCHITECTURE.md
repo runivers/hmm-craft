@@ -92,6 +92,55 @@ flowchart TD
    computes the expected transition counts (`compute_log_xi_sum` or
    `compute_scaling_xi_sum`).
 
+It runs these steps in one of two ways, chosen at the start of each E-step.
+
+Sequence by sequence (`_estep_sequence`): the three steps for the first
+sequence, then for the second, with the per-sequence kernel functions. This
+is hmmlearn 0.3.3's loop.
+
+By blocks. Consecutive sequences form a block of at most
+`_ESTEP_BLOCK_ROWS` rows (4096) and at most
+`max(1, _ESTEP_BLOCK_ROWS // n_components)` sequences; a longer sequence is
+a block alone. For a block, `_do_estep` first computes steps 1 and 2 for all
+its sequences: the emission matrix of the stacked rows, one call of the
+kernel's `estep_log` or `estep_scaling`, and the posteriors of all rows by
+one call of `_compute_posteriors_log` or `_compute_posteriors_scaling`.
+Then, sequence after sequence in `lengths` order, it adds that sequence's
+posteriors to `state_occupancy_` and calls `_accumulate_sufficient_statistics`
+with that sequence's rows of each matrix. Every statistic is therefore
+summed per sequence, in the loop's order, and the transition counts are
+still computed per sequence.
+
+The emission matrix of a block comes from one call of the emission hook
+where a row's values do not depend on the other rows of the call
+(`_lattice_by_rows`): the categorical models; `GaussianHMM` with
+`spherical` or `diag` covariances when `X`, the means and the variances
+are float64 arrays in C order with at most `numpy.getbufsize()` features;
+`PoissonHMM` and `MultinomialHMM` for the arrays their shorter forms
+accept. Otherwise the hook is called once per sequence and fills that
+sequence's rows, with `_estep_values` set as in the loop: `full` and
+`tied`, `GMMHMM`, `VariationalGaussianHMM`, and every other input.
+
+Blocks are used only when the E-step's methods are the model class's own.
+Each of the seven model classes is marked as the owner of its E-step
+(`_block_estep`); `_takes_blocks` reads every name of `_ESTEP_HOOKS` on the
+instance and compares it with the owner's method. A subclass that replaces
+one of them, or an instance that carries one as an attribute, is computed
+sequence by sequence, so its methods are called in the same order as
+before. So is a class without an owner, a model with more states than
+`numpy.getbufsize()`, and a categorical model whose `X` has more than one
+column. So are two models whose likelihood warns or raises at every call,
+from their parameters alone: a `GMMHMM` with a zero mixture weight, when
+the caller's error state asks for the report its logarithm gives, and a
+`VariationalGaussianHMM` whose scale matrix is singular or has an inverse
+with a negative determinant; `_takes_blocks` tests both without a report.
+
+Steps 1 and 2 of a block run with every floating-point report the caller's
+numpy error state asks for turned into an error. When one is raised,
+nothing of the block is used and its sequences are computed sequence by
+sequence in the caller's state, after the error has been handled, so
+numpy's warnings, errors and handler calls are those of the loop.
+
 With `implementation="scaling"`, the kernel's `forward_scaling` raises
 `ValueError` when the probabilities of a sample sum to less than 1e-300 over
 the states. `_do_estep` recognises that error by the start of its message
@@ -103,7 +152,9 @@ selected by the private class attribute `_accumulate_as_log`, which
 the log forward pass gives no finite log-likelihood either, the original error
 is raised again before the backward pass. One warning is logged per E-step in
 which a sequence fell back. The other sequences are computed as before, in
-`lengths` order.
+`lengths` order. In a block, `estep_scaling` flags such a sequence instead
+of raising; `_do_estep` then calls `forward_scaling` on that sequence's
+rows, which raises the error, and continues as above.
 
 `_do_estep` also keeps the sequence it is computing in the private attribute
 `_estep_values`, a list it sets on the instance before the sequence's first
@@ -114,11 +165,12 @@ state's weighted log-densities and their `logsumexp` to the list, and
 them again. They are kept only when computing them again would give the same
 values and report nothing: the hooks are the class's own, no floating-point
 report the caller's numpy error state asks for was raised, every `logsumexp`
-is finite, and the error state is the same when they are read. When the
-densities are one mixture wide, nothing is kept but that error state, with no
-test of the `logsumexp`, and the statistics write the mixture posteriors as
-ones, the value hmmlearn 0.3.3 computes there. In every other case, and
-outside `fit`, the statistics compute them again and prediction sets nothing.
+is finite, and the error state asks for the same reports when they are
+read. When the densities are one mixture wide, nothing is kept but that
+error state, with no test of the `logsumexp`, and the statistics write the
+mixture posteriors as ones, the value hmmlearn 0.3.3 computes there. In
+every other case, and outside `fit`, the statistics compute them again and
+prediction sets nothing.
 
 It also sums the posteriors into `state_occupancy_`, the expected number of
 samples in each state. `BaseHMM` returns the summed log-likelihood as the
@@ -216,9 +268,11 @@ functions; they take the logarithm of the start probabilities and of the
 transition matrix once per call and release the GIL once for the whole block.
 Where `forward_scaling` raises for a sequence, `estep_scaling` raises nothing:
 it sets that sequence's flag, fills its results with NaN and goes on. The
-lengths count rows of the stacked matrix. No model calls the two functions
-yet; `tests/test_hmmc.py` compares them with the per-sequence functions as
-bytes.
+lengths count rows of the stacked matrix. `_do_estep` calls them, without
+the transition counts, for the models it computes by blocks.
+`tests/test_hmmc.py` compares them with the per-sequence functions as
+bytes, and `tests/test_estep_blocks.py` compares fits computed by blocks
+with fits computed sequence by sequence.
 
 The kernel's source is hmmlearn 0.3.3's apart from that check, the module's
 package name and the two block functions.

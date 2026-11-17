@@ -10,13 +10,14 @@ from threadpoolctl import threadpool_limits
 from . import _kl_divergence as _kl
 from . import _utils
 from ._emissions import BaseCategoricalHMM, BaseGaussianHMM
-from .base import VariationalBaseHMM
+from .base import VariationalBaseHMM, _block_estep
 from .hmm import COVARIANCE_TYPES
 from .utils import fill_covars
 
 _log = logging.getLogger(__name__)
 
 
+@_block_estep
 class VariationalCategoricalHMM(BaseCategoricalHMM, VariationalBaseHMM):
     """
     Hidden Markov Model with categorical (discrete) emissions trained
@@ -235,6 +236,7 @@ class VariationalCategoricalHMM(BaseCategoricalHMM, VariationalBaseHMM):
         return lower_bound + emissionprob_lower_bound
 
 
+@_block_estep
 class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
     """
     Hidden Markov Model with Multivariate Gaussian Emissions trained
@@ -654,6 +656,30 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
         if self.scale_posterior_.shape != expected:
             raise ValueError(f"scale_posterior_ must have shape {expected}, "
                              f"found {self.scale_posterior_.shape}")
+
+    def _takes_blocks(self, X):
+        # A scale matrix whose inverse has a negative determinant warns at
+        # every call of the likelihood (_utils.logdet), and a singular one
+        # raises there: such a model is computed one sequence at a time.
+        # W_k is the likelihood's; this test reports nothing.
+        if not super()._takes_blocks(X):
+            return False
+        scale_posterior_ = self.scale_posterior_
+        if self.covariance_type in ("diag", "spherical"):
+            scale_posterior_ = fill_covars(
+                self.scale_posterior_, self.covariance_type,
+                self.n_components, self.n_features)
+        try:
+            with np.errstate(all="ignore"):
+                W_k = np.linalg.inv(scale_posterior_)
+                sign, _ = np.linalg.slogdet(W_k)
+        except np.linalg.LinAlgError:
+            return False
+        return not (sign < 0).any()
+
+    def _lattice_by_rows(self, X):
+        # The likelihood's einsum runs over all the rows of a call.
+        return False
 
     def _compute_subnorm_log_likelihood(self, X):
         # Refer to the Gruhl/Sick paper for the notation

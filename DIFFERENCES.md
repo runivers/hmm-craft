@@ -90,9 +90,12 @@ nothing else.
 * **Compared.** Every fitted attribute, `monitor_.history`, the score, both
   decodes, `predict_proba`, a sample drawn with `random_state=1`, `covars_`, the
   parameters, and the exception type of a call that raises. The sufficient
-  statistic of the last M-step is compared with `state_occupancy_`. Models
-  pickled by 0.3.3 are loaded by this package and probed again. `normalize` and
-  `fill_covars` are called on fixed arrays.
+  statistic of the last M-step is compared with `state_occupancy_`. Each fit
+  is repeated with a subclass that records the statistics; the package
+  computes that fit sequence by sequence and the first one by blocks of
+  sequences, and every array of the two must be equal. Models pickled by 0.3.3
+  are loaded by this package and probed again. `normalize` and `fill_covars`
+  are called on fixed arrays.
 * **Exceptions.** A difference is accepted only if its exception is passed to
   `--allow` and it has exactly the shape the exception describes. Anything
   else is a difference.
@@ -178,6 +181,14 @@ environments: numpy 1.26.0, scipy 1.11.2, scikit-learn 1.3.1, threadpoolctl
 3.5.0, and numpy 2.5.4, scipy 1.18.1, scikit-learn 1.9.1, threadpoolctl 3.8.0.
 In each environment, the package's results for the cases of the tree before
 are byte for byte that tree's.
+
+At the tree that computes the E-step by blocks of sequences, which includes
+every change to the package since the tree of the short sequences, the check
+gives equal apart from E1 to E7 on the same data and cases, with Python
+3.12.3, Linux x86_64 and one thread, in both environments: numpy 1.26.0,
+scipy 1.11.2, scikit-learn 1.3.1, threadpoolctl 3.5.0, and numpy 2.5.4,
+scipy 1.18.1, scikit-learn 1.9.1, threadpoolctl 3.8.0. In each environment,
+the package's results are byte for byte those of the tree before.
 
 This is the whole claim of the check: no result is stated for other data,
 other versions, other thread counts or another platform. The k-means row above

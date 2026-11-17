@@ -1,3 +1,5 @@
+import functools
+import itertools
 import logging
 import string
 import sys
@@ -41,6 +43,84 @@ def _warn_fallback(fallen, n_sequences):
         n_sequences,
         fallen[0],
     )
+
+
+def _reports_as_errors():
+    """numpy's error state with each report it would make as an error."""
+    # The Poisson and multinomial hooks run their shorter lines in this
+    # state. numpy has something to report for those lines when it has for
+    # scipy.stats: the same operations on the same values. Each report the
+    # caller's error state asks for is an error there; scipy.stats then
+    # computes every state and reports in the caller's way. A state whose
+    # values hold NaN is computed again by scipy.stats too.
+    # GMMHMM's likelihood computes the densities it keeps for the
+    # statistics in this state, and keeps none when one is raised.
+    # _do_estep computes a block of sequences in this state, and computes
+    # them one at a time when one is raised.
+    return {kind: "ignore" if action == "ignore" else "raise"
+            for kind, action in np.geterr().items()}
+
+
+# The most rows of the stacked emission matrix of one block of sequences in
+# an E-step; read at each call.
+_ESTEP_BLOCK_ROWS = 4096
+
+# Every method the E-step calls on the model when it computes one sequence
+# at a time, hmmlearn 0.3.3's included. A block calls them in another order,
+# so a model that replaces any of them is computed one sequence at a time.
+_ESTEP_HOOKS = (
+    "_do_estep",
+    "_by_implementation",
+    "_initialize_sufficient_statistics",
+    "_estep_begin",
+    "_fit_log",
+    "_fit_scaling",
+    "_compute_likelihood",
+    "_compute_log_likelihood",
+    "_compute_subnorm_likelihood",
+    "_compute_subnorm_log_likelihood",
+    "_compute_log_weighted_gaussian_densities",
+    "_mixture_log_likelihoods",
+    "_hooks_are_own",
+    "_compute_posteriors_log",
+    "_compute_posteriors_scaling",
+    "_accumulate_sufficient_statistics",
+    "_accumulate_sufficient_statistics_log",
+    "_accumulate_sufficient_statistics_scaling",
+    "_needs_sufficient_statistics_for_mean",
+    "_needs_sufficient_statistics_for_covars",
+)
+
+
+def _estep_blocks(n_rows, n_components):
+    """
+    Cut sequences of *n_rows* rows each into blocks of consecutive ones.
+
+    Return ``(first, stop)`` pairs of sequence indices. A block takes the
+    next sequence while its rows stay at most ``_ESTEP_BLOCK_ROWS`` and it
+    holds fewer than ``max(1, _ESTEP_BLOCK_ROWS // n_components)``
+    sequences; it always takes one, so a longer sequence is a block alone.
+    """
+    block_rows = _ESTEP_BLOCK_ROWS
+    max_sequences = max(1, block_rows // max(1, n_components))
+    blocks = []
+    first = rows = 0
+    for index, n in enumerate(n_rows):
+        if index > first and (rows + n > block_rows
+                              or index - first >= max_sequences):
+            blocks.append((first, index))
+            first = index
+            rows = 0
+        rows += n
+    if len(n_rows):
+        blocks.append((first, len(n_rows)))
+    return blocks
+
+
+def _block_estep(cls):
+    """Mark *cls* as the owner of its E-step: it may compute it by blocks."""
+    cls._estep_owner = cls
+    return cls
 
 
 class ConvergenceMonitor:
@@ -1001,7 +1081,13 @@ class _AbstractHMM(BaseEstimator):
     # None, except while _do_estep computes one sequence: then a list on the
     # instance whose first item is that sequence. An emission hook may add
     # what the statistics hook reads back for it; never kept on an instance.
+    # In a block, the list of a sequence whose emission hook is called on
+    # its own is set for that call and again for its statistics.
     _estep_values = None
+
+    # The model class whose E-step may be computed by blocks of sequences
+    # (_block_estep); None: one sequence at a time.
+    _estep_owner = None
 
     def _accumulate_sufficient_statistics(
             self, stats, X, lattice, posteriors, fwdlattice, bwdlattice):
@@ -1088,9 +1174,153 @@ class _AbstractHMM(BaseEstimator):
             Sufficient statistics updated from all available samples.
         """
 
+    def _takes_blocks(self, X):
+        """
+        Whether this E-step may compute *X* by blocks of sequences.
+
+        True when the class has an owner (:func:`_block_estep`), each method
+        of ``_ESTEP_HOOKS`` the owner has is the owner's on this instance,
+        and numpy adds a row of the posteriors in one piece. A subclass
+        that replaces one of them, or an instance that holds one, keeps the
+        order in which hmmlearn 0.3.3 calls them.
+        """
+        owner = type(self)._estep_owner
+        if owner is None or not self.n_components <= np.getbufsize():
+            return False
+        return all(getattr(self, name) == getattr(owner, name).__get__(self)
+                   for name in _ESTEP_HOOKS if hasattr(owner, name))
+
+    def _lattice_by_rows(self, X):
+        """
+        Whether one call of the E-step's emission hook on the rows *X* of
+        several sequences gives each row the values a call on its own
+        sequence gives. The default does not know.
+        """
+        return False
+
+    def _estep_sequence(self, compute, stats, occupancy, fallen, index,
+                        sub_X, values):
+        """
+        Accumulate the statistics of the sequence *sub_X*, number *index*,
+        whose five arrays ``compute(sub_X)`` gives; add its posteriors to
+        *occupancy*, and *index* to *fallen* when it was computed with the
+        log functions under ``implementation="scaling"``. *values* is the
+        list ``_estep_values`` holds meanwhile. Return its log-likelihood.
+        """
+        # Written through vars: a subclass's __setattr__ never sees it.
+        vars(self)["_estep_values"] = values
+        try:
+            fell_back = False
+            try:
+                lattice, logprob, posteriors, fwdlattice, bwdlattice = (
+                    compute(sub_X)
+                )
+            except ValueError as exc:
+                if (
+                    self.implementation != "scaling"
+                    or not _is_scaling_underflow(exc)
+                ):
+                    raise
+                # The sequence is computed with the log functions, which
+                # raise exc again when they give no finite log-likelihood,
+                # and its statistics with the log accumulator.
+                lattice, logprob, posteriors, fwdlattice, bwdlattice = (
+                    self._fit_log(sub_X, underflow=exc)
+                )
+                fell_back = True
+                fallen.append(index)
+            occupancy += posteriors.sum(axis=0)
+            if fell_back:
+                self._accumulate_as_log = True
+            # Derived HMM classes will implement the following method to
+            # update their probability distributions, so keep
+            # a single call to this method for simplicity.
+            try:
+                self._accumulate_sufficient_statistics(
+                    stats, sub_X, lattice, posteriors, fwdlattice,
+                    bwdlattice
+                )
+            finally:
+                if fell_back:
+                    del self._accumulate_as_log
+        finally:
+            vars(self).pop("_estep_values", None)
+        return logprob
+
+    def _estep_block(self, impl, X, sub_Xs):
+        """
+        Compute the emission matrix, the forward and backward passes and the
+        posteriors of the sequences *sub_Xs*, stacked in the rows *X*.
+
+        Return, for each sequence, a function giving its five arrays as
+        *impl* does and the list ``_estep_values`` holds for it; or None
+        when a floating-point report the caller's error state asks for was
+        raised, so that nothing of the block is used.
+        """
+        startprob, transmat, log_hook, hook = self._estep_inputs()
+        log = self._by_implementation(log=True, scaling=False)
+        if log:
+            hook = log_hook
+        lengths = np.array([len(sub_X) for sub_X in sub_Xs], dtype=np.intp)
+        values = [[sub_X] for sub_X in sub_Xs]
+        try:
+            # Every report is an error here, so that what follows the
+            # block, its statistics, is computed in the caller's state in
+            # hmmlearn 0.3.3's order.
+            with np.errstate(**_reports_as_errors()):
+                if self._lattice_by_rows(X):
+                    lattice = np.ascontiguousarray(hook(X), dtype=np.float64)
+                else:
+                    parts = []
+                    for sub_X, kept in zip(sub_Xs, values):
+                        vars(self)["_estep_values"] = kept
+                        try:
+                            parts.append(np.ascontiguousarray(
+                                hook(sub_X), dtype=np.float64))
+                        finally:
+                            vars(self).pop("_estep_values", None)
+                    lattice = np.concatenate(parts)
+                if log:
+                    log_prob, fwd, bwd, _ = _hmmc.estep_log(
+                        startprob, transmat, lattice, lengths, False)
+                    underflow = [False] * len(sub_Xs)
+                    posteriors = self._compute_posteriors_log(fwd, bwd)
+                else:
+                    log_prob, fwd, bwd, _, underflow = _hmmc.estep_scaling(
+                        startprob, transmat, lattice, lengths, False)
+                    underflow = underflow.tolist()
+                    posteriors = self._compute_posteriors_scaling(fwd, bwd)
+        except FloatingPointError:
+            return None
+        log_prob = log_prob.tolist()
+
+        def flagged(sub_X, frameprob):
+            # forward_scaling raises its underflow error on these rows; if
+            # it does not, the sequence is computed on its own.
+            _hmmc.forward_scaling(startprob, transmat, frameprob)
+            return impl(sub_X)
+
+        def computed(sub_X, arrays):
+            return arrays
+
+        block = []
+        stop = 0
+        for k, kept in enumerate(values):
+            start, stop = stop, stop + int(lengths[k])
+            if underflow[k]:
+                compute = functools.partial(
+                    flagged, frameprob=lattice[start:stop])
+            else:
+                compute = functools.partial(computed, arrays=(
+                    lattice[start:stop], log_prob[k], posteriors[start:stop],
+                    fwd[start:stop], bwd[start:stop]))
+            block.append((compute, kept))
+        return block
+
     def _do_estep(self, X, lengths):
         impl = self._by_implementation(
             log=self._fit_log, scaling=self._fit_scaling)
+        by_blocks = self._takes_blocks(X)
 
         stats = self._initialize_sufficient_statistics()
         self._estep_begin()
@@ -1098,46 +1328,25 @@ class _AbstractHMM(BaseEstimator):
         occupancy = np.zeros(self.n_components)
         sub_Xs = _utils.split_X_lengths(X, lengths)
         fallen = []
-        for i, sub_X in enumerate(sub_Xs):
-            # Written through vars: a subclass's __setattr__ never sees it.
-            vars(self)["_estep_values"] = [sub_X]
-            try:
-                fell_back = False
-                try:
-                    lattice, logprob, posteriors, fwdlattice, bwdlattice = (
-                        impl(sub_X)
-                    )
-                except ValueError as exc:
-                    if (
-                        self.implementation != "scaling"
-                        or not _is_scaling_underflow(exc)
-                    ):
-                        raise
-                    # The sequence is computed with the log functions, which
-                    # raise exc again when they give no finite log-likelihood,
-                    # and its statistics with the log accumulator.
-                    lattice, logprob, posteriors, fwdlattice, bwdlattice = (
-                        self._fit_log(sub_X, underflow=exc)
-                    )
-                    fell_back = True
-                    fallen.append(i)
-                occupancy += posteriors.sum(axis=0)
-                if fell_back:
-                    self._accumulate_as_log = True
-                # Derived HMM classes will implement the following method to
-                # update their probability distributions, so keep
-                # a single call to this method for simplicity.
-                try:
-                    self._accumulate_sufficient_statistics(
-                        stats, sub_X, lattice, posteriors, fwdlattice,
-                        bwdlattice
-                    )
-                finally:
-                    if fell_back:
-                        del self._accumulate_as_log
-            finally:
-                vars(self).pop("_estep_values", None)
-            curr_logprob += logprob
+        if not by_blocks:
+            for i, sub_X in enumerate(sub_Xs):
+                curr_logprob += self._estep_sequence(
+                    impl, stats, occupancy, fallen, i, sub_X, [sub_X])
+        else:
+            n_rows = [len(sub_X) for sub_X in sub_Xs]
+            starts = [0, *itertools.accumulate(n_rows)]
+            for first, stop in _estep_blocks(n_rows, self.n_components):
+                block = self._estep_block(
+                    impl, X[starts[first]:starts[stop]], sub_Xs[first:stop])
+                if block is None:
+                    # A report in the block: its sequences one at a time,
+                    # in the caller's error state.
+                    block = [(impl, [sub_X]) for sub_X in sub_Xs[first:stop]]
+                # The statistics of each sequence, in sequence order.
+                for i, (compute, values) in enumerate(block, first):
+                    curr_logprob += self._estep_sequence(
+                        compute, stats, occupancy, fallen, i, sub_Xs[i],
+                        values)
         if fallen:
             _warn_fallback(fallen, len(sub_Xs))
         self.state_occupancy_ = occupancy
@@ -1267,6 +1476,15 @@ class BaseHMM(_AbstractHMM):
             self.startprob_, self.transmat_, log_frameprob)
         posteriors = self._compute_posteriors_log(fwdlattice, bwdlattice)
         return log_frameprob, log_prob, posteriors, fwdlattice, bwdlattice
+
+    def _estep_inputs(self):
+        """
+        The start probabilities, the transition matrix and the emission
+        hooks (log-probabilities, probabilities) that :meth:`_fit_log` and
+        :meth:`_fit_scaling` use.
+        """
+        return (self.startprob_, self.transmat_,
+                self._compute_log_likelihood, self._compute_likelihood)
 
     def _do_mstep(self, stats):
         """
@@ -1488,6 +1706,16 @@ class VariationalBaseHMM(_AbstractHMM):
             self.startprob_subnorm_, self.transmat_subnorm_, framelogprob)
         posteriors = self._compute_posteriors_log(fwdlattice, bwdlattice)
         return framelogprob, logprob, posteriors, fwdlattice, bwdlattice
+
+    def _estep_inputs(self):
+        """
+        The subnormalized start probabilities and transition matrix and the
+        emission hooks (log-probabilities, probabilities) that
+        :meth:`_fit_log` and :meth:`_fit_scaling` use.
+        """
+        return (self.startprob_subnorm_, self.transmat_subnorm_,
+                self._compute_subnorm_log_likelihood,
+                self._compute_subnorm_likelihood)
 
     def _check(self):
         """
