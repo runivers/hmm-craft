@@ -1,5 +1,7 @@
 import functools
 import inspect
+import platform
+import sys
 import warnings
 
 import numpy as np
@@ -7,9 +9,9 @@ from scipy import special
 from scipy.stats import multinomial, poisson
 from sklearn.utils import check_random_state
 
-from . import _utils
+from . import _emissionsc, _utils
 from .base import BaseHMM, _AbstractHMM
-from .stats import log_multivariate_normal_density
+from .stats import _read_as_is, log_multivariate_normal_density
 from .utils import fill_covars, log_normalize
 
 _CATEGORICALHMM_DOC_SUFFIX = """
@@ -21,6 +23,113 @@ Unlike other HMM classes, `CategoricalHMM` ``X`` arrays have shape
 `sklearn.preprocessing.LabelEncoder` to transform your input to the right
 format.
 """
+
+
+def _loop_platform(machine, maxsize):
+    """Whether the C++ loop computes the full and tied statistic here."""
+    # The loop rounds every product and every sum on its own. numpy.einsum
+    # gives those bytes where numpy's own loop is compiled to do the same;
+    # the tests compare the two on 64-bit x86, so the loop is used there and
+    # numpy.einsum everywhere else.
+    return machine in ("x86_64", "AMD64") and maxsize > 2 ** 32
+
+
+_STATISTIC_LOOP = _loop_platform(platform.machine(), sys.maxsize)
+
+
+def _weighted_outer_sum(posteriors, X):
+    """Sum over the samples of posterior * x * x', one matrix per state."""
+    # posteriors: (nt, nc); obs: (nt, nf); obs: (nt, nf)
+    # -> (nc, nf, nf)
+    # Where the tests compare them, the C++ loop gives the bytes of the
+    # einsum below for plain float64 arrays in C order with one row per
+    # sample. One state with one feature
+    # is left to numpy: with a single output entry it adds the samples in
+    # pieces, another order. numpy's einsum reports no floating-point error
+    # in any error state, and neither does the loop.
+    if (_STATISTIC_LOOP
+            and _read_as_is(posteriors, 2) and _read_as_is(X, 2)
+            and len(posteriors) == len(X)
+            and posteriors.shape[1] * X.shape[1] > 1):
+        stat = _emissionsc.weighted_outer_sum(posteriors, X)
+        # None: an entry is not finite. numpy then gives its own values.
+        if stat is not None:
+            return stat
+    return np.einsum('ij,ik,il->jkl', posteriors, X, X)
+
+
+_INT64 = np.dtype(np.int64)
+# The most entries of the (rows, n_components, n_features) arrays one
+# multinomial call makes: two arrays of 2 MiB.
+_MULTINOMIAL_ENTRIES = 2 ** 18
+# The mixture hooks whose values GMMHMM's statistics may read back from its
+# likelihood in an E-step: only while none of them is replaced.
+_GMM_HOOKS = ("_compute_log_weighted_gaussian_densities",
+              "_compute_log_likelihood", "_accumulate_sufficient_statistics")
+
+
+def _special_reports_nothing():
+    """Whether scipy.special is set to report no error of its functions."""
+    return all(action == "ignore"
+               for kind, action in special.geterr().items()
+               if kind != "memory")
+
+
+def _reports_as_errors():
+    """numpy's error state with each report it would make as an error."""
+    # The Poisson and multinomial hooks run their shorter lines in this
+    # state. numpy has something to report for those lines when it has for
+    # scipy.stats: the same operations on the same values. Each report the
+    # caller's error state asks for is an error there; scipy.stats then
+    # computes every state and reports in the caller's way. A state whose
+    # values hold NaN is computed again by scipy.stats too.
+    # GMMHMM's likelihood computes the densities it keeps for the
+    # statistics in this state, and keeps none when one is raised.
+    return {kind: "ignore" if action == "ignore" else "raise"
+            for kind, action in np.geterr().items()}
+
+
+def _states_with_nan(values):
+    """The states whose column of ``values`` holds a NaN."""
+    return np.flatnonzero(np.isnan(values).any(axis=0))
+
+
+def _poisson_direct(X, lambdas, n_components):
+    """Whether xlogy and gammaln stand for scipy.stats.poisson here."""
+    return ((_read_as_is(X, 2, _INT64) or _read_as_is(X, 2))
+            and _read_as_is(lambdas, 2)
+            and lambdas.shape == (n_components, X.shape[1])
+            and _special_reports_nothing())
+
+
+def _are_counts(X):
+    """scipy.stats.poisson's test of a count, for every entry of X."""
+    if X.dtype == _INT64:
+        return X.min() >= 0
+    return ((X >= 0) & (np.floor(X) == X)).all()
+
+
+def _multinomial_together(X, emissionprob, n_components):
+    """Whether one scipy.stats call scores X against every state here."""
+    return (_read_as_is(X, 2, _INT64) and _read_as_is(emissionprob, 2)
+            and emissionprob.shape == (n_components, X.shape[1])
+            and emissionprob.size <= _MULTINOMIAL_ENTRIES
+            and _special_reports_nothing())
+
+
+def _multinomial_logpmf(X, n_trials, emissionprob):
+    """multinomial.logpmf of each row for each state, in pieces of rows."""
+    # scipy.stats computes each row and state on its own, so one call for
+    # every state gives the values of one call per state. A piece of rows
+    # per call keeps its (rows, n_components, n_features) arrays small.
+    logprobs = np.empty((len(X), len(emissionprob)))
+    rows = _MULTINOMIAL_ENTRIES // emissionprob.size
+    for start in range(0, len(X), rows):
+        stop = start + rows
+        logprobs[start:stop] = multinomial.logpmf(
+            X[start:stop, None, :], n=n_trials[start:stop, None],
+            p=emissionprob[None, :, :])
+    return logprobs
 
 
 def _make_wrapper(func):
@@ -250,10 +359,7 @@ class BaseGaussianHMM(_AbstractHMM):
             if self.covariance_type in ('spherical', 'diag'):
                 stats['obs**2'] += posteriors.T @ X**2
             elif self.covariance_type in ('tied', 'full'):
-                # posteriors: (nt, nc); obs: (nt, nf); obs: (nt, nf)
-                # -> (nc, nf, nf)
-                stats['obs*obs.T'] += np.einsum(
-                    'ij,ik,il->jkl', posteriors, X, X)
+                stats['obs*obs.T'] += _weighted_outer_sum(posteriors, X)
 
     def _needs_sufficient_statistics_for_mean(self):
         """
@@ -316,13 +422,57 @@ class BaseGMMHMM(BaseHMM):
             X, cur_means, cur_covs, self.covariance_type
         ) + log_cur_weights
 
-    def _compute_log_likelihood(self, X):
+    def _hooks_are_own(self):
+        """Whether none of the three mixture hooks is replaced here."""
+        return all(getattr(self, name)
+                   == getattr(BaseGMMHMM, name).__get__(self)
+                   for name in _GMM_HOOKS)
+
+    def _mixture_log_likelihoods(self, X, parts=None):
+        """Each state's log-likelihood; with ``parts``, each state's
+        weighted log-densities and their logsumexp appended to it."""
         logprobs = np.empty((len(X), self.n_components))
         for i in range(self.n_components):
             log_denses = self._compute_log_weighted_gaussian_densities(X, i)
             with np.errstate(under="ignore"):
-                logprobs[:, i] = special.logsumexp(log_denses, axis=1)
+                lse = special.logsumexp(log_denses, axis=1)
+            logprobs[:, i] = lse
+            if parts is not None:
+                parts.append((log_denses, lse))
         return logprobs
+
+    def _compute_log_likelihood(self, X):
+        kept = self._estep_values
+        if kept is not None and kept[0] is X:
+            # A second call for the sequence (the log pass of a sequence
+            # that falls back under scaling) replaces what the first kept.
+            del kept[1:]
+            if self._hooks_are_own():
+                asked = np.geterr()
+                parts = []
+                # Kept only when computing them again in this error state
+                # would report nothing: each report it asks for raises here,
+                # and the densities are then computed below in the
+                # caller's state, with their reports.
+                try:
+                    with np.errstate(**_reports_as_errors()):
+                        # A zero weight, the one report of an ordinary fit,
+                        # found before the densities are computed.
+                        np.log(self.weights_)
+                        logprobs = self._mixture_log_likelihoods(X, parts)
+                except FloatingPointError:
+                    pass
+                else:
+                    widths = {log_denses.shape[-1] for log_denses, _ in parts}
+                    if widths == {1}:
+                        # log_normalize writes 0 over a single mixture, as
+                        # computed: nothing is kept but the error state.
+                        kept.append((asked, None))
+                    elif 1 not in widths and np.isfinite(logprobs).all():
+                        # Subtracting a finite logsumexp reports nothing.
+                        kept.append((asked, parts))
+                    return logprobs
+        return self._mixture_log_likelihoods(X)
 
     def _initialize_sufficient_statistics(self):
         stats = super()._initialize_sufficient_statistics()
@@ -357,12 +507,34 @@ class BaseGMMHMM(BaseHMM):
         # samples           (n_samples, n_features)
         # centered          (n_samples, n_components, n_mix, n_features)
 
+        kept = self._estep_values
+        hit = (kept is not None and len(kept) == 2 and kept[0] is X
+               and kept[1][0] == np.geterr())
+        if hit:
+            # What _compute_log_likelihood kept for this sequence in this
+            # error state, read once: computing it again would give the
+            # same values and report nothing.
+            _, parts = kept.pop()
+
         post_mix = np.zeros((n_samples, self.n_components, self.n_mix))
         for p in range(self.n_components):
-            log_denses = self._compute_log_weighted_gaussian_densities(X, p)
-            log_normalize(log_denses, axis=-1)
+            if hit and parts is None:
+                # Densities one mixture wide: log_normalize writes 0, whose
+                # exp is 1.
+                post_mix[:, p, :] = 1.0
+                continue
+            if hit:
+                log_denses, lse = parts[p]
+                log_denses = log_denses - lse[:, None]
+            else:
+                log_denses = self._compute_log_weighted_gaussian_densities(
+                    X, p)
+                log_normalize(log_denses, axis=-1)
             with np.errstate(under="ignore"):
                 post_mix[:, p, :] = np.exp(log_denses)
+        if hit:
+            # The kept arrays are freed before the larger ones below.
+            parts = lse = None
 
         with np.errstate(under="ignore"):
             post_comp_mix = post_comp[:, :, None] * post_mix
@@ -449,7 +621,23 @@ class BaseMultinomialHMM(BaseHMM):
     def _compute_likelihood(self, X):
         probs = np.empty((len(X), self.n_components))
         n_trials = X.sum(axis=1)
-        for c in range(self.n_components):
+        states = range(self.n_components)
+        if _multinomial_together(X, self.emissionprob_, self.n_components):
+            # A report, or a NaN in a state, is left to scipy.stats: see
+            # _reports_as_errors.
+            try:
+                with np.errstate(**_reports_as_errors()):
+                    logprobs = _multinomial_logpmf(
+                        X, n_trials, self.emissionprob_)
+                    for c in states:
+                        # numpy's exp is given what scipy.stats gives it:
+                        # one state's values, contiguous.
+                        probs[:, c] = np.exp(
+                            np.ascontiguousarray(logprobs[:, c]))
+                    states = _states_with_nan(probs)
+            except FloatingPointError:
+                pass
+        for c in states:
             probs[:, c] = multinomial.pmf(
                 X, n=n_trials, p=self.emissionprob_[c, :])
         return probs
@@ -457,7 +645,18 @@ class BaseMultinomialHMM(BaseHMM):
     def _compute_log_likelihood(self, X):
         logprobs = np.empty((len(X), self.n_components))
         n_trials = X.sum(axis=1)
-        for c in range(self.n_components):
+        states = range(self.n_components)
+        if _multinomial_together(X, self.emissionprob_, self.n_components):
+            # A report, or a NaN in a state, is left to scipy.stats: see
+            # _reports_as_errors.
+            try:
+                with np.errstate(**_reports_as_errors()):
+                    logprobs = _multinomial_logpmf(
+                        X, n_trials, self.emissionprob_)
+                    states = _states_with_nan(logprobs)
+            except FloatingPointError:
+                pass
+        for c in states:
             logprobs[:, c] = multinomial.logpmf(
                 X, n=n_trials, p=self.emissionprob_[c, :])
         return logprobs
@@ -501,15 +700,56 @@ class BasePoissonHMM(BaseHMM):
             "l": nc * nf,
         }
 
+    # scipy.stats.poisson tests every count (non-negative, whole) and every
+    # rate (non-negative) and, for those that pass, evaluates
+    # xlogy(k, mu) - gammaln(k + 1) - mu. When all pass, the lines below are
+    # that expression with gammaln(k + 1) computed once for all states. They
+    # are used for the arrays the tests compare with scipy.stats as bytes:
+    # plain int64 or float64 counts and float64 rates in C order (scipy adds
+    # 1 to other integer types in a type that depends on the numpy version),
+    # while scipy.special reports no error of its own.
+
     def _compute_likelihood(self, X):
         probs = np.empty((len(X), self.n_components))
-        for c in range(self.n_components):
+        states = range(self.n_components)
+        if _poisson_direct(X, self.lambdas_, self.n_components):
+            # A report, or a NaN in a state, is left to scipy.stats: see
+            # _reports_as_errors.
+            try:
+                with np.errstate(**_reports_as_errors()):
+                    if _are_counts(X) and (self.lambdas_ >= 0).all():
+                        log_factorial = special.gammaln(X + 1)
+                        for c in states:
+                            rates = self.lambdas_[c]
+                            probs[:, c] = np.clip(np.exp(
+                                special.xlogy(X, rates) - log_factorial
+                                - rates), 0, 1).prod(axis=1)
+                        states = _states_with_nan(probs)
+            except FloatingPointError:
+                pass
+        for c in states:
             probs[:, c] = poisson.pmf(X, self.lambdas_[c]).prod(axis=1)
         return probs
 
     def _compute_log_likelihood(self, X):
         logprobs = np.empty((len(X), self.n_components))
-        for c in range(self.n_components):
+        states = range(self.n_components)
+        if _poisson_direct(X, self.lambdas_, self.n_components):
+            # A report, or a NaN in a state, is left to scipy.stats: see
+            # _reports_as_errors.
+            try:
+                with np.errstate(**_reports_as_errors()):
+                    if _are_counts(X) and (self.lambdas_ >= 0).all():
+                        log_factorial = special.gammaln(X + 1)
+                        for c in states:
+                            rates = self.lambdas_[c]
+                            logprobs[:, c] = (
+                                special.xlogy(X, rates) - log_factorial
+                                - rates).sum(axis=1)
+                        states = _states_with_nan(logprobs)
+            except FloatingPointError:
+                pass
+        for c in states:
             logprobs[:, c] = poisson.logpmf(X, self.lambdas_[c]).sum(axis=1)
         return logprobs
 

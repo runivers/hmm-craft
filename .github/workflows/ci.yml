@@ -6,7 +6,8 @@ name: ci
 # week a new numpy, scipy or scikit-learn release that breaks the suite, or
 # under which this package's fits differ from hmmlearn 0.3.3's (both are
 # installed at the same versions). On a pull request, every commit must be
-# signed off.
+# signed off. A manual run also measures, on ARM, what the compiler option
+# -ffp-contract=off changes (contraction-arm, which gates nothing).
 
 on:
   pull_request:
@@ -89,3 +90,47 @@ jobs:
         python-version: "3.12"
     - name: Suite and bit equality against hmmlearn 0.3.3
       run: scripts/ci_bit_equality.sh "${{ matrix.cell }}" "$RUNNER_TEMP/check"
+
+  # Manual runs only: a measurement, never a gate. On Linux aarch64 and macOS
+  # arm64, scripts/measure_contraction.sh builds hmmlearn 0.3.3 as its
+  # setup.py builds it (REF), the same with -ffp-contract=off (REF_OFF) and
+  # this package (FORK), with the runner's compiler, and compares their
+  # results: REF with REF_OFF, then each with FORK. It also reports whether
+  # the kernels of the published wheels of hmmlearn 0.3.3 and of this
+  # package 0.4.1, as pip installs them here, fuse a product into a sum. No
+  # step of the script stops it, and a comparison that finds differences is
+  # a result: a cell is red only when a step gave none. The
+  # run's summary shows each cell's summary.txt, which says how to read it;
+  # the build logs, the dumps and every output are in the artifact
+  # "contraction-<os>-<cell>". The floor cell is best effort: its failure
+  # does not fail the run.
+  contraction-arm:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    continue-on-error: ${{ matrix.cell == 'floor' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04-arm, macos-15]
+        cell: [latest, floor]
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+      with:
+        python-version: "3.12"
+    - name: Three builds, four dumps, three comparisons, the probes
+      if: ${{ !cancelled() }}
+      run: >-
+        sh scripts/measure_contraction.sh "${{ matrix.cell }}"
+        "$RUNNER_TEMP/contraction"
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+      if: ${{ !cancelled() }}
+      with:
+        name: contraction-${{ matrix.os }}-${{ matrix.cell }}
+        path: ${{ runner.temp }}/contraction/out/
+        retention-days: 14
+        if-no-files-found: warn

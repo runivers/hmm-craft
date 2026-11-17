@@ -17,6 +17,7 @@ disagree.
 | `src/hmmcraft/stats.py` | `log_multivariate_normal_density` for the four covariance types |
 | `src/hmmcraft/_utils.py`, `_kl_divergence.py` | private helpers; the KL divergences of the variational lower bound |
 | `ext/_hmmc.cpp` | the C++ kernel, built by `setup.py` with pybind11 as `hmmcraft._hmmc` |
+| `ext/_emissionsc.cpp` | emission loops in C++, built by `setup.py` with pybind11 as `hmmcraft._emissionsc` |
 | `src/hmmcraft/tests/` | the suite, installed with the package |
 | `scripts/` | the bit-equality check and the CI helpers; not installed |
 
@@ -104,6 +105,21 @@ is raised again before the backward pass. One warning is logged per E-step in
 which a sequence fell back. The other sequences are computed as before, in
 `lengths` order.
 
+`_do_estep` also keeps the sequence it is computing in the private attribute
+`_estep_values`, a list it sets on the instance before the sequence's first
+hook and removes after its statistics, also when a hook raises. `GMMHMM` uses
+it to compute its mixture densities once: `_compute_log_likelihood` adds each
+state's weighted log-densities and their `logsumexp` to the list, and
+`_accumulate_sufficient_statistics` reads them where hmmlearn 0.3.3 computes
+them again. They are kept only when computing them again would give the same
+values and report nothing: the hooks are the class's own, no floating-point
+report the caller's numpy error state asks for was raised, every `logsumexp`
+is finite, and the error state is the same when they are read. When the
+densities are one mixture wide, nothing is kept but that error state, with no
+test of the `logsumexp`, and the statistics write the mixture posteriors as
+ones, the value hmmlearn 0.3.3 computes there. In every other case, and
+outside `fit`, the statistics compute them again and prediction sets nothing.
+
 It also sums the posteriors into `state_occupancy_`, the expected number of
 samples in each state. `BaseHMM` returns the summed log-likelihood as the
 lower bound; `VariationalBaseHMM` subtracts the KL divergences of its
@@ -168,8 +184,9 @@ than one sample.
 `ext/_hmmc.cpp` holds the recursions that loop over every sample and every
 pair of states. It knows nothing about emissions: it receives the emission
 probabilities (or log-probabilities) of one sequence as a matrix of shape
-`(n_samples, n_components)`, already computed in Python. Every argument is a
-float64 array.
+`(n_samples, n_components)`, already computed by the emission code (in numpy,
+or for some inputs by the emission loops below). Every argument is a float64
+array.
 
 | Function | Takes | Returns |
 |---|---|---|
@@ -189,6 +206,66 @@ samples) or no columns (a model without states): the recursions use unchecked
 accessors, and hmmlearn 0.3.3's kernel indexed outside its arrays there. Each
 function releases the GIL while it loops. The kernel's source is hmmlearn
 0.3.3's apart from that check and the module's package name.
+
+## The emission loops
+
+`ext/_emissionsc.cpp` is a second extension module. It holds loops that stand
+for numpy expressions of the emission code; the Python caller uses a loop only
+for the arrays, and for one loop only on the machines, on which the tests
+compare it with its expression as bytes, and keeps numpy for the rest.
+`setup.py` passes the compiler `-ffp-contract=off` for this module on every
+platform but Windows, where MSVC does not take the option: a product and the
+sum it feeds are rounded one after the other and are not fused into one
+instruction. `hmmcraft._hmmc` is built without the option.
+
+| Function | Takes | Returns |
+|---|---|---|
+| `log_density_diag` | samples, means, variances per state and feature, and per state the term of the log-density that does not depend on the sample | the log-density of each sample in each state, or `None` when one of them is not finite |
+| `weighted_outer_sum` | the weight of each sample in each state, and the samples | for each state the sum over the samples of the weight times the outer product of the sample with itself, shape `(n_components, n_features, n_features)`, or `None` when an entry is not finite |
+
+`log_density_diag` is the loop behind `stats.log_multivariate_normal_density`
+for `diag` and `spherical`. hmmlearn 0.3.3 computes that density as one numpy
+expression with three temporaries of shape
+`(n_samples, n_components, n_features)`. The loop makes, for each sample and
+state, the same subtraction, square and division, adds the features in the
+order numpy adds a contiguous row (in order below 8 terms, in eight running
+sums up to 128, by halves above), adds the term Python computed with numpy's
+`log`, and multiplies by -0.5. No product in it is added to anything, so its
+result does not depend on the option above. `stats.py` calls it only when `X`,
+the means and the variances are `numpy.ndarray` itself (no subclass), float64
+in native byte order, C-contiguous and aligned, of matching shapes with no
+empty dimension; when the number of features is at most `numpy.getbufsize()`
+(numpy can add a longer row in pieces); and when `numpy.geterr()["under"]` is
+`"ignore"` (the loop reports no underflow). The function takes its arrays as
+they are, raises `ValueError` for one it would have to convert, and releases
+the GIL while it loops. For every other input, and when the loop returns
+`None`, Python evaluates the numpy expression, so those values, warnings and
+errors are numpy's. `tests/test_stats.py`, installed with the package,
+compares the two paths as bytes on seeded random data.
+
+`weighted_outer_sum` is the loop behind the statistic `obs*obs.T` of the
+`full` and `tied` covariances, which
+`BaseGaussianHMM._accumulate_sufficient_statistics` collects for `GaussianHMM`
+and `VariationalGaussianHMM`. hmmlearn 0.3.3 computes it as
+`numpy.einsum('ij,ik,il->jkl', posteriors, X, X)`. The loop starts from zeros
+and, sample after sample, adds `(weight * x[k]) * x[l]` to entry
+`[state, k, l]`, each product and each sum rounded on its own. The second
+product feeds the sum, so this loop depends on the option above:
+`tests/test_emissionsc.py` holds a case whose result changes in its last bit
+when a compiler fuses the two, and compares the loop with the same operations
+done one numpy call at a time. Whether `numpy.einsum` gives those bytes
+depends on how numpy's own loop was compiled, so `_emissions.py` uses the C++
+loop only on 64-bit x86 (`platform.machine()` is `x86_64` or `AMD64`, in a
+64-bit Python), where `tests/test_emissions.py` compares it with
+`numpy.einsum` as bytes, and calls `numpy.einsum` on every other machine, as
+hmmlearn 0.3.3 does. The arrays must be as for `log_density_diag`:
+`numpy.ndarray` itself, float64 in native byte order, C-contiguous and
+aligned, with one row per sample and no empty dimension. One state with one
+feature is left to numpy, which adds a single output entry in pieces of 8192
+samples, another order. The error state is not a condition: `numpy.einsum`
+reports no floating-point error, and neither does the loop. When the loop
+returns `None`, `numpy.einsum` computes the statistic. The result is a new
+array; adding it to the statistics stays in Python.
 
 ## What the package promises
 

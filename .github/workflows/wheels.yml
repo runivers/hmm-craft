@@ -107,7 +107,8 @@ jobs:
         python -m build --sdist --no-isolation
         ls -l dist
         tar tzf dist/*.tar.gz > sdist_files.txt
-        for f in ext/_hmmc.cpp pyproject.toml LICENSE.txt AUTHORS.rst; do
+        for f in ext/_hmmc.cpp ext/_emissionsc.cpp pyproject.toml LICENSE.txt \
+            AUTHORS.rst; do
           grep -q "/$f\$" sdist_files.txt || { echo "missing $f" >&2; exit 1; }
         done
     - name: Install the sdist and run the suite

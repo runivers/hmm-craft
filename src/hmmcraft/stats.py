@@ -1,6 +1,10 @@
 import numpy as np
 from scipy import linalg
 
+from . import _emissionsc
+
+_FLOAT64 = np.dtype(np.float64)
+
 
 def log_multivariate_normal_density(X, means, covars, covariance_type='diag'):
     """
@@ -44,12 +48,44 @@ def log_multivariate_normal_density(X, means, covars, covariance_type='diag'):
     )
 
 
+def _read_as_is(a, ndim, dtype=_FLOAT64):
+    """Whether ``a`` is read as it is: a plain C-ordered ``dtype`` array.
+
+    The dtype must be ``dtype`` itself, not one that compares equal to it:
+    where ``long double`` is ``double`` (macOS arm64, Windows),
+    ``np.longdouble`` equals ``np.float64``, but numpy computes it with
+    other loops, so its expression's bytes are not the ones the loop
+    repeats.
+    """
+    return (type(a) is np.ndarray and a.dtype == dtype
+            and a.dtype.char == dtype.char and a.ndim == ndim
+            and a.flags.c_contiguous and a.flags.aligned and a.size > 0)
+
+
 def _log_multivariate_normal_density_diag(X, means, covars):
     """Compute Gaussian log-density at X for a diagonal model."""
     # X: (ns, nf); means: (nc, nf); covars: (nc, nf) -> (ns, nc)
     _, nf = means.shape
     # Avoid 0 log 0 = nan in degenerate covariance case.
     covars = np.maximum(covars, np.finfo(float).tiny)
+    # The C++ loop gives the values of the expression below without its
+    # three (ns, nc, nf) temporaries, for the inputs the tests compare as
+    # bytes: plain float64 arrays in C order (numpy adds the features in
+    # another order for other layouts, and can add a row longer than its
+    # buffer in pieces), with no report of underflow asked for (the loop
+    # gives none). The term with numpy's log stays here.
+    if (_read_as_is(X, 2) and _read_as_is(means, 2)
+            and _read_as_is(covars, 2)
+            and X.shape[1] == nf and covars.shape == means.shape
+            and nf <= np.getbufsize()
+            and np.geterr()["under"] == "ignore"):
+        with np.errstate(all="ignore"):
+            head = nf * np.log(2 * np.pi) + np.log(covars).sum(axis=-1)
+        log_prob = _emissionsc.log_density_diag(X, means, covars, head)
+        # None: a value is not finite. The expression below then gives
+        # numpy's values, warnings and errors.
+        if log_prob is not None:
+            return log_prob
     with np.errstate(over="ignore"):
         return -0.5 * (nf * np.log(2 * np.pi)
                        + np.log(covars).sum(axis=-1)

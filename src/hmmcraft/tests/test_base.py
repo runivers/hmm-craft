@@ -790,6 +790,26 @@ def test_prediction_assigns_nothing(name, build, call):
     _assert_unchanged(h, snapshot)
 
 
+@pytest.mark.parametrize("call", PREDICTIONS.values(), ids=PREDICTIONS.keys())
+@pytest.mark.parametrize("implementation", ["log", "scaling"])
+def test_prediction_on_the_fitted_data_leaves_a_mixture_model_unchanged(
+    implementation, call
+):
+    """
+    A prediction on the very array a mixture model was fitted on assigns
+    nothing and leaves every attribute as it was.
+    """
+    _, _, X = MODEL_CASES[MODEL_IDS.index("GMMHMM")]
+    h = hmm.GMMHMM(
+        2, n_mix=2, implementation=implementation, random_state=0
+    ).fit(X)
+    snapshot = _snapshot(h)
+    assigned = _record_assignments(h)
+    call(h, X)
+    assert assigned == []
+    _assert_unchanged(h, snapshot)
+
+
 REFUSED_PARAMETERS = [
     ("GaussianHMM", "startprob_", [1.2, -0.2],
      "startprob_ must not have negative entries"),
@@ -1441,3 +1461,100 @@ def test_scaling_underflow_logs_one_warning_per_e_step(caplog):
         caplog.clear()
         _fixed_gaussian("diag", "scaling").fit(data[200:])
         assert _underflow_records(caplog) == []
+
+
+# The E-step's private list ---------------------------------------------------
+
+
+def _sequence_recorder(model):
+    """
+    Make ``model`` record, at each accumulation, whether the E-step's
+    private list holds the sequence being accumulated.
+    """
+    cls = type(model)
+
+    class Recorder(cls):
+        def _accumulate_sufficient_statistics(self, stats, X, *args):
+            self.seen.append(vars(self)["_estep_values"][0] is X)
+            super()._accumulate_sufficient_statistics(stats, X, *args)
+
+    model.__class__ = Recorder
+    model.seen = []
+    return model
+
+
+@pytest.mark.parametrize("implementation", ["log", "scaling"])
+@pytest.mark.parametrize("name", ["GaussianHMM", "GMMHMM"])
+def test_e_step_values_hold_the_sequence_while_it_is_computed(
+    name, implementation
+):
+    """
+    While ``_do_estep`` computes a sequence, its private list on the
+    instance holds that sequence first.
+    """
+    _, factory, X = MODEL_CASES[MODEL_IDS.index(name)]
+    model = factory(2)
+    model.implementation = implementation
+    model.n_iter = 1
+    _sequence_recorder(model).fit(X, [12, 8])
+    assert model.seen == [True, True]
+    assert "_estep_values" not in vars(model)
+
+
+class _RaisingStatistics(hmm.GMMHMM):
+    def _accumulate_sufficient_statistics(self, *args):
+        raise RuntimeError("accumulation failed")
+
+
+class _RaisingLikelihood(hmm.GMMHMM):
+    def _compute_log_likelihood(self, X):
+        raise RuntimeError("likelihood failed")
+
+
+def _estep_values_cases():
+    """(id, model, X, the error fit raises or None)."""
+    cases = [
+        (name, factory(2), X, None) for name, factory, X in MODEL_CASES
+    ]
+    _, _, X = MODEL_CASES[MODEL_IDS.index("GMMHMM")]
+    cases += [
+        (
+            "GMMHMM-statistics-raise",
+            _RaisingStatistics(2, n_mix=2, random_state=0),
+            X,
+            RuntimeError,
+        ),
+        (
+            "GMMHMM-likelihood-raise",
+            _RaisingLikelihood(2, n_mix=2, random_state=0),
+            X,
+            RuntimeError,
+        ),
+        ("impossible-scaling", _impossible(), IMPOSSIBLE, ValueError),
+    ]
+    return cases
+
+
+@pytest.mark.parametrize(
+    "case",
+    _estep_values_cases(),
+    ids=[case[0] for case in _estep_values_cases()],
+)
+def test_e_step_values_are_removed_after_a_fit_and_when_a_hook_raises(case):
+    """
+    The E-step's private list does not outlive ``fit``, also when a hook
+    raises; every name ``fit`` adds to the instance ends in an underscore,
+    but ``n_features``, which the start sets.
+    """
+    _, model, X, error = case
+    before = set(vars(model))
+    if error is None:
+        model.fit(X)
+    else:
+        with pytest.raises(error):
+            model.fit(X)
+    assert "_estep_values" not in vars(model)
+    assert type(model)._estep_values is None
+    added = {name for name in set(vars(model)) - before
+             if not name.endswith("_")}
+    assert added <= {"n_features"}

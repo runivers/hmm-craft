@@ -14,6 +14,8 @@ Unreleased
   instead of raising, unless they give no finite log-likelihood for it, which raises as before.
 - Changed: ``ValueError``, not a result, for invalid parameters or ``X`` and for ``sample(0)``; the
   non-variational models convert parameters to arrays when assigned; no ``MultinomialHMM`` warning.
+- Changed: Gaussian emissions use C++ loops, Poisson and multinomial ones fewer scipy calls, and
+  ``GMMHMM`` computes its mixture densities once per E-step; same results in DIFFERENCES.md's check.
 - Documented: the shapes ``GMMHMM`` accepts for its priors, per covariance type; when
   ``ConvergenceMonitor.converged`` is true.
 
