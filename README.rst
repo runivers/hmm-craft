@@ -48,10 +48,10 @@ What differs from hmmlearn 0.3.3
 ================================
 
 * The package and distribution names above.
-* The supported versions: Python 3.12 or newer, NumPy 1.26.0, SciPy 1.11.2 and
-  scikit-learn 1.3.1, or newer. hmmlearn 0.3.3 declares older minimums
-  (NumPy 1.10, SciPy 0.19, scikit-learn 0.16) that cannot be installed on any
-  Python it supports.
+* The supported versions: Python 3.12 or newer, NumPy 1.26.0, SciPy 1.11.2,
+  scikit-learn 1.3.1 and threadpoolctl 3.8.0, or newer. hmmlearn 0.3.3
+  declares older minimums (NumPy 1.10, SciPy 0.19, scikit-learn 0.16) that
+  cannot be installed on any Python it supports.
 * The covariances of a spherical ``GaussianHMM``: ``covars_`` has one matrix
   per state, as documented, and ``sample()`` draws each state with its own
   variance.
@@ -65,11 +65,19 @@ What differs from hmmlearn 0.3.3
   containing ``"c"`` without ``"m"``) now estimates its covariances. What
   hmmlearn 0.3.3 returned there was not an estimate, or raised; the exact
   result, for the default priors, is in ``DIFFERENCES.md``. This and the next
-  item are the two changes to a fit made without an option.
+  two items are the three changes to a fit made without an option.
 * The ``full`` and ``tied`` Gaussian log-densities no longer depend on where
   memory is placed. With NumPy before 2.0.2 on a CPU with AVX-512, hmmlearn
   0.3.3's last bits there could depend on it; this package's can differ from
   them. ``DIFFERENCES.md`` gives the details, and which of them were observed.
+* The k-means that starts a fit runs on one thread. It starts the means of
+  ``GaussianHMM`` and ``GMMHMM`` and the posterior parameters of
+  ``VariationalGaussianHMM``. With two or more threads, hmmlearn 0.3.3's
+  start for a fixed ``random_state`` can depend on the number of threads and
+  on the order in which they finish; this package gives the one-thread
+  start, so a fit from it can differ from hmmlearn 0.3.3's. ``DIFFERENCES.md``
+  names the thread pools this covers and the test that compares the starts,
+  with its data, versions and thread counts.
 * ``normalize(a, axis=0)`` gives zeros, not NaN, for a slice that sums to
   zero.
 * ``lengths`` must be a one-dimensional array of positive integers; anything
@@ -84,8 +92,11 @@ Apart from these, the fits of this package are checked to equal hmmlearn
 single thread given in the result table of ``DIFFERENCES.md``; nothing is
 claimed beyond that check. A change to a fit that hmmlearn 0.3.3 computes
 correctly and repeatably is made only behind an option whose default is
-hmmlearn 0.3.3's behaviour. ``DIFFERENCES.md`` lists each difference and describes the check
-that compares the two packages. Every change is listed in ``CHANGES.rst``.
+hmmlearn 0.3.3's behaviour. The k-means start above is the exception: with
+two or more threads it changes without an option, whether or not hmmlearn
+0.3.3 computes it repeatably there. ``DIFFERENCES.md`` lists each difference
+and describes the check that compares the two packages. Every change is
+listed in ``CHANGES.rst``.
 
 Installation
 ============

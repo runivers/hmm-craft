@@ -9,6 +9,7 @@ import numpy as np
 from scipy import linalg
 from sklearn import cluster
 from sklearn.utils import check_random_state
+from threadpoolctl import threadpool_limits
 
 from . import _emissions, _utils
 from .base import BaseHMM, _ConvertedAttribute
@@ -407,7 +408,10 @@ class GaussianHMM(_emissions.BaseGaussianHMM, BaseHMM):
             kmeans = cluster.KMeans(n_clusters=self.n_components,
                                     random_state=self.random_state,
                                     n_init=10)  # sklearn <1.4 backcompat.
-            kmeans.fit(X)
+            # One thread: scikit-learn's k-means adds per-thread partial
+            # sums, so a seeded start would depend on the thread count.
+            with threadpool_limits(limits=1):
+                kmeans.fit(X)
             self.means_ = kmeans.cluster_centers_
         if self._needs_init("c", "covars_"):
             cv = np.cov(X.T) + self.min_covar * np.eye(X.shape[1])
@@ -730,24 +734,27 @@ class GMMHMM(_emissions.BaseGMMHMM):
                                      random_state=self.random_state,
                                      n_init=10)  # sklearn >=1.2 compat.
         cv = None  # covariance matrix
-        labels = main_kmeans.fit_predict(X)
-        main_centroid = np.mean(main_kmeans.cluster_centers_, axis=0)
-        means = []
-        for label in range(nc):
-            kmeans = cluster.KMeans(n_clusters=nm,
-                                    random_state=self.random_state,
-                                    n_init=10)  # sklearn >=1.2 compat.
-            X_cluster = X[np.where(labels == label)]
-            if X_cluster.shape[0] >= nm:
-                kmeans.fit(X_cluster)
-                means.append(kmeans.cluster_centers_)
-            else:
-                if cv is None:
-                    cv = compute_cv()
-                m_cluster = np.random.multivariate_normal(main_centroid,
-                                                          cov=cv,
-                                                          size=nm)
-                means.append(m_cluster)
+        # One thread, as in GaussianHMM._init. One block for all the k-means
+        # calls of the start, since each entry into the limit has a cost.
+        with threadpool_limits(limits=1):
+            labels = main_kmeans.fit_predict(X)
+            main_centroid = np.mean(main_kmeans.cluster_centers_, axis=0)
+            means = []
+            for label in range(nc):
+                kmeans = cluster.KMeans(n_clusters=nm,
+                                        random_state=self.random_state,
+                                        n_init=10)  # sklearn >=1.2 compat.
+                X_cluster = X[np.where(labels == label)]
+                if X_cluster.shape[0] >= nm:
+                    kmeans.fit(X_cluster)
+                    means.append(kmeans.cluster_centers_)
+                else:
+                    if cv is None:
+                        cv = compute_cv()
+                    m_cluster = np.random.multivariate_normal(main_centroid,
+                                                              cov=cv,
+                                                              size=nm)
+                    means.append(m_cluster)
 
         if self._needs_init("w", "weights_"):
             self.weights_ = np.full((nc, nm), 1 / nm)

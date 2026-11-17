@@ -57,7 +57,7 @@ def test_covars_floor_holds_after_every_m_step(covariance_type):
 
 def _fixed_start(covariance_type, variances=(0.1, 1.0), **kwargs):
     """A model with explicit starting parameters, so a fit does not depend
-    on the k-means start, which varies with the number of threads."""
+    on the k-means start."""
     h = hmm.GaussianHMM(2, covariance_type, init_params="", random_state=0,
                         **kwargs)
     h.startprob_ = np.array([0.5, 0.5])

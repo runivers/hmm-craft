@@ -130,7 +130,7 @@ A model class supplies these hooks; the loop never changes per class:
 
 | Hook | Does |
 |---|---|
-| `_init` | sets the starting parameters named in `init_params`, and any that is not yet set (k-means for Gaussian means, for instance) |
+| `_init` | sets the starting parameters named in `init_params`, and any that is not yet set (k-means for Gaussian means, for instance, run on one thread) |
 | `_check` | validates shapes (`GaussianHMM`'s `means_` among them); in the five expectation-maximization models, also that probabilities sum to one with no negative entry and that emission parameters are finite, reading the model and writing nothing |
 | `_store_checked` | called by `fit` alone, after `_check`: stores what the checked parameters imply (`GaussianHMM`: `n_features` from `means_`); the base class stores nothing |
 | `_check_X` | checks `X` against the model after `_check`, reading only: its number of columns, or for the categorical models that each symbol is a whole number from 0 to `n_features - 1` and that `X` is not boolean; then, for the multinomial and Poisson models, that each count is a non-negative whole number. The base class checks nothing, so a model that brings its own likelihood takes `X` as it is |
