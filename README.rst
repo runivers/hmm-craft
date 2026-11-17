@@ -49,7 +49,7 @@ What differs from hmmlearn 0.3.3
 
 * The package and distribution names above.
 * The supported versions: Python 3.12 or newer, NumPy 1.26.0, SciPy 1.11.2,
-  scikit-learn 1.3.1 and threadpoolctl 3.8.0, or newer. hmmlearn 0.3.3
+  scikit-learn 1.3.1 and threadpoolctl 3.5.0, or newer. hmmlearn 0.3.3
   declares older minimums (NumPy 1.10, SciPy 0.19, scikit-learn 0.16) that
   cannot be installed on any Python it supports.
 * The covariances of a spherical ``GaussianHMM``: ``covars_`` has one matrix
