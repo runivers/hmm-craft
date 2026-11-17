@@ -14,8 +14,9 @@ scikit-learn and threadpoolctl versions:
 no file read) and writes every fitted array, the score, both decodes, the
 posteriors and a sample, one ``.npz`` per model. It then runs the underflow
 cases: models whose scaled forward pass underflows on one sample, in a
-prediction and in a fit with ``implementation="scaling"``. It refuses to run
-unless the thread-count variables are all ``1``: where a start is seeded, the
+prediction and in a fit with ``implementation="scaling"``. Last come the
+fits on many short sequences. It refuses to run unless the thread-count
+variables are all ``1``: where a start is seeded, the
 k-means partial sums are added in the order the threads finish. ``compare``
 checks the two dumps byte for byte. A difference is accepted only where the
 table ``EXCEPTIONS`` names it, only if listed by ``--allow``, and only if it
@@ -45,6 +46,11 @@ import numpy as np
 N_COMPONENTS = 3
 N_ITER = 10
 SEQUENCE_LENGTHS = (300, 200)
+# Many short sequences: lengths of one sample, which have no transition to
+# count, up to some tens, 220 sequences and 5082 samples in all, more than 4096
+# rows, so that a computation that takes the rows in blocks of up to that size
+# takes several.
+SHORT_LENGTHS = np.tile([1, 2, 3, 5, 8, 13, 21, 34, 55, 89], 22)
 N_TRIALS = 5
 MODEL_SEED = 0
 SAMPLE_SEED = 1
@@ -146,8 +152,24 @@ def make_data():
     ``truth`` holds the parameters the data was drawn from; the fixed starts
     are these moved by a fixed amount.
     """
-    rs = np.random.RandomState(10)
-    lengths = np.array(SEQUENCE_LENGTHS)
+    return _draw_families(
+        np.random.RandomState(10), np.array(SEQUENCE_LENGTHS))
+
+
+# The families drawn again on the short sequences, each renamed "short-<name>".
+_SHORT_SOURCES = ("gauss3", "gmm", "cat", "multi", "pois")
+
+
+def make_short_data():
+    """
+    Return ``{name: dict(X=, lengths=, truth=)}`` for the families drawn on
+    ``SHORT_LENGTHS``, from the same generator and seed as ``make_data``.
+    """
+    data = _draw_families(np.random.RandomState(10), np.array(SHORT_LENGTHS))
+    return {"short-" + name: data[name] for name in _SHORT_SOURCES}
+
+
+def _draw_families(rs, lengths):
     n = int(lengths.sum())
     states = _chain(rs, lengths)
     nc = N_COMPONENTS
@@ -258,6 +280,19 @@ _FIXED_CLASSES = (
 _GAUSSIAN_PARAMS = (
     ("stmc", "neginf"), ("stmc", "default"), ("stm", "default"),
     ("st", "default"), ("stc", "default"))
+# class -> its data family on the short sequences. GaussianHMM is fitted with
+# one of its variants: the others change only which Gaussian statistics are
+# gathered, not how the sequences are taken.
+_SHORT_CLASSES = {
+    "GaussianHMM": "short-gauss3",
+    "GMMHMM": "short-gmm",
+    "VariationalGaussianHMM": "short-gauss3",
+    "CategoricalHMM": "short-cat",
+    "MultinomialHMM": "short-multi",
+    "PoissonHMM": "short-pois",
+    "VariationalCategoricalHMM": "short-cat",
+}
+_SHORT_GAUSSIAN_PARAMS = (("stmc", "neginf"),)
 
 
 def _case_name(cls, data, cov, start, impl, params, tol):
@@ -267,28 +302,46 @@ def _case_name(cls, data, cov, start, impl, params, tol):
 
 
 def build_cases():
-    """Return the list of fit cases; each is a dict, the model's recipe."""
+    """
+    Return the list of fit cases; each is a dict, the model's recipe.
+
+    The cases on the short sequences come after all the others.
+    """
     cases = []
     for cls, (_, stat_key, families) in _CLASSES.items():
-        covs = COVARIANCE_TYPES if cls in _COVARIANCE_CLASSES else (None,)
-        starts = ("fixed", "seeded") if cls in _FIXED_CLASSES else ("seeded",)
         variants = (_GAUSSIAN_PARAMS if cls == "GaussianHMM"
                     else ((None, "default"),))
-        for data in families:
-            for cov in covs:
-                for start in starts:
-                    for impl in IMPLEMENTATIONS:
-                        for params, tol in variants:
-                            stat_defined = stat_key is not None and (
-                                cls != "GaussianHMM" or "m" in params)
-                            cases.append({
-                                "name": _case_name(
-                                    cls, data, cov, start, impl, params, tol),
-                                "kind": "fit", "cls": cls, "data": data,
-                                "cov": cov, "start": start, "impl": impl,
-                                "params": params,
-                                "tol": tol, "stat_key": stat_key,
-                                "stat_defined": stat_defined})
+        cases += _class_cases(cls, stat_key, families, variants)
+    for cls, family in _SHORT_CLASSES.items():
+        variants = (_SHORT_GAUSSIAN_PARAMS if cls == "GaussianHMM"
+                    else ((None, "default"),))
+        cases += _class_cases(cls, _CLASSES[cls][1], (family,), variants)
+    return cases
+
+
+def _is_short(case):
+    return case["data"] in _SHORT_CLASSES.values()
+
+
+def _class_cases(cls, stat_key, families, variants):
+    cases = []
+    covs = COVARIANCE_TYPES if cls in _COVARIANCE_CLASSES else (None,)
+    starts = ("fixed", "seeded") if cls in _FIXED_CLASSES else ("seeded",)
+    for data in families:
+        for cov in covs:
+            for start in starts:
+                for impl in IMPLEMENTATIONS:
+                    for params, tol in variants:
+                        stat_defined = stat_key is not None and (
+                            cls != "GaussianHMM" or "m" in params)
+                        cases.append({
+                            "name": _case_name(
+                                cls, data, cov, start, impl, params, tol),
+                            "kind": "fit", "cls": cls, "data": data,
+                            "cov": cov, "start": start, "impl": impl,
+                            "params": params,
+                            "tol": tol, "stat_key": stat_key,
+                            "stat_defined": stat_defined})
     return cases
 
 
@@ -847,18 +900,18 @@ def dump(package, out, load_pickles=None):
         pickle_dir = out / "pickles"
         pickle_dir.mkdir(parents=True, exist_ok=True)
     results = []
+    fits = list(enumerate(build_cases()))
     with threadpoolctl.threadpool_limits(limits=1):
         environment = _environment(package, modules)
-        for index, case in enumerate(build_cases()):
-            family = data[case["data"]]
-            case = dict(case, index=index,
-                        lengths=family["lengths"].tolist(),
-                        n_features=int(family["X"].shape[1]))
-            results.append(_dump_fit(modules, case, family, pickle_dir))
+        for index, case in fits:
+            if not _is_short(case):
+                results.append(
+                    _dump_indexed_fit(modules, index, case, data, pickle_dir))
         for case in build_utility_cases():
             results.append(_dump_utility(package, case))
         if load_pickles is not None:
-            results += _pickle_pass(package, Path(load_pickles), data)
+            results += _pickle_pass(
+                package, Path(load_pickles), data, short=False)
         # Last, so the cases above keep their file numbers.
         data.update(make_underflow_data(data))
         for case in build_underflow_cases():
@@ -870,6 +923,16 @@ def dump(package, out, load_pickles=None):
                 case, lengths=lengths, n_features=int(family["X"].shape[1])
             )
             results.append(_dump_underflow(modules, case, data))
+        # Last, for the same reason: the fits on the short sequences, then
+        # their pickled models, on data drawn only now.
+        data.update(make_short_data())
+        for index, case in fits:
+            if _is_short(case):
+                results.append(
+                    _dump_indexed_fit(modules, index, case, data, pickle_dir))
+        if load_pickles is not None:
+            results += _pickle_pass(
+                package, Path(load_pickles), data, short=True)
     data_sha256 = {name: _digest(d["X"], d["lengths"])
                    for name, d in data.items()}
     for case in build_utility_cases():
@@ -885,12 +948,22 @@ def dump(package, out, load_pickles=None):
     return 0
 
 
-def _pickle_pass(package, ref_dir, data):
+def _dump_indexed_fit(modules, index, case, data, pickle_dir):
+    family = data[case["data"]]
+    case = dict(case, index=index, lengths=family["lengths"].tolist(),
+                n_features=int(family["X"].shape[1]))
+    return _dump_fit(modules, case, family, pickle_dir)
+
+
+def _pickle_pass(package, ref_dir, data, short):
+    """Probe the reference's pickled fits, on the short sequences or not."""
     manifest = json.loads((ref_dir / "manifest.json").read_text())
     results = []
     for name, entry in manifest["cases"].items():
         meta = entry["meta"]
         if meta["kind"] != "fit" or entry["errors"].get("fit"):
+            continue
+        if _is_short(meta) != short:
             continue
         file = ref_dir / "pickles" / f"{meta['index']:04d}.pkl"
         case = dict(meta, name="pickled:" + name)
