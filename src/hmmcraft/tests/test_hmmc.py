@@ -1,4 +1,6 @@
-"""Input checks of the C++ kernel, ``hmmcraft._hmmc``."""
+"""Input checks and rounding of the C++ kernel, ``hmmcraft._hmmc``."""
+
+from fractions import Fraction
 
 import numpy as np
 import pytest
@@ -142,3 +144,50 @@ def test_other_kernel_errors_are_not_taken_for_underflow(
     with pytest.raises(ValueError) as info:
         _hmmc.forward_scaling(start, trans, frame)
     assert not base._is_scaling_underflow(info.value)
+
+
+# The spacing of float64 between 0.5 and 1.
+_STEP = 2.0 ** -53
+_A = 0.25 + _STEP
+_B = 1.0 - _STEP
+# (function, arguments, where the sum 0.5 + _A * _B is in the result)
+_SUMS_OF_PRODUCTS = [
+    ("forward_scaling",
+     (np.array([0.5, _A, 0.25 - _STEP]),
+      np.array([[1.0, 0.5, 0.0], [_B, 0.0, 0.0], [0.0, 0.0, 0.0]]),
+      np.ones((2, 3))),
+     lambda result: result[1][1, 0]),
+    ("backward_scaling",
+     (np.array([0.5, 0.5]),
+      np.array([[0.5 + _STEP, _A], [0.0, 0.0]]),
+      np.ones((2, 2)),
+      np.array([1.0, _B])),
+     lambda result: result[0, 0]),
+    ("compute_scaling_xi_sum",
+     (np.array([[0.5], [_A], [0.0]]),
+      np.array([[1.0]]),
+      np.array([[0.0], [1.0], [_B]]),
+      np.ones((3, 1))),
+     lambda result: result[0, 0]),
+]
+
+
+@pytest.mark.parametrize(
+    "name, arguments, pick", _SUMS_OF_PRODUCTS,
+    ids=[case[0] for case in _SUMS_OF_PRODUCTS])
+def test_scaling_kernel_rounds_a_product_before_adding_it(
+        name, arguments, pick):
+    """
+    The scaling functions round each product, then add it: no fused
+    multiply-add. Every case leaves 0.5 in a sum and adds
+    (0.25 + 2**-53) * (1 - 2**-53), which is
+    0.25 + 2**-54 + 2**-55 - 2**-106. Rounded on its own the product is
+    0.25 + 2**-54, and the sum, a tie, rounds to 0.75; a fused
+    multiply-add rounds once and gives 0.75 + 2**-53. ``setup.py`` turns
+    contraction off. A build for a target that has no fused instruction
+    passes with or without that option.
+    """
+    exact = Fraction(1, 2) + Fraction(_A) * Fraction(_B)
+    assert 0.5 + _A * _B == 0.75
+    assert float(exact) == 0.75 + _STEP
+    assert pick(getattr(_hmmc, name)(*arguments)) == 0.75
