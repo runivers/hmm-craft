@@ -194,8 +194,8 @@ compile_lines() {
 
 # option_count LOG [SOURCE]: "<lines with the option> of <compile lines>".
 option_count() {
-    echo "$(compile_lines "$1" "$2" | grep -c -- "$option") of" \
-        "$(compile_lines "$1" "$2" | awk 'END {print NR}')"
+    echo "$(compile_lines "$1" "${2:-ext/_hmmc.cpp}" | grep -c -- "$option") of" \
+        "$(compile_lines "$1" "${2:-ext/_hmmc.cpp}" | awk 'END {print NR}')"
 }
 
 # The builds are what their names say: the option on every compile line of
