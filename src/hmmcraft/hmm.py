@@ -46,6 +46,37 @@ def _covars_floor_value(covars_floor):
     return value
 
 
+def _covars_pass_on_stack(covars):  # shape and finiteness already tested
+    """
+    Return True when every covariance matrix in the float64 stack *covars*
+    is symmetric and clearly positive definite; False leaves the decision
+    to the tests made one matrix at a time.
+    """
+    if (type(covars) is not np.ndarray or covars.dtype != np.float64
+            or covars.size == 0):
+        return False
+    try:
+        a = np.abs(covars)
+        # Comparisons set no floating-point flag; inside these bounds
+        # neither does the arithmetic below.
+        if not ((a == 0) | ((a >= 2.0**-1000) & (a <= 2.0**1022))).all():
+            return False
+        ct = covars.swapaxes(-1, -2)
+        # np.allclose(covar, covar.T)'s comparison, with its defaults.
+        if not (np.abs(covars - ct)
+                <= 1e-08 + 1e-05 * a.swapaxes(-1, -2)).all():
+            return False
+        w = np.linalg.eigvalsh(covars)  # ascending
+    except (np.linalg.LinAlgError, MemoryError):
+        return False
+    # numpy's and scipy's eigvalsh can disagree on the sign of an eigenvalue
+    # near zero, so the stack decides only matrices well clear of it.
+    c = 1024 * covars.shape[-1] * np.finfo(np.float64).eps
+    lo = w[..., 0]
+    return bool((lo > np.finfo(np.float64).tiny / c).all()
+                and (lo > c * w[..., -1]).all())
+
+
 def _floor_covars(covars, covariance_type, min_covar):
     """
     Apply the ``min_covar`` floor to covariances in their compact layout.
@@ -905,6 +936,8 @@ class GMMHMM(_emissions.BaseGMMHMM):
                                  f"must be non-negative")
             if np.any(self.covars_ == 0):
                 _log.warning("Degenerate mixture covariance")
+        elif _covars_pass_on_stack(self.covars_):
+            pass  # every matrix symmetric and clearly positive definite
         elif self.covariance_type == "tied":
             for i, covar in enumerate(self.covars_):
                 if not np.allclose(covar, covar.T):

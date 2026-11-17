@@ -1,8 +1,10 @@
+import decimal
 import itertools
+import warnings
 
 import numpy as np
 import pytest
-from numpy.testing import assert_allclose
+from numpy.testing import assert_allclose, assert_array_equal
 from scipy import special
 
 from hmmcraft import _hmmc, base, hmm, vhmm
@@ -277,6 +279,129 @@ def test_base_hmm_attributes():
     h.transmat_[0, :2] = [1.2, -0.2]
     with pytest.raises(ValueError, match="transmat_"):
         h._check()
+
+
+def _sum_check_models():
+    rs = np.random.RandomState(7)
+    continuous = rs.normal(size=(40, 2)) + 3 * rs.randint(0, 2, (40, 1))
+    symbols = rs.randint(0, 3, (40, 1))
+    counts = rs.poisson(4, (40, 3))
+    multinomial = rs.multinomial(5, [0.2, 0.3, 0.5], size=40)
+    cases = [
+        ("GaussianHMM",
+         lambda: hmm.GaussianHMM(2, n_iter=4, random_state=0), continuous),
+        ("CategoricalHMM",
+         lambda: hmm.CategoricalHMM(2, n_iter=4, random_state=0), symbols),
+        ("MultinomialHMM",
+         lambda: hmm.MultinomialHMM(2, 5, n_iter=4, random_state=0),
+         multinomial),
+        ("PoissonHMM",
+         lambda: hmm.PoissonHMM(2, n_iter=4, random_state=0), counts),
+    ]
+    cases += [(f"GMMHMM-{cov}",
+               lambda cov=cov: hmm.GMMHMM(
+                   2, 2, covariance_type=cov, n_iter=4, random_state=0),
+               continuous)
+              for cov in ("spherical", "diag", "full", "tied")]
+    return cases
+
+
+SUM_CHECK_MODELS = _sum_check_models()
+
+
+@pytest.mark.parametrize("factory, X", [c[1:] for c in SUM_CHECK_MODELS],
+                         ids=[c[0] for c in SUM_CHECK_MODELS])
+def test_check_of_float64_sums_does_not_call_allclose(monkeypatch, factory,
+                                                      X):
+    """
+    The check of a fitted model, whose distributions are float64, tests
+    their sums without ``np.allclose``.
+    """
+    model = factory().fit(X)
+    calls = []
+    allclose = np.allclose
+
+    def spy(*args, **kwargs):
+        calls.append(args)
+        return allclose(*args, **kwargs)
+
+    monkeypatch.setattr(np, "allclose", spy)
+    model._check()
+    assert calls == []
+
+
+def _sum_sweep():
+    """
+    100,001 consecutive doubles centred on each edge of ``np.allclose``'s
+    default tolerance around 1, then NaN, the infinities, the two zeros, 1
+    and 2.
+    """
+    k = np.arange(-50_000, 50_001)
+    edges = [1 - (1e-08 + 1e-05), 1 + (1e-08 + 1e-05)]
+    return np.concatenate(
+        [edge + k * np.spacing(edge) for edge in edges]
+        + [[np.nan, np.inf, -np.inf, 0.0, -0.0, 1.0, 2.0]])
+
+
+def test_float64_sums_to_1_equals_allclose():
+    """
+    On float64 sums, the sum test gives ``np.allclose(s, 1)``'s answer for
+    each value of the sweep, as a scalar and as a one-element array, and for
+    seeded rows of them, without a floating-point error.
+    """
+    values = _sum_sweep()
+    assert values.size == 200_009
+    expected = np.isclose(values, 1)
+    with np.errstate(all="raise"):
+        scalars = [base._sums_to_1(value) for value in values]
+        rows = [base._sums_to_1(values[i:i + 1])
+                for i in range(values.size)]
+    assert_array_equal(scalars, expected)
+    assert_array_equal(rows, expected)
+    rng = np.random.default_rng(0)
+    differ = []
+    for n in (1, 2, 3, 4, 7, 8, 9, 16, 17, 33):
+        for _ in range(200):
+            row = rng.choice(values, size=n)
+            if rng.random() < 0.5:
+                row[rng.random(n) < 0.7] = 1.0
+            with np.errstate(all="raise"):
+                got = base._sums_to_1(row)
+            if got != np.allclose(row, 1):
+                differ.append(row)
+    assert differ == []
+
+
+def _matrix(a):
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", PendingDeprecationWarning)
+        return np.matrix(a)
+
+
+@pytest.mark.parametrize("rows", [
+    np.array([[0.5, 0.5], [0.2, 0.8]], dtype=object),
+    np.array([[0.5, 0.5], [0.2, 0.7]], dtype=object),
+    np.array([[2**62, 2**62, 1]]),
+    np.array([[0.5, 0.5], [0.2, 0.8]], dtype=np.float32),
+    np.array([decimal.Decimal("0.5")] * 2, dtype=object),
+    _matrix([[0.5, 0.5], [0.2, 0.7]]),
+    np.ma.array([[0.5, 0.5], [0.2, 0.7]], mask=[[0, 0], [1, 1]]),
+], ids=["object", "object-not-1", "int64-wrapping", "float32", "Decimal",
+        "matrix", "masked"])
+def test_other_sums_to_1_are_allclose(rows):
+    """
+    A sum that is not a float64 scalar or array gets the answer, or the
+    exception, of ``np.allclose(s, 1)`` under the running numpy.
+    """
+    s = rows.sum(axis=-1)
+
+    def outcome(test):
+        try:
+            return bool(test(s))
+        except (TypeError, ValueError) as exc:
+            return type(exc)
+
+    assert outcome(base._sums_to_1) == outcome(lambda s: np.allclose(s, 1))
 
 
 LEFT_RIGHT_START = np.array([1.0, 0.0, 0.0])

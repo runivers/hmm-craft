@@ -36,6 +36,16 @@ def _is_scaling_underflow(exc):
     return str(exc).startswith(_SCALING_UNDERFLOW)
 
 
+def _sums_to_1(s):
+    """Return whether every sum in *s* is 1, as ``np.allclose(s, 1)`` does."""
+    if type(s) is np.float64 or (
+            type(s) is np.ndarray and s.dtype == np.float64):
+        # np.allclose's comparison with its default rtol and atol, on a
+        # float64 sum, without its calls; any other type keeps its answer.
+        return bool((np.abs(s - 1) <= 1e-08 + 1e-05).all())
+    return np.allclose(s, 1)
+
+
 def _warn_fallback(fallen, n_sequences):
     """Log that the sequences at indices *fallen* used the log functions."""
     _log.warning(
@@ -966,7 +976,7 @@ class _AbstractHMM(BaseEstimator):
         if value is None:
             value = getattr(self, name)
         s = value.sum(axis=-1)
-        if not np.allclose(s, 1):
+        if not _sums_to_1(s):
             raise ValueError(
                 f"{name} must sum to 1 (got {s:.4f})"
                 if s.ndim == 0

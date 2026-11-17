@@ -17,7 +17,7 @@ Unreleased
 - Changed: ``ValueError``, not a result, for invalid parameters or ``X`` and for ``sample(0)``; the
   non-variational models convert parameters to arrays when assigned; no ``MultinomialHMM`` warning.
 - Changed: the variational models refuse invalid parameters by name and convert them to arrays when
-  assigned; see DIFFERENCES.md.
+  assigned (see DIFFERENCES.md); the parameter check makes fewer numpy and scipy calls.
 - Changed: Gaussian emissions use C++ loops, Poisson and multinomial ones fewer scipy calls, and
   ``GMMHMM`` computes its mixture densities once per E-step; same results in DIFFERENCES.md's check.
 - Changed: the k-means start runs on one thread, so a seeded fit at two or more threads changes: it
