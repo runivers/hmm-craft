@@ -5,6 +5,7 @@ import numpy as np
 from scipy import special
 from sklearn import cluster
 from sklearn.utils import check_random_state
+from threadpoolctl import threadpool_limits
 
 from . import _kl_divergence as _kl
 from . import _utils
@@ -472,8 +473,11 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
         kmeans = cluster.KMeans(n_clusters=self.n_components,
                                 random_state=self.random_state,
                                 n_init=10)  # sklearn >=1.2 compat.
-        kmeans.fit(X)
-        cluster_counts = np.bincount(kmeans.predict(X))
+        # One thread: scikit-learn's k-means adds per-thread partial sums,
+        # so a seeded start would depend on the thread count.
+        with threadpool_limits(limits=1):
+            kmeans.fit(X)
+            cluster_counts = np.bincount(kmeans.predict(X))
 
         if (self._needs_init("m", "means_prior_")
                 or self._needs_init("m", "means_posterior_")

@@ -60,12 +60,13 @@ on a machine with Python 3.12 and a network connection.
   more under a listed rule. The baseline never rises: the commit that moves
   to a newer ruff fixes what it finds, or the pin stays.
 - **The floor** is `ci/floor_constraints.txt`. The `floor` cell installs exactly
-  those versions from binary wheels and checks that `numpy`, `scipy` and
-  `scikit-learn` are the declared minimums. `scripts/test_floor_constraints.py`
-  fails if a minimum in `pyproject.toml`, the file's pin or a build requirement
-  drifts apart. The cell also turns numpy's AVX-512 loops off
-  (`NPY_DISABLE_CPU_FEATURES`, see `DIFFERENCES.md`). Once the numpy floor is
-  2.0.2 or later, that setting is removed from `scripts/ci_bit_equality.sh`.
+  those versions from binary wheels and checks that `numpy`, `scipy`,
+  `scikit-learn` and `threadpoolctl` are the declared minimums.
+  `scripts/test_floor_constraints.py` fails if a minimum in `pyproject.toml`,
+  the file's pin or a build requirement drifts apart. The cell also turns
+  numpy's AVX-512 loops off (`NPY_DISABLE_CPU_FEATURES`, see `DIFFERENCES.md`).
+  Once the numpy floor is 2.0.2 or later, that setting is removed from
+  `scripts/ci_bit_equality.sh`.
 - **Actions** are pinned by commit, with the release in a comment. Dependabot
   opens one pull request a month with the newer releases
   (`.github/dependabot.yml`); the maintainer reads their changes before merging
@@ -99,9 +100,10 @@ by one minor release is not promised to load in another.
 
 A Python version is supported until its end of life and dropped in the next
 minor release after it; Python 3.12 reaches its end of life in October 2028.
-The minimum versions of NumPy, SciPy and scikit-learn rise only then, or when
-a fix needs an API that the minimum does not have. A new CPython version gets
-wheels once NumPy, SciPy and scikit-learn all publish wheels for it.
+The minimum versions of NumPy, SciPy, scikit-learn and threadpoolctl rise only
+then, or when a fix needs an API that the minimum does not have. A new CPython
+version gets wheels once NumPy, SciPy and scikit-learn all publish wheels for
+it.
 
 ## Making a release
 

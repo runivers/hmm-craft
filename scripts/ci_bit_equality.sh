@@ -4,10 +4,11 @@
 #
 # usage: scripts/ci_bit_equality.sh floor|latest WORKDIR
 #
-# floor:  the three declared minimums and everything else in
+# floor:  the four declared minimums and everything else in
 #         ci/floor_constraints.txt, binary wheels only, with numpy's AVX-512
 #         loops turned off (NPY_DISABLE_CPU_FEATURES).
-# latest: the newest binary wheels of numpy, scipy and scikit-learn.
+# latest: the newest binary wheels of numpy, scipy, scikit-learn and
+#         threadpoolctl.
 #
 # The reference is built from the upstream tag, with the same compiler and
 # build settings as the package, so a difference comes from the change and not
@@ -82,9 +83,9 @@ else
 fi
 "$work/fork/bin/python" -m pip freeze > "$work/fork_freeze.txt"
 
-# The floor cell is only a floor cell if the three minimums are installed.
+# The floor cell is only a floor cell if the four minimums are installed.
 if [ "$cell" = floor ]; then
-    for name in numpy scipy scikit-learn; do
+    for name in numpy scipy scikit-learn threadpoolctl; do
         want=$(grep -i "^$name==" "$root/ci/floor_constraints.txt")
         grep -qix -- "$want" "$work/fork_freeze.txt" \
             || { echo "$want is not what is installed" >&2; exit 1; }

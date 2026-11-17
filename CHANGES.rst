@@ -16,6 +16,8 @@ Unreleased
   non-variational models convert parameters to arrays when assigned; no ``MultinomialHMM`` warning.
 - Changed: Gaussian emissions use C++ loops, Poisson and multinomial ones fewer scipy calls, and
   ``GMMHMM`` computes its mixture densities once per E-step; same results in DIFFERENCES.md's check.
+- Changed: the k-means start runs on one thread, so a seeded fit at two or more threads changes: it
+  now gives the one-thread result; see DIFFERENCES.md. Requires ``threadpoolctl`` 3.5.0 or newer.
 - Documented: the shapes ``GMMHMM`` accepts for its priors, per covariance type; when
   ``ConvergenceMonitor.converged`` is true.
 
