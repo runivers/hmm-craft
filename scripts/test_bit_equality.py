@@ -507,6 +507,76 @@ def test_cases_have_unique_names_and_cover_the_table():
     assert json.dumps(be.build_cases())
 
 
+# A computation that takes the rows of many sequences in blocks of up to this
+# many rows takes several on the short-sequence family.
+BLOCK_ROWS = 4096
+N_TWO_SEQUENCE_CASES = 374
+
+
+def _short_cases():
+    return [(index, c) for index, c in enumerate(be.build_cases())
+            if c["data"].startswith("short-")]
+
+
+def test_short_sequence_family_covers_every_class():
+    cases = be.build_cases()
+    short = _short_cases()
+    assert short
+    assert {c["cls"] for _, c in short} == set(be._CLASSES)
+    for cls in be._COVARIANCE_CLASSES:
+        assert {c["cov"] for _, c in short if c["cls"] == cls} == set(
+            be.COVARIANCE_TYPES)
+    assert {c["impl"] for _, c in short} == set(be.IMPLEMENTATIONS)
+    # Appended after every two-sequence case, so those keep their numbers.
+    assert [i for i, _ in short] == list(
+        range(N_TWO_SEQUENCE_CASES, len(cases)))
+    assert not any(c["data"].startswith("short-")
+                   for c in cases[:N_TWO_SEQUENCE_CASES])
+    names = [c["name"] for c in cases]
+    assert len(names) == len(set(names))
+    state = np.random.get_state()
+    first, second = be.make_short_data(), be.make_short_data()
+    after = np.random.get_state()
+    assert all(_same_state(a, b) for a, b in zip(state, after))
+    assert {c["data"] for _, c in short} == set(first)
+    for name, family in first.items():
+        assert name.startswith("short-")
+        lengths = family["lengths"]
+        assert 1 in lengths
+        assert len(lengths) == 220
+        assert lengths.sum() > BLOCK_ROWS
+        assert lengths.sum() == len(family["X"])
+        assert family["X"].tobytes() == second[name]["X"].tobytes()
+        assert lengths.tobytes() == second[name]["lengths"].tobytes()
+
+
+def test_one_ulp_in_a_short_sequence_case_fails(tmp_path):
+    gaussian = [(i, c) for i, c in _short_cases()
+                if c["cls"] == "GaussianHMM"]
+    assert gaussian
+    index, recipe = gaussian[0]
+    lengths = np.asarray(be.SHORT_LENGTHS)
+    ref = fit_case(recipe["name"], cov=recipe["cov"],
+                   params=recipe["params"], nf=3)
+    ref["meta"] = dict(ref["meta"], **recipe, index=index,
+                       lengths=lengths.tolist(), n_features=3)
+    ref["arrays"]["predict_proba"] = np.random.RandomState(0).dirichlet(
+        np.ones(NC), size=int(lengths.sum()))
+    fork = copy.deepcopy(ref)
+    old = fit_case("old")
+    starts = np.cumsum(lengths) - lengths
+    row = int(starts[(lengths == 1) & (starts >= BLOCK_ROWS)][0])
+    value = fork["arrays"]["predict_proba"]
+    value[row, 0] = np.nextafter(value[row, 0], np.inf)
+    for allow in ((), ALL_BUT_E6):
+        result = run(tmp_path / str(len(allow)), [old, ref],
+                     [copy.deepcopy(old), fork], allow=allow)
+        assert result.code == 1
+        assert [(d.case, d.key) for d in result.differences] == [
+            (recipe["name"], "predict_proba")]
+        assert f"({row}, 0)" in result.differences[0].text
+
+
 def test_threadpool_info_is_recorded_in_a_fixed_order(monkeypatch, tmp_path):
     # threadpoolctl lists the loaded libraries in the order they were found,
     # which changes between runs; two dumps of the same code must not.
@@ -792,7 +862,8 @@ def test_underflow_cases_have_unique_names_and_cover_the_classes():
     assert len(cases) == 33
     assert len(names) == len(set(names))
     assert not set(names) & {c["name"] for c in be.build_cases()}
-    assert len(be.build_cases()) == 374
+    assert len(be.build_cases()) == 428
+    assert len(be.build_cases()) - len(_short_cases()) == 374
     assert {c["cls"] for c in cases} == set(be._CLASSES)
     for cls in be._COVARIANCE_CLASSES:
         assert {c["cov"] for c in cases if c["cls"] == cls} == set(

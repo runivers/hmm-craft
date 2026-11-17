@@ -12,7 +12,7 @@ from sklearn.utils import check_random_state
 from threadpoolctl import threadpool_limits
 
 from . import _emissions, _utils
-from .base import BaseHMM, _ConvertedAttribute
+from .base import BaseHMM, _block_estep, _ConvertedAttribute
 from .utils import normalize
 
 __all__ = [
@@ -72,6 +72,7 @@ def _floor_covars(covars, covariance_type, min_covar):
     return np.array([floor_matrix(cv) for cv in covars])
 
 
+@_block_estep
 class CategoricalHMM(_emissions.BaseCategoricalHMM, BaseHMM):
     """
     Hidden Markov Model with categorical (discrete) emissions.
@@ -208,6 +209,7 @@ class CategoricalHMM(_emissions.BaseCategoricalHMM, BaseHMM):
             normalize(self.emissionprob_, axis=1)
 
 
+@_block_estep
 class GaussianHMM(_emissions.BaseGaussianHMM, BaseHMM):
     """
     Hidden Markov Model with Gaussian emissions.
@@ -519,6 +521,7 @@ class GaussianHMM(_emissions.BaseGaussianHMM, BaseHMM):
                     self._covars_, self.covariance_type, floor)
 
 
+@_block_estep
 class GMMHMM(_emissions.BaseGMMHMM):
     """
     Hidden Markov Model with Gaussian mixture emissions.
@@ -991,6 +994,7 @@ class GMMHMM(_emissions.BaseGMMHMM):
             self.covars_ = c_n / c_d
 
 
+@_block_estep
 class MultinomialHMM(_emissions.BaseMultinomialHMM):
     """
     Hidden Markov Model with multinomial emissions.
@@ -1123,6 +1127,7 @@ class MultinomialHMM(_emissions.BaseMultinomialHMM):
                 stats['obs'] / stats['obs'].sum(axis=1, keepdims=True))
 
 
+@_block_estep
 class PoissonHMM(_emissions.BasePoissonHMM):
     """
     Hidden Markov Model with Poisson emissions.

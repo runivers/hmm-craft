@@ -10,7 +10,7 @@ from scipy.stats import multinomial, poisson
 from sklearn.utils import check_random_state
 
 from . import _emissionsc, _utils
-from .base import BaseHMM, _AbstractHMM
+from .base import BaseHMM, _AbstractHMM, _reports_as_errors
 from .stats import _read_as_is, log_multivariate_normal_density
 from .utils import fill_covars, log_normalize
 
@@ -73,20 +73,6 @@ def _special_reports_nothing():
     return all(action == "ignore"
                for kind, action in special.geterr().items()
                if kind != "memory")
-
-
-def _reports_as_errors():
-    """numpy's error state with each report it would make as an error."""
-    # The Poisson and multinomial hooks run their shorter lines in this
-    # state. numpy has something to report for those lines when it has for
-    # scipy.stats: the same operations on the same values. Each report the
-    # caller's error state asks for is an error there; scipy.stats then
-    # computes every state and reports in the caller's way. A state whose
-    # values hold NaN is computed again by scipy.stats too.
-    # GMMHMM's likelihood computes the densities it keeps for the
-    # statistics in this state, and keeps none when one is raised.
-    return {kind: "ignore" if action == "ignore" else "raise"
-            for kind, action in np.geterr().items()}
 
 
 def _states_with_nan(values):
@@ -242,6 +228,15 @@ class BaseCategoricalHMM(_AbstractHMM):
             "e": nc * (nf - 1),
         }
 
+    def _takes_blocks(self, X):
+        # The deprecated layout, more than one column, gives more emission
+        # rows than samples and warns at each call.
+        return X.shape[1] == 1 and super()._takes_blocks(X)
+
+    def _lattice_by_rows(self, X):
+        # Each row indexes the emission probabilities on its own.
+        return True
+
     def _compute_likelihood(self, X):
         if X.shape[1] != 1:
             warnings.warn("Inputs of shape other than (n_samples, 1) are "
@@ -331,6 +326,17 @@ class BaseGaussianHMM(_AbstractHMM):
     def _compute_log_likelihood(self, X):
         return log_multivariate_normal_density(
             X, self.means_, self._covars_, self.covariance_type)
+
+    def _lattice_by_rows(self, X):
+        # The C++ density loop and the numpy expression both compute row by
+        # row for plain float64 arrays in C order; for other layouts numpy
+        # can add the features of a row in another order.
+        if self.covariance_type not in ("spherical", "diag"):
+            return False
+        means, covars = self.means_, self._covars_
+        return (_read_as_is(X, 2) and _read_as_is(means, 2)
+                and _read_as_is(covars, np.ndim(covars))
+                and X.shape[1] == means.shape[1] <= np.getbufsize())
 
     def _initialize_sufficient_statistics(self):
         stats = super()._initialize_sufficient_statistics()
@@ -422,6 +428,19 @@ class BaseGMMHMM(BaseHMM):
             X, cur_means, cur_covs, self.covariance_type
         ) + log_cur_weights
 
+    def _takes_blocks(self, X):
+        # A zero weight reports at every call of the likelihood; such a
+        # model is computed one sequence at a time, and this test reports
+        # nothing.
+        if not super()._takes_blocks(X):
+            return False
+        try:
+            with np.errstate(**_reports_as_errors()):
+                np.log(self.weights_)
+        except FloatingPointError:
+            return False
+        return True
+
     def _hooks_are_own(self):
         """Whether none of the three mixture hooks is replaced here."""
         return all(getattr(self, name)
@@ -448,7 +467,7 @@ class BaseGMMHMM(BaseHMM):
             # that falls back under scaling) replaces what the first kept.
             del kept[1:]
             if self._hooks_are_own():
-                asked = np.geterr()
+                asked = _reports_as_errors()
                 parts = []
                 # Kept only when computing them again in this error state
                 # would report nothing: each report it asks for raises here,
@@ -509,7 +528,7 @@ class BaseGMMHMM(BaseHMM):
 
         kept = self._estep_values
         hit = (kept is not None and len(kept) == 2 and kept[0] is X
-               and kept[1][0] == np.geterr())
+               and kept[1][0] == _reports_as_errors())
         if hit:
             # What _compute_log_likelihood kept for this sequence in this
             # error state, read once: computing it again would give the
@@ -618,6 +637,10 @@ class BaseMultinomialHMM(BaseHMM):
             "e": nc * (nf - 1),
         }
 
+    def _lattice_by_rows(self, X):
+        # scipy.stats computes each row and state on its own.
+        return _multinomial_together(X, self.emissionprob_, self.n_components)
+
     def _compute_likelihood(self, X):
         probs = np.empty((len(X), self.n_components))
         n_trials = X.sum(axis=1)
@@ -708,6 +731,11 @@ class BasePoissonHMM(BaseHMM):
     # plain int64 or float64 counts and float64 rates in C order (scipy adds
     # 1 to other integer types in a type that depends on the numpy version),
     # while scipy.special reports no error of its own.
+
+    def _lattice_by_rows(self, X):
+        # Each row's terms are added over its own features, and
+        # scipy.stats computes element by element.
+        return _poisson_direct(X, self.lambdas_, self.n_components)
 
     def _compute_likelihood(self, X):
         probs = np.empty((len(X), self.n_components))

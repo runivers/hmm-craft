@@ -64,13 +64,18 @@ nothing else.
   onto repeated rows and a feature with no spread, so that a covariance floor
   binds. Three more copy the three-feature Gaussian, the Gaussian mixture and
   the Poisson families with one sample of the first sequence (row 50) set to
-  1000, far from every state. The hash of every input is recorded and
-  compared.
+  1000, far from every state. A further family draws the three-state chain
+  and the three-feature Gaussian, Gaussian mixture, categorical, multinomial
+  and Poisson emissions with `RandomState(10)` on 220 sequences whose lengths
+  run through 1, 2, 3, 5, 8, 13, 21, 34, 55 and 89, 22 times, 5082 samples in
+  all. The hash of every input is recorded and compared.
 * **Fits.** All seven model classes, every covariance type, both
   implementations (`"log"`, `"scaling"`), a fixed start (`init_params=""`,
   parameters set from the generator's values moved by a fixed amount) and a
   seeded start (`random_state=0`), ten iterations. For `GaussianHMM` the
   `params` `"stmc"` (with and without `tol=-inf`), `"stm"`, `"st"` and `"stc"`.
+  On the short sequences every class is fitted the same way, `GaussianHMM`
+  with `"stmc"` and `tol=-inf` only.
 * **Underflow cases.** 33 cases with `implementation="scaling"` in which the
   scaled forward pass underflows: each predicts on the first sequence alone,
   with `"log"` as well, or fits on both sequences. The models start from the
@@ -85,9 +90,12 @@ nothing else.
 * **Compared.** Every fitted attribute, `monitor_.history`, the score, both
   decodes, `predict_proba`, a sample drawn with `random_state=1`, `covars_`, the
   parameters, and the exception type of a call that raises. The sufficient
-  statistic of the last M-step is compared with `state_occupancy_`. Models
-  pickled by 0.3.3 are loaded by this package and probed again. `normalize` and
-  `fill_covars` are called on fixed arrays.
+  statistic of the last M-step is compared with `state_occupancy_`. Each fit
+  is repeated with a subclass that records the statistics; the package
+  computes that fit sequence by sequence and the first one by blocks of
+  sequences, and every array of the two must be equal. Models pickled by 0.3.3
+  are loaded by this package and probed again. `normalize` and `fill_covars`
+  are called on fixed arrays.
 * **Exceptions.** A difference is accepted only if its exception is passed to
   `--allow` and it has exactly the shape the exception describes. Anything
   else is a difference.
@@ -164,6 +172,23 @@ in both environments: numpy 1.26.0, scipy 1.11.2, scikit-learn 1.3.1, and
 numpy 2.5.4, scipy 1.18.1, scikit-learn 1.9.1. With threadpoolctl 3.5.0 on
 both sides in the first environment, the result is the same, and every array
 of the package's dump is byte for byte the one with 3.8.0.
+
+At the tree that adds the family of many short sequences, which changes the
+check and its tests only, the check gives equal apart from E1 to E7 on the data
+above, with Python 3.12.3, Linux x86_64, one thread, 428 fits (54 on the short
+sequences), the 33 underflow cases and the utility arrays, in both
+environments: numpy 1.26.0, scipy 1.11.2, scikit-learn 1.3.1, threadpoolctl
+3.5.0, and numpy 2.5.4, scipy 1.18.1, scikit-learn 1.9.1, threadpoolctl 3.8.0.
+In each environment, the package's results for the cases of the tree before
+are byte for byte that tree's.
+
+At the tree that computes the E-step by blocks of sequences, which includes
+every change to the package since the tree of the short sequences, the check
+gives equal apart from E1 to E7 on the same data and cases, with Python
+3.12.3, Linux x86_64 and one thread, in both environments: numpy 1.26.0,
+scipy 1.11.2, scikit-learn 1.3.1, threadpoolctl 3.5.0, and numpy 2.5.4,
+scipy 1.18.1, scikit-learn 1.9.1, threadpoolctl 3.8.0. In each environment,
+the package's results are byte for byte those of the tree before.
 
 This is the whole claim of the check: no result is stated for other data,
 other versions, other thread counts or another platform. The k-means row above
