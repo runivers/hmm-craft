@@ -62,6 +62,10 @@ _INT64 = np.dtype(np.int64)
 # The most entries of the (rows, n_components, n_features) arrays one
 # multinomial call makes: two arrays of 2 MiB.
 _MULTINOMIAL_ENTRIES = 2 ** 18
+# The mixture hooks whose values GMMHMM's statistics may read back from its
+# likelihood in an E-step: only while none of them is replaced.
+_GMM_HOOKS = ("_compute_log_weighted_gaussian_densities",
+              "_compute_log_likelihood", "_accumulate_sufficient_statistics")
 
 
 def _special_reports_nothing():
@@ -79,6 +83,8 @@ def _reports_as_errors():
     # caller's error state asks for is an error there; scipy.stats then
     # computes every state and reports in the caller's way. A state whose
     # values hold NaN is computed again by scipy.stats too.
+    # GMMHMM's likelihood computes the densities it keeps for the
+    # statistics in this state, and keeps none when one is raised.
     return {kind: "ignore" if action == "ignore" else "raise"
             for kind, action in np.geterr().items()}
 
@@ -416,13 +422,57 @@ class BaseGMMHMM(BaseHMM):
             X, cur_means, cur_covs, self.covariance_type
         ) + log_cur_weights
 
-    def _compute_log_likelihood(self, X):
+    def _hooks_are_own(self):
+        """Whether none of the three mixture hooks is replaced here."""
+        return all(getattr(self, name)
+                   == getattr(BaseGMMHMM, name).__get__(self)
+                   for name in _GMM_HOOKS)
+
+    def _mixture_log_likelihoods(self, X, parts=None):
+        """Each state's log-likelihood; with ``parts``, each state's
+        weighted log-densities and their logsumexp appended to it."""
         logprobs = np.empty((len(X), self.n_components))
         for i in range(self.n_components):
             log_denses = self._compute_log_weighted_gaussian_densities(X, i)
             with np.errstate(under="ignore"):
-                logprobs[:, i] = special.logsumexp(log_denses, axis=1)
+                lse = special.logsumexp(log_denses, axis=1)
+            logprobs[:, i] = lse
+            if parts is not None:
+                parts.append((log_denses, lse))
         return logprobs
+
+    def _compute_log_likelihood(self, X):
+        kept = self._estep_values
+        if kept is not None and kept[0] is X:
+            # A second call for the sequence (the log pass of a sequence
+            # that falls back under scaling) replaces what the first kept.
+            del kept[1:]
+            if self._hooks_are_own():
+                asked = np.geterr()
+                parts = []
+                # Kept only when computing them again in this error state
+                # would report nothing: each report it asks for raises here,
+                # and the densities are then computed below in the
+                # caller's state, with their reports.
+                try:
+                    with np.errstate(**_reports_as_errors()):
+                        # A zero weight, the one report of an ordinary fit,
+                        # found before the densities are computed.
+                        np.log(self.weights_)
+                        logprobs = self._mixture_log_likelihoods(X, parts)
+                except FloatingPointError:
+                    pass
+                else:
+                    widths = {log_denses.shape[-1] for log_denses, _ in parts}
+                    if widths == {1}:
+                        # log_normalize writes 0 over a single mixture, as
+                        # computed: nothing is kept but the error state.
+                        kept.append((asked, None))
+                    elif 1 not in widths and np.isfinite(logprobs).all():
+                        # Subtracting a finite logsumexp reports nothing.
+                        kept.append((asked, parts))
+                    return logprobs
+        return self._mixture_log_likelihoods(X)
 
     def _initialize_sufficient_statistics(self):
         stats = super()._initialize_sufficient_statistics()
@@ -457,12 +507,34 @@ class BaseGMMHMM(BaseHMM):
         # samples           (n_samples, n_features)
         # centered          (n_samples, n_components, n_mix, n_features)
 
+        kept = self._estep_values
+        hit = (kept is not None and len(kept) == 2 and kept[0] is X
+               and kept[1][0] == np.geterr())
+        if hit:
+            # What _compute_log_likelihood kept for this sequence in this
+            # error state, read once: computing it again would give the
+            # same values and report nothing.
+            _, parts = kept.pop()
+
         post_mix = np.zeros((n_samples, self.n_components, self.n_mix))
         for p in range(self.n_components):
-            log_denses = self._compute_log_weighted_gaussian_densities(X, p)
-            log_normalize(log_denses, axis=-1)
+            if hit and parts is None:
+                # Densities one mixture wide: log_normalize writes 0, whose
+                # exp is 1.
+                post_mix[:, p, :] = 1.0
+                continue
+            if hit:
+                log_denses, lse = parts[p]
+                log_denses = log_denses - lse[:, None]
+            else:
+                log_denses = self._compute_log_weighted_gaussian_densities(
+                    X, p)
+                log_normalize(log_denses, axis=-1)
             with np.errstate(under="ignore"):
                 post_mix[:, p, :] = np.exp(log_denses)
+        if hit:
+            # The kept arrays are freed before the larger ones below.
+            parts = lse = None
 
         with np.errstate(under="ignore"):
             post_comp_mix = post_comp[:, :, None] * post_mix

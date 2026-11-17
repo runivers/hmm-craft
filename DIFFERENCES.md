@@ -145,6 +145,13 @@ on the same data, with Python 3.12.3, one thread, 374 fits, the 33 underflow
 cases and the utility arrays, in both environments: numpy 1.26.0, scipy
 1.11.2, scikit-learn 1.3.1, and numpy 2.5.5, scipy 1.18.1, scikit-learn 1.9.1.
 
+At the tree that computes the `diag` and `spherical` log-density and the
+`full` and `tied` statistic in C++ and makes `GMMHMM` compute its mixture
+densities once per E-step, which includes every change to the package since
+the tree of the underflow cases, the check gives equal apart from E1 to E7 on
+the same data, cases and versions as that tree, with Python 3.12.3, Linux
+x86_64 and one thread.
+
 This is the whole claim: no result is stated for other data, other versions,
 other thread counts or another platform.
 

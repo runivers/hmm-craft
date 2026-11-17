@@ -998,6 +998,11 @@ class _AbstractHMM(BaseEstimator):
     # log functions under implementation="scaling"; never kept on an instance.
     _accumulate_as_log = False
 
+    # None, except while _do_estep computes one sequence: then a list on the
+    # instance whose first item is that sequence. An emission hook may add
+    # what the statistics hook reads back for it; never kept on an instance.
+    _estep_values = None
+
     def _accumulate_sufficient_statistics(
             self, stats, X, lattice, posteriors, fwdlattice, bwdlattice):
         """
@@ -1094,38 +1099,44 @@ class _AbstractHMM(BaseEstimator):
         sub_Xs = _utils.split_X_lengths(X, lengths)
         fallen = []
         for i, sub_X in enumerate(sub_Xs):
-            fell_back = False
+            # Written through vars: a subclass's __setattr__ never sees it.
+            vars(self)["_estep_values"] = [sub_X]
             try:
-                lattice, logprob, posteriors, fwdlattice, bwdlattice = impl(
-                    sub_X
-                )
-            except ValueError as exc:
-                if (
-                    self.implementation != "scaling"
-                    or not _is_scaling_underflow(exc)
-                ):
-                    raise
-                # The sequence is computed with the log functions, which
-                # raise exc again when they give no finite log-likelihood,
-                # and its statistics with the log accumulator.
-                lattice, logprob, posteriors, fwdlattice, bwdlattice = (
-                    self._fit_log(sub_X, underflow=exc)
-                )
-                fell_back = True
-                fallen.append(i)
-            occupancy += posteriors.sum(axis=0)
-            if fell_back:
-                self._accumulate_as_log = True
-            # Derived HMM classes will implement the following method to
-            # update their probability distributions, so keep
-            # a single call to this method for simplicity.
-            try:
-                self._accumulate_sufficient_statistics(
-                    stats, sub_X, lattice, posteriors, fwdlattice, bwdlattice
-                )
-            finally:
+                fell_back = False
+                try:
+                    lattice, logprob, posteriors, fwdlattice, bwdlattice = (
+                        impl(sub_X)
+                    )
+                except ValueError as exc:
+                    if (
+                        self.implementation != "scaling"
+                        or not _is_scaling_underflow(exc)
+                    ):
+                        raise
+                    # The sequence is computed with the log functions, which
+                    # raise exc again when they give no finite log-likelihood,
+                    # and its statistics with the log accumulator.
+                    lattice, logprob, posteriors, fwdlattice, bwdlattice = (
+                        self._fit_log(sub_X, underflow=exc)
+                    )
+                    fell_back = True
+                    fallen.append(i)
+                occupancy += posteriors.sum(axis=0)
                 if fell_back:
-                    del self._accumulate_as_log
+                    self._accumulate_as_log = True
+                # Derived HMM classes will implement the following method to
+                # update their probability distributions, so keep
+                # a single call to this method for simplicity.
+                try:
+                    self._accumulate_sufficient_statistics(
+                        stats, sub_X, lattice, posteriors, fwdlattice,
+                        bwdlattice
+                    )
+                finally:
+                    if fell_back:
+                        del self._accumulate_as_log
+            finally:
+                vars(self).pop("_estep_values", None)
             curr_logprob += logprob
         if fallen:
             _warn_fallback(fallen, len(sub_Xs))

@@ -4,12 +4,16 @@ On the machines where it is used, a C++ loop computes the statistic of the
 full and tied covariances for the arrays it is proven for; numpy's einsum
 computes it for the rest. The Poisson and multinomial hooks make fewer
 ``scipy.stats`` calls for the arrays they are proven for, with the bytes,
-warnings and errors of one call per state.
+warnings and errors of one call per state. In an E-step, ``GMMHMM``'s
+statistics read the mixture densities its likelihood computed for the same
+sequence, with the bytes, warnings and errors of computing them again.
 """
 
 import copy
+import os
 import platform
 import sys
+import warnings
 
 import numpy as np
 import pytest
@@ -17,7 +21,14 @@ import scipy.stats
 from scipy import special
 
 from hmmcraft import _emissions, _emissionsc
-from hmmcraft.hmm import GaussianHMM, MultinomialHMM, PoissonHMM
+from hmmcraft.base import BaseHMM
+from hmmcraft.hmm import (
+    GMMHMM,
+    GaussianHMM,
+    MultinomialHMM,
+    PoissonHMM,
+)
+from hmmcraft.utils import log_normalize
 from hmmcraft.vhmm import VariationalGaussianHMM
 
 from .test_emissionsc import _one_rounding_per_operation
@@ -987,3 +998,341 @@ def test_count_fits_are_the_same_as_with_one_scipy_call_per_state(
     per_state = _continue(copy.deepcopy(model), X, lengths)
     assert with_package_hooks.keys() == per_state.keys()
     assert with_package_hooks == per_state
+
+
+# GMMHMM's E-step: the mixture densities _compute_log_likelihood computed for
+# a sequence are read back by the statistics hook, when computing them again
+# would give the same values and report nothing.
+
+
+@pytest.fixture
+def density_calls(monkeypatch):
+    """Record each Gaussian log-density call made through
+    ``hmmcraft._emissions`` (one per state, mixture hook and sequence)."""
+    real = _emissions.log_multivariate_normal_density
+    calls = []
+
+    def recording(*args, **kwargs):
+        calls.append(len(args[0]))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(_emissions, "log_multivariate_normal_density",
+                        recording)
+    return calls
+
+
+# numpy's default error state; this test package sets every report to "warn".
+DEFAULT_STATE = {"divide": "warn", "over": "warn", "under": "ignore",
+                 "invalid": "warn"}
+
+
+class _GMMUpstreamStatistics(GMMHMM):
+    """GMMHMM with hmmlearn 0.3.3's statistics hook: it computes every
+    state's mixture densities again."""
+
+    def _accumulate_sufficient_statistics(self, stats, X, lattice,
+                                          post_comp, fwdlattice, bwdlattice):
+        BaseHMM._accumulate_sufficient_statistics(
+            self, stats, X, lattice, post_comp, fwdlattice, bwdlattice
+        )
+
+        n_samples, _ = X.shape
+
+        post_mix = np.zeros((n_samples, self.n_components, self.n_mix))
+        for p in range(self.n_components):
+            log_denses = self._compute_log_weighted_gaussian_densities(X, p)
+            log_normalize(log_denses, axis=-1)
+            with np.errstate(under="ignore"):
+                post_mix[:, p, :] = np.exp(log_denses)
+
+        with np.errstate(under="ignore"):
+            post_comp_mix = post_comp[:, :, None] * post_mix
+
+        stats['post_mix_sum'] += post_comp_mix.sum(axis=0)
+        stats['post_sum'] += post_comp.sum(axis=0)
+
+        if 'm' in self.params:  # means stats
+            stats['m_n'] += np.einsum('ijk,il->jkl', post_comp_mix, X)
+
+        if 'c' in self.params:  # covariance stats
+            centered = X[:, None, None, :] - self.means_
+
+            def outer_f(x):  # Outer product over features.
+                return x[..., :, None] * x[..., None, :]
+
+            if self.covariance_type == 'full':
+                centered_dots = outer_f(centered)
+                c_n = np.einsum('ijk,ijklm->jklm', post_comp_mix,
+                                centered_dots)
+            elif self.covariance_type == 'diag':
+                centered2 = np.square(centered, out=centered)  # reuse
+                c_n = np.einsum('ijk,ijkl->jkl', post_comp_mix, centered2)
+            elif self.covariance_type == 'spherical':
+                # Faster than (x**2).sum(-1).
+                centered_norm2 = np.einsum('...i,...i', centered, centered)
+                c_n = np.einsum('ijk,ijk->jk', post_comp_mix, centered_norm2)
+            elif self.covariance_type == 'tied':
+                centered_dots = outer_f(centered)
+                c_n = np.einsum('ijk,ijklm->jlm', post_comp_mix, centered_dots)
+
+            stats['c_n'] += c_n
+
+
+def _gmm_far_data():
+    """``_fit_data()``'s samples as three sequences, with one sample of the
+    second far from every state: it falls back under scaling."""
+    X, _ = _fit_data()
+    X = X.copy()
+    X[50] = 1000.0
+    return X, [40, 40, 40]
+
+
+def _gmm_start(covariance_type, n_mix, implementation="log"):
+    """A two-state GMMHMM after one iteration on ``_fit_data()``."""
+    X, lengths = _fit_data()
+    with np.errstate(**DEFAULT_STATE):
+        model = GMMHMM(2, n_mix=n_mix, covariance_type=covariance_type,
+                       implementation=implementation, n_iter=1, tol=0.0,
+                       random_state=0).fit(X, lengths)
+    model.init_params = ""
+    return model
+
+
+def _as(model, cls):
+    """A copy of ``model`` as an instance of ``cls``."""
+    other = copy.deepcopy(model)
+    other.__class__ = cls
+    return other
+
+
+def _estep(model, X, lengths, state):
+    """What one E-step gives under ``state``: the statistics and the
+    log-likelihood as bytes, or the error (type, text, whether it has a
+    context); the warnings (category, text, file name) and the calls of an
+    error handler."""
+    handled = []
+    with warnings.catch_warnings(record=True) as caught, \
+            np.errstate(call=lambda kind, flag: handled.append(kind),
+                        **state):
+        warnings.simplefilter("always")
+        try:
+            stats, logprob = model._do_estep(X, lengths)
+        except (FloatingPointError, ValueError) as error:
+            got = ("error", type(error).__name__, str(error),
+                   error.__context__ is None)
+        else:
+            got = {name: np.asarray(value).tobytes()
+                   for name, value in stats.items()}
+            got["logprob"] = np.float64(logprob).tobytes()
+    reports = [(w.category.__name__, str(w.message),
+                os.path.basename(w.filename)) for w in caught]
+    return got, reports, handled
+
+
+COVARIANCE_TYPES = ["spherical", "diag", "full", "tied"]
+
+
+@pytest.mark.parametrize("n_mix", [1, 2])
+@pytest.mark.parametrize("implementation", ["log", "scaling"])
+@pytest.mark.parametrize("covariance_type", COVARIANCE_TYPES)
+def test_an_e_step_computes_each_mixture_density_once_per_sequence(
+        density_calls, covariance_type, implementation, n_mix):
+    """In numpy's default error state, one iteration computes each state's
+    mixture densities once per sequence, for one mixture and for several."""
+    X, lengths = _fit_data()
+    model = _gmm_start(covariance_type, n_mix, implementation)
+    del density_calls[:]
+    with np.errstate(**DEFAULT_STATE):
+        model.fit(X, lengths)
+    assert len(density_calls) == model.n_components * len(lengths)
+    assert "_estep_values" not in vars(model)
+
+
+@pytest.mark.parametrize("n_mix", [1, 2])
+@pytest.mark.parametrize("implementation", ["log", "scaling"])
+@pytest.mark.parametrize("covariance_type", COVARIANCE_TYPES)
+def test_a_zero_weight_computes_the_densities_again(
+        density_calls, covariance_type, implementation, n_mix):
+    """A zero mixture weight in one state is a report in numpy's default
+    error state: every state's densities are computed again, as by
+    hmmlearn 0.3.3's hooks, and the warnings come as often."""
+    X, lengths = _fit_data()
+    model = _gmm_start(covariance_type, n_mix, implementation)
+    model.weights_ = model.weights_.copy()
+    model.weights_[1] = np.eye(n_mix)[0] if n_mix > 1 else 0.0
+    upstream = _as(model, _GMMUpstreamStatistics)
+    del density_calls[:]
+    got = _estep(model, X, lengths, DEFAULT_STATE)
+    assert len(density_calls) == 2 * model.n_components * len(lengths)
+    assert got[1] != []
+    assert got == _estep(upstream, X, lengths, DEFAULT_STATE)
+
+
+@pytest.mark.parametrize("covariance_type", COVARIANCE_TYPES)
+def test_a_sequence_that_falls_back_computes_its_densities_for_each_pass_only(
+        density_calls, caplog, covariance_type):
+    """Of three sequences under scaling, the one that falls back computes
+    its densities in the scaling pass and in the log pass, and its
+    statistics read the second: four calls per state in all."""
+    X, lengths = _gmm_far_data()
+    model = _gmm_start(covariance_type, 2, "scaling")
+    del density_calls[:]
+    with np.errstate(**DEFAULT_STATE), \
+            caplog.at_level("WARNING", logger="hmmcraft.base"):
+        model._do_estep(X, lengths)
+    assert any("1 of 3 sequences" in r.getMessage() for r in caplog.records)
+    assert len(density_calls) == model.n_components * 4
+
+
+@pytest.mark.parametrize("n_mix", [1, 2])
+@pytest.mark.parametrize("covariance_type", COVARIANCE_TYPES)
+def test_scaling_computes_the_densities_again_when_underflow_is_reported(
+        density_calls, covariance_type, n_mix):
+    """The scaling pass computes the densities with underflow ignored: when
+    the caller asks for underflow reports, the statistics compute them
+    again in the caller's state, and log keeps them."""
+    X, lengths = _fit_data()
+    calls = {}
+    for implementation in ["log", "scaling"]:
+        model = _gmm_start(covariance_type, n_mix, implementation)
+        del density_calls[:]
+        with np.errstate(under="warn"):
+            model._do_estep(X, lengths)
+        calls[implementation] = len(density_calls)
+    assert calls["log"] == model.n_components * len(lengths)
+    assert calls["scaling"] == 2 * calls["log"]
+
+
+@pytest.mark.parametrize("state", [DEFAULT_STATE, {"all": "warn"}],
+                         ids=["default", "all=warn"])
+@pytest.mark.parametrize("data", ["two", "three-with-a-fallback"])
+@pytest.mark.parametrize("n_mix", [1, 2, 3])
+@pytest.mark.parametrize("implementation", ["log", "scaling"])
+@pytest.mark.parametrize("covariance_type", COVARIANCE_TYPES)
+def test_e_step_statistics_are_those_of_hmmlearn_statistics_hook_as_bytes(
+        covariance_type, implementation, n_mix, data, state):
+    """Every statistic of an E-step and its log-likelihood have the bytes,
+    warnings and handler calls of hmmlearn 0.3.3's statistics hook."""
+    X, lengths = _fit_data() if data == "two" else _gmm_far_data()
+    model = _gmm_start(covariance_type, n_mix, implementation)
+    upstream = _as(model, _GMMUpstreamStatistics)
+    got = _estep(model, X, lengths, state)
+    assert isinstance(got[0], dict)
+    assert got == _estep(upstream, X, lengths, state)
+
+
+@pytest.mark.parametrize("n_mix", [1, 2])
+@pytest.mark.parametrize("implementation", ["log", "scaling"])
+@pytest.mark.parametrize("covariance_type", COVARIANCE_TYPES)
+def test_gmm_fits_are_the_same_as_with_hmmlearn_statistics_hook(
+        covariance_type, implementation, n_mix):
+    """A fit, its score, decodes and state probabilities have the same bytes
+    as with hmmlearn 0.3.3's statistics hook."""
+    X, lengths = _fit_data()
+    model = _gmm_start(covariance_type, n_mix, implementation)
+    with np.errstate(**DEFAULT_STATE):
+        once = _continue(_as(model, GMMHMM), X, lengths)
+        upstream = _continue(_as(model, _GMMUpstreamStatistics), X, lengths)
+    assert once.keys() == upstream.keys()
+    assert once == upstream
+
+
+def _zero_weight(model):
+    model.weights_ = model.weights_.copy()
+    model.weights_[0] = np.eye(model.n_mix)[0]
+
+
+def _tiny_variances(model):
+    model.covars_ = model.covars_.copy()
+    model.covars_[0] = np.finfo(float).tiny
+
+
+GMM_REPORTS = {"a zero weight": _zero_weight,
+               "variances of the smallest normal float": _tiny_variances}
+
+
+@pytest.mark.parametrize("state", [{"all": "warn"}, {"all": "call"},
+                                   {"all": "raise"}],
+                         ids=["all=warn", "all=call", "all=raise"])
+@pytest.mark.parametrize("implementation", ["log", "scaling"])
+@pytest.mark.parametrize("name", list(GMM_REPORTS))
+def test_a_report_in_the_densities_is_given_as_often_as_by_hmmlearn_hooks(
+        name, implementation, state):
+    """A floating-point report in the densities comes as often, from the
+    same file, as with hmmlearn 0.3.3's hooks; a raised one is the same
+    error with no context; the statistics have the same bytes."""
+    X, lengths = _fit_data()
+    model = _gmm_start("diag", 2, implementation)
+    GMM_REPORTS[name](model)
+    got = _estep(model, X, lengths, state)
+    assert got[1] != [] or got[2] != [] or got[0][0] == "error"
+    assert got == _estep(_as(model, _GMMUpstreamStatistics), X, lengths,
+                         state)
+
+
+@pytest.mark.parametrize("implementation", ["log", "scaling"])
+@pytest.mark.parametrize("fitted_n_mix, n_mix", [(3, 1), (1, 3)],
+                         ids=["three-wide-n_mix-1", "one-wide-n_mix-3"])
+def test_densities_wider_or_narrower_than_n_mix_give_hmmlearn_outcome(
+        fitted_n_mix, n_mix, implementation):
+    """Mixture parameters whose width is not ``n_mix`` give the outcome of
+    hmmlearn 0.3.3's hooks: what is read back follows the densities'
+    width, not ``n_mix``."""
+    X, lengths = _fit_data()
+    model = _gmm_start("diag", fitted_n_mix, implementation)
+    model.n_mix = n_mix
+    got = _estep(model, X, lengths, DEFAULT_STATE)
+    assert got == _estep(_as(model, _GMMUpstreamStatistics), X, lengths,
+                         DEFAULT_STATE)
+
+
+class _OtherWeightsForTheLikelihood:
+    """Scores with equal mixture weights, and keeps its own for the rest."""
+
+    def _compute_log_likelihood(self, X):
+        weights = self.weights_
+        self.weights_ = np.full_like(weights, 1 / self.n_mix)
+        try:
+            return super()._compute_log_likelihood(X)
+        finally:
+            self.weights_ = weights
+
+
+class _CountedDensities:
+    """Counts the calls of the weighted densities hook."""
+
+    counted = 0
+
+    def _compute_log_weighted_gaussian_densities(self, X, i_comp):
+        type(self).counted += 1
+        return super()._compute_log_weighted_gaussian_densities(X, i_comp)
+
+
+class _StatisticsOfACopy:
+    """Accumulates the statistics of a copy of each sequence."""
+
+    def _accumulate_sufficient_statistics(self, stats, X, *args):
+        super()._accumulate_sufficient_statistics(stats, X.copy(), *args)
+
+
+@pytest.mark.parametrize("implementation", ["log", "scaling"])
+@pytest.mark.parametrize("override", [_OtherWeightsForTheLikelihood,
+                                      _CountedDensities, _StatisticsOfACopy],
+                         ids=["likelihood", "densities", "statistics"])
+def test_a_subclass_replacing_a_gmm_hook_gets_hmmlearn_statistics(
+        override, implementation):
+    """A subclass that replaces one of the three mixture hooks gets the
+    statistics of the same subclass of hmmlearn 0.3.3's hooks: the
+    densities are computed again, twice per state and sequence."""
+    X, lengths = _gmm_far_data()
+    model = _gmm_start("diag", 2, implementation)
+    outcomes, counts = [], []
+    for base in (GMMHMM, _GMMUpstreamStatistics):
+        cls = type(f"{override.__name__}{base.__name__}", (override, base),
+                   {"counted": 0})
+        outcomes.append(_estep(_as(model, cls), X, lengths, DEFAULT_STATE))
+        counts.append(cls.counted)
+    assert outcomes[0] == outcomes[1]
+    assert counts[0] == counts[1]
+    if override is _CountedDensities:
+        assert counts[0] >= 2 * model.n_components * len(lengths)

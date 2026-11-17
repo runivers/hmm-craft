@@ -105,6 +105,21 @@ is raised again before the backward pass. One warning is logged per E-step in
 which a sequence fell back. The other sequences are computed as before, in
 `lengths` order.
 
+`_do_estep` also keeps the sequence it is computing in the private attribute
+`_estep_values`, a list it sets on the instance before the sequence's first
+hook and removes after its statistics, also when a hook raises. `GMMHMM` uses
+it to compute its mixture densities once: `_compute_log_likelihood` adds each
+state's weighted log-densities and their `logsumexp` to the list, and
+`_accumulate_sufficient_statistics` reads them where hmmlearn 0.3.3 computes
+them again. They are kept only when computing them again would give the same
+values and report nothing: the hooks are the class's own, no floating-point
+report the caller's numpy error state asks for was raised, every `logsumexp`
+is finite, and the error state is the same when they are read. When the
+densities are one mixture wide, nothing is kept but that error state, with no
+test of the `logsumexp`, and the statistics write the mixture posteriors as
+ones, the value hmmlearn 0.3.3 computes there. In every other case, and
+outside `fit`, the statistics compute them again and prediction sets nothing.
+
 It also sums the posteriors into `state_occupancy_`, the expected number of
 samples in each state. `BaseHMM` returns the summed log-likelihood as the
 lower bound; `VariationalBaseHMM` subtracts the KL divergences of its
