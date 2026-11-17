@@ -80,8 +80,11 @@ def _data(n_rows=N_ROWS):
         0, 2, (n_rows, 1)
     )
     symbols = rs.randint(0, 3, (n_rows, 1))
-    counts = rs.poisson(4, (n_rows, 3))
-    multinomial = rs.multinomial(5, [0.2, 0.3, 0.5], size=n_rows)
+    # int64 on every platform: RandomState returns C long, which is 32 bits
+    # on Windows, and the shorter Poisson and multinomial forms take int64.
+    counts = rs.poisson(4, (n_rows, 3)).astype(np.int64)
+    multinomial = rs.multinomial(
+        5, [0.2, 0.3, 0.5], size=n_rows).astype(np.int64)
     return continuous, symbols, counts, multinomial
 
 
