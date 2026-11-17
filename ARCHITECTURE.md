@@ -184,9 +184,11 @@ than one sample.
 `ext/_hmmc.cpp` holds the recursions that loop over every sample and every
 pair of states. It knows nothing about emissions: it receives the emission
 probabilities (or log-probabilities) of one sequence as a matrix of shape
-`(n_samples, n_components)`, already computed by the emission code (in numpy,
-or for some inputs by the emission loops below). Every argument is a float64
-array.
+`(n_samples, n_components)` (the two block functions below take the matrices
+of several sequences stacked), already computed by the emission code (in
+numpy, or for some inputs by the emission loops below). Every argument is a
+float64 array, apart from the block functions' lengths (integers) and their
+choice of transition counts (a boolean).
 
 | Function | Takes | Returns |
 |---|---|---|
@@ -197,6 +199,8 @@ array.
 | `compute_log_xi_sum` | forward lattice, transition matrix, backward lattice, emission log-probabilities | the expected transition counts, in log space |
 | `compute_scaling_xi_sum` | forward lattice, transition matrix, backward lattice, emission probabilities | the expected transition counts |
 | `viterbi` | start probabilities, transition matrix, emission log-probabilities | the log-probability of the best path and the path |
+| `estep_log` | start probabilities, transition matrix, the emission log-probabilities of several sequences stacked in one matrix, the number of rows of each sequence, whether the transition counts are wanted | for each sequence what `forward_log`, `backward_log` and `compute_log_xi_sum` return: the log-likelihoods, the stacked forward and backward lattices, and one matrix of expected transition counts per sequence, in log space |
+| `estep_scaling` | the same, with emission probabilities | the same from the three scaling functions, and one flag per sequence |
 
 `forward_scaling` raises `ValueError` when the probabilities of a sample sum
 to less than 1e-300 over the states, with a message that starts "forward pass
@@ -204,8 +208,20 @@ failed with underflow", as hmmlearn 0.3.3's does. A shape that does not match
 raises `ValueError`, and so does a matrix with no rows (a sequence without
 samples) or no columns (a model without states): the recursions use unchecked
 accessors, and hmmlearn 0.3.3's kernel indexed outside its arrays there. Each
-function releases the GIL while it loops. The kernel's source is hmmlearn
-0.3.3's apart from that check and the module's package name.
+function releases the GIL while it loops.
+
+`estep_log` and `estep_scaling` run the three recursions for the sequences of
+a block one after the other, with the statements of the per-sequence
+functions; they take the logarithm of the start probabilities and of the
+transition matrix once per call and release the GIL once for the whole block.
+Where `forward_scaling` raises for a sequence, `estep_scaling` raises nothing:
+it sets that sequence's flag, fills its results with NaN and goes on. The
+lengths count rows of the stacked matrix. No model calls the two functions
+yet; `tests/test_hmmc.py` compares them with the per-sequence functions as
+bytes.
+
+The kernel's source is hmmlearn 0.3.3's apart from that check, the module's
+package name and the two block functions.
 
 ## The emission loops
 
