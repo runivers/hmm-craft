@@ -49,8 +49,16 @@ def log_multivariate_normal_density(X, means, covars, covariance_type='diag'):
 
 
 def _read_as_is(a, ndim, dtype=_FLOAT64):
-    """Whether ``a`` is read as it is: a plain C-ordered ``dtype`` array."""
-    return (type(a) is np.ndarray and a.dtype == dtype and a.ndim == ndim
+    """Whether ``a`` is read as it is: a plain C-ordered ``dtype`` array.
+
+    The dtype must be ``dtype`` itself, not one that compares equal to it:
+    where ``long double`` is ``double`` (macOS arm64, Windows),
+    ``np.longdouble`` equals ``np.float64``, but numpy computes it with
+    other loops, so its expression's bytes are not the ones the loop
+    repeats.
+    """
+    return (type(a) is np.ndarray and a.dtype == dtype
+            and a.dtype.char == dtype.char and a.ndim == ndim
             and a.flags.c_contiguous and a.flags.aligned and a.size > 0)
 
 
