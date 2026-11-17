@@ -10,11 +10,26 @@ from threadpoolctl import threadpool_limits
 from . import _kl_divergence as _kl
 from . import _utils
 from ._emissions import BaseCategoricalHMM, BaseGaussianHMM
-from .base import VariationalBaseHMM, _block_estep
+from .base import VariationalBaseHMM, _block_estep, _ConvertedAttribute
 from .hmm import COVARIANCE_TYPES
 from .utils import fill_covars
 
 _log = logging.getLogger(__name__)
+
+
+def _as_float_array(value):
+    """Convert a parameter to a float array, as fit has always read it."""
+    return np.asarray(value, dtype=float)
+
+
+def _as_dof(value):
+    """
+    Convert degrees of freedom: a number is kept as given, the single
+    value of a ``tied`` model; anything else becomes a float array.
+    """
+    if isinstance(value, numbers.Number):
+        return value
+    return np.asarray(value, dtype=float)
 
 
 @_block_estep
@@ -141,6 +156,10 @@ class VariationalCategoricalHMM(BaseCategoricalHMM, VariationalBaseHMM):
         self.emissionprob_prior = emissionprob_prior
         self.n_features = n_features
 
+    emissionprob_prior_ = _ConvertedAttribute(np.atleast_2d)
+    emissionprob_posterior_ = _ConvertedAttribute(np.atleast_2d)
+    emissionprob_ = _ConvertedAttribute(np.atleast_2d)
+
     def _init(self, X, lengths):
         """
         Initialize model parameters prior to fitting.
@@ -177,32 +196,43 @@ class VariationalCategoricalHMM(BaseCategoricalHMM, VariationalBaseHMM):
 
     def _check(self):
         """
-        Validate model parameters prior to fitting.
+        Validate the shapes of the model parameters before fitting or
+        predicting; reads the model and writes nothing.
+
+        Without ``n_features``, the number of symbols is the width of
+        ``emissionprob_posterior_``.
 
         Raises
         ------
         ValueError
-            If any of the parameters are invalid, e.g. if :attr:`startprob_`
-            don't sum to 1.
+            If a prior or posterior has the wrong shape.
         """
         super()._check()
-
-        self.emissionprob_prior_ = np.atleast_2d(self.emissionprob_prior_)
-        self.emissionprob_posterior_ = \
-            np.atleast_2d(self.emissionprob_posterior_)
 
         if (self.emissionprob_prior_.shape
                 != self.emissionprob_posterior_.shape):
             raise ValueError(
-                "emissionprob_prior_ and emissionprob_posterior_must"
+                "emissionprob_prior_ and emissionprob_posterior_ must "
                 "have shape (n_components, n_features)")
-        if self.n_features is None:
-            self.n_features = self.emissionprob_posterior_.shape[1]
+        n_features = self._get_n_features()
         if (self.emissionprob_posterior_.shape
-                != (self.n_components, self.n_features)):
+                != (self.n_components, n_features)):
             raise ValueError(
-                f"emissionprob_ must have shape"
-                f"({self.n_components}, {self.n_features})")
+                f"emissionprob_posterior_ must have shape "
+                f"({self.n_components}, {n_features})")
+
+    def _store_checked(self):
+        super()._store_checked()
+        for name in ("emissionprob_prior_", "emissionprob_posterior_"):
+            self._check_finite(name, getattr(self, name))
+
+    def _check_for_prediction(self):
+        super()._check_for_prediction()
+        # A model fitted without "e" in params has no emissionprob_; the
+        # prediction then raises where it reads it.
+        if hasattr(self, "emissionprob_"):
+            self._check_finite("emissionprob_", self.emissionprob_)
+            self._check_nonnegative("emissionprob_", self.emissionprob_)
 
     def _compute_subnorm_log_likelihood(self, X):
         return self.emissionprob_log_subnorm_[:, X.squeeze(1)].T
@@ -450,6 +480,15 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
         self.dof_prior = dof_prior
         self.scale_prior = scale_prior
 
+    means_prior_ = _ConvertedAttribute(_as_float_array)
+    means_posterior_ = _ConvertedAttribute(_as_float_array)
+    beta_prior_ = _ConvertedAttribute(_as_float_array)
+    beta_posterior_ = _ConvertedAttribute(_as_float_array)
+    dof_prior_ = _ConvertedAttribute(_as_dof)
+    dof_posterior_ = _ConvertedAttribute(_as_dof)
+    scale_prior_ = _ConvertedAttribute(_as_float_array)
+    scale_posterior_ = _ConvertedAttribute(_as_float_array)
+
     @property
     def means_(self):
         """
@@ -588,14 +627,23 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
 
     def _check(self):
         """
-        Validate model parameters prior to fitting.
+        Validate the shapes of the model parameters before fitting or
+        predicting, and that ``means_posterior_`` holds no NaN; reads the
+        model and writes nothing.
+
+        The other values are tested where they are read: those only
+        :meth:`fit` reads by :meth:`_store_checked`, those only a
+        prediction reads by :meth:`_check_for_prediction`.
 
         Raises
         ------
         ValueError
-            If any of the parameters are invalid, e.g. if :attr:`startprob_`
-            don't sum to 1.
+            If any of the parameters are invalid, e.g. if a prior or
+            posterior has the wrong shape.
         """
+        # The shapes of the start and transition priors and posteriors are
+        # not tested here, as they never were for this model: one that
+        # broadcasts fits and predicts.
 
         if self.covariance_type not in COVARIANCE_TYPES:
             raise ValueError(
@@ -604,8 +652,6 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
         nf = self._get_n_features()
         means_shape = (self.n_components, nf)
 
-        self.means_prior_ = np.asarray(self.means_prior_, dtype=float)
-        self.means_posterior_ = np.asarray(self.means_posterior_, dtype=float)
         if self.means_prior_.shape != means_shape:
             raise ValueError(
                 "means_prior_ have shape (n_components, n_features)")
@@ -613,8 +659,6 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
             raise ValueError(
                 "means_posterior_ must have shape (n_components, n_features)")
 
-        self.beta_prior_ = np.asarray(self.beta_prior_, dtype=float)
-        self.beta_posterior_ = np.asarray(self.beta_posterior_, dtype=float)
         if self.beta_prior_.shape != (self.n_components,):
             raise ValueError(
                 "beta_prior_ have shape (n_components,)")
@@ -624,13 +668,11 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
                 "beta_posterior_ must have shape (n_components,)")
 
         if self.covariance_type in ("full", "diag", "spherical"):
-            self.dof_prior_ = np.asarray(self.dof_prior_, dtype=float)
-            self.dof_posterior_ = np.asarray(self.dof_posterior_, dtype=float)
-            if self.dof_prior_.shape != (self.n_components,):
+            if np.shape(self.dof_prior_) != (self.n_components,):
                 raise ValueError(
                     "dof_prior_ have shape (n_components,)")
 
-            if self.dof_posterior_.shape != (self.n_components,):
+            if np.shape(self.dof_posterior_) != (self.n_components,):
                 raise ValueError(
                     "dof_posterior_ must have shape (n_components,)")
 
@@ -639,9 +681,6 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
                 raise ValueError("dof_prior_ should be numeric")
             if not isinstance(self.dof_posterior_, numbers.Number):
                 raise ValueError("dof_posterior_ should be numeric")
-
-        self.scale_prior_ = np.asarray(self.scale_prior_, dtype=float)
-        self.scale_posterior_ = np.asarray(self.scale_posterior_, dtype=float)
 
         expected = None
         if self.covariance_type == "full":
@@ -660,6 +699,29 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
         if self.scale_posterior_.shape != expected:
             raise ValueError(f"scale_posterior_ must have shape {expected}, "
                              f"found {self.scale_posterior_.shape}")
+
+        # Both fit and a prediction read the means. An infinite mean is
+        # refused by fit alone (_store_checked): on a prediction it is a
+        # state that emits nothing, and the score is finite.
+        self._check_not_nan("means_posterior_", self.means_posterior_)
+
+    def _store_checked(self):
+        super()._store_checked()
+        for name in ("means_prior_", "means_posterior_", "beta_prior_",
+                     "dof_prior_", "dof_posterior_", "scale_prior_",
+                     "scale_posterior_"):
+            self._check_finite(name, getattr(self, name))
+        # With "m" in params the first M-step replaces beta_posterior_,
+        # and an infinite value gives a finite fit.
+        self._check_not_nan("beta_posterior_", self.beta_posterior_)
+
+    def _check_for_prediction(self):
+        super()._check_for_prediction()
+        # fit reads covars_ only after setting it. An infinite variance is
+        # a state that emits nothing, as an infinite mean is.
+        covars = getattr(self, "_covars_", None)
+        if covars is not None:
+            self._check_not_nan("covars_", covars)
 
     def _takes_blocks(self, X):
         # A scale matrix whose inverse has a negative determinant warns at

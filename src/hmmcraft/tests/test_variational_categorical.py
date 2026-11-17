@@ -147,6 +147,47 @@ class TestVariationalCategorical:
             model.fit(np.array([[0], [3], [1]]))
         assert model.n_features is None
 
+    @staticmethod
+    def _hand_built(implementation):
+        """
+        A two-state model built by hand for three symbols, ``n_features``
+        and ``init_params`` left at their defaults.
+        """
+        model = vhmm.VariationalCategoricalHMM(
+            2, n_iter=5, random_state=0, implementation=implementation)
+        model.startprob_prior_ = np.full(2, 0.5)
+        model.startprob_posterior_ = np.array([6.0, 4.0])
+        model.transmat_prior_ = np.full((2, 2), 0.5)
+        model.transmat_posterior_ = np.array([[7.0, 3.0], [4.0, 6.0]])
+        model.emissionprob_prior_ = np.full((2, 3), 1 / 3)
+        model.emissionprob_posterior_ = np.array([[2.0, 3.0, 5.0],
+                                                  [5.0, 3.0, 2.0]])
+        model.startprob_ = np.array([0.6, 0.4])
+        model.transmat_ = np.array([[0.7, 0.3], [0.4, 0.6]])
+        model.emissionprob_ = np.array([[0.2, 0.3, 0.5], [0.5, 0.3, 0.2]])
+        return model
+
+    @pytest.mark.parametrize("implementation", ["scaling", "log"])
+    def test_fit_after_a_prediction_equals_a_fit_alone(self, implementation):
+        """
+        A prediction does not set ``n_features``: with ``"e"`` in
+        ``init_params``, ``fit`` after a ``score`` starts as many symbols
+        as ``X`` shows, as ``fit`` alone does, byte for byte.
+        """
+        X = np.random.RandomState(10).randint(0, 2, (30, 1))
+        expected = self._hand_built(implementation).fit(X)
+        model = self._hand_built(implementation)
+        model.score(X)
+        assert model.n_features is None
+        model.fit(X)
+        assert model.n_features == expected.n_features == 2
+        assert model.monitor_.history == expected.monitor_.history
+        for name, value in vars(expected).items():
+            if name.endswith("_") and name != "monitor_":
+                fitted = np.asarray(vars(model)[name])
+                assert fitted.dtype == np.asarray(value).dtype
+                assert fitted.tobytes() == np.asarray(value).tobytes()
+
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
     def test_init_incorrect_priors(self, implementation):
         sequences, lengths = self.get_from_one_beal(7, 100, None)

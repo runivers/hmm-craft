@@ -1,3 +1,5 @@
+import numbers
+
 import numpy as np
 import pytest
 from sklearn.utils import check_random_state
@@ -366,6 +368,31 @@ class TestTied(_TestGaussian):
         model.scale_posterior_ = [[2]]
         assert_log_likelihood_increasing(model, sequences, lengths, 10)
 
+    @pytest.mark.parametrize("attr", ["dof_prior_", "dof_posterior_"])
+    def test_dof_stays_a_number(self, attr):
+        """
+        The degrees of freedom of a ``tied`` model are numbers: a number is
+        kept as the object given, a fit leaves numbers, and a list is
+        converted to an array, which ``fit`` refuses as not numeric.
+        """
+        sequences, lengths = get_sequences(
+            20, 2, model=get_mcgrory_titterington(),
+            rs=check_random_state(0))
+        model = self.new_for_init("log")
+        number = np.int64(3)
+        setattr(model, attr, number)
+        assert getattr(model, attr) is number
+        model.n_iter = 2
+        model.fit(sequences, lengths)
+        assert isinstance(model.dof_prior_, numbers.Number)
+        assert isinstance(model.dof_posterior_, numbers.Number)
+        model = self.new_for_init("log")
+        setattr(model, attr, [1])
+        assert type(getattr(model, attr)) is np.ndarray
+        assert getattr(model, attr).dtype == float
+        with pytest.raises(ValueError, match=f"{attr} should be numeric"):
+            model.fit(sequences, lengths)
+
 
 class TestSpherical(_TestGaussian):
     test_fit_mcgrory_titterington1d_mean = 1.4105851867634462
@@ -615,3 +642,30 @@ def test_spherical_covars_name_means_posterior(means):
         model.means_posterior_ = means
     with pytest.raises(ValueError, match="means_posterior_"):
         _ = model.covars_
+
+
+@pytest.mark.parametrize("covariance_type",
+                         ["full", "diag", "spherical", "tied"])
+def test_list_start_and_transition_posteriors_fit(covariance_type):
+    """
+    A ``startprob_posterior_`` and a ``transmat_posterior_`` given as lists
+    are converted when assigned, so a refit from them equals the refit from
+    the arrays.
+    """
+    X = np.random.RandomState(10).normal(size=(100, 2))
+    fitted = vhmm.VariationalGaussianHMM(
+        2, covariance_type, random_state=0, n_iter=5).fit(X)
+    from_arrays = vhmm.VariationalGaussianHMM(
+        2, covariance_type, init_params="", random_state=0, n_iter=5)
+    _copy_fitted(fitted, from_arrays)
+    from_lists = vhmm.VariationalGaussianHMM(
+        2, covariance_type, init_params="", random_state=0, n_iter=5)
+    _copy_fitted(fitted, from_lists)
+    from_lists.startprob_posterior_ = fitted.startprob_posterior_.tolist()
+    from_lists.transmat_posterior_ = fitted.transmat_posterior_.tolist()
+    from_arrays.fit(X)
+    from_lists.fit(X)
+    assert (from_lists.monitor_.history
+            == from_arrays.monitor_.history)
+    assert (from_lists.means_posterior_.tobytes()
+            == from_arrays.means_posterior_.tobytes())
