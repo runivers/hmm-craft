@@ -2,8 +2,9 @@
 // the bytes of its expression for the arrays it accepts; the Python caller
 // decides which arrays those are and keeps numpy for the rest. setup.py
 // builds this module with floating-point contraction off, except on Windows,
-// where MSVC does not take the option; no loop here has a product that feeds
-// a sum, so the results do not depend on it.
+// where MSVC does not take the option. weighted_outer_sum has a product that
+// feeds a sum; tests/test_emissionsc.py holds a case that a build fusing the
+// two fails.
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
 #include <cmath>
@@ -115,8 +116,62 @@ py::object log_density_diag(
   return log_prob_;
 }
 
+// The statistic of the full and tied covariances: for each state the sum
+// over the samples of weight * x * x', the values of
+// numpy.einsum("ij,ik,il->jkl", weights, X, X) where numpy rounds every
+// product and every sum on its own. Sample after sample, entry [c, k, l]
+// gets (weight * x[k]) * x[l] added to it, from zero. The second product
+// feeds the sum, and a compiler allowed to contract fuses the two: this is
+// the loop the module is built without contraction for. Returns None when
+// an entry is not finite.
+py::object weighted_outer_sum(py::object weights_, py::object X_)
+{
+  auto weights = as_is(weights_, 2);
+  auto X = as_is(X_, 2);
+  auto ns = X.shape(0), nf = X.shape(1), nc = weights.shape(1);
+  if (weights.shape(0) != ns) {
+    throw std::invalid_argument{"shape mismatch"};
+  }
+  if (ns < 1 || nc < 1 || nf < 1) {
+    throw std::invalid_argument{"empty array"};
+  }
+  auto w = weights.data(), x = X.data();
+  auto sum_ = py::array_t<double>{{nc, nf, nf}};
+  auto sum = sum_.mutable_data();
+  auto size = nc * nf * nf;
+  auto finite = true;
+  {
+    py::gil_scoped_release nogil;
+    for (ssize_t i = 0; i < size; ++i) {
+      sum[i] = 0.;
+    }
+    for (ssize_t t = 0; t < ns; ++t) {
+      auto row = x + t * nf;
+      for (ssize_t c = 0; c < nc; ++c) {
+        auto weight = w[t * nc + c];
+        auto block = sum + c * nf * nf;
+        for (ssize_t k = 0; k < nf; ++k) {
+          auto wx = weight * row[k];
+          auto out = block + k * nf;
+          for (ssize_t l = 0; l < nf; ++l) {
+            out[l] = wx * row[l] + out[l];
+          }
+        }
+      }
+    }
+    for (ssize_t i = 0; finite && i < size; ++i) {
+      finite = std::isfinite(sum[i]);
+    }
+  }
+  if (!finite) {
+    return py::none();
+  }
+  return sum_;
+}
+
 PYBIND11_MODULE(_emissionsc, m) {
   m
     .def("log_density_diag", log_density_diag)
+    .def("weighted_outer_sum", weighted_outer_sum)
     ;
 }

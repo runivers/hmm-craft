@@ -1,5 +1,7 @@
 import functools
 import inspect
+import platform
+import sys
 import warnings
 
 import numpy as np
@@ -7,9 +9,9 @@ from scipy import special
 from scipy.stats import multinomial, poisson
 from sklearn.utils import check_random_state
 
-from . import _utils
+from . import _emissionsc, _utils
 from .base import BaseHMM, _AbstractHMM
-from .stats import log_multivariate_normal_density
+from .stats import _read_as_is, log_multivariate_normal_density
 from .utils import fill_covars, log_normalize
 
 _CATEGORICALHMM_DOC_SUFFIX = """
@@ -21,6 +23,39 @@ Unlike other HMM classes, `CategoricalHMM` ``X`` arrays have shape
 `sklearn.preprocessing.LabelEncoder` to transform your input to the right
 format.
 """
+
+
+def _loop_platform(machine, maxsize):
+    """Whether the C++ loop computes the full and tied statistic here."""
+    # The loop rounds every product and every sum on its own. numpy.einsum
+    # gives those bytes where numpy's own loop is compiled to do the same;
+    # the tests compare the two on 64-bit x86, so the loop is used there and
+    # numpy.einsum everywhere else.
+    return machine in ("x86_64", "AMD64") and maxsize > 2 ** 32
+
+
+_STATISTIC_LOOP = _loop_platform(platform.machine(), sys.maxsize)
+
+
+def _weighted_outer_sum(posteriors, X):
+    """Sum over the samples of posterior * x * x', one matrix per state."""
+    # posteriors: (nt, nc); obs: (nt, nf); obs: (nt, nf)
+    # -> (nc, nf, nf)
+    # Where the tests compare them, the C++ loop gives the bytes of the
+    # einsum below for plain float64 arrays in C order with one row per
+    # sample. One state with one feature
+    # is left to numpy: with a single output entry it adds the samples in
+    # pieces, another order. numpy's einsum reports no floating-point error
+    # in any error state, and neither does the loop.
+    if (_STATISTIC_LOOP
+            and _read_as_is(posteriors, 2) and _read_as_is(X, 2)
+            and len(posteriors) == len(X)
+            and posteriors.shape[1] * X.shape[1] > 1):
+        stat = _emissionsc.weighted_outer_sum(posteriors, X)
+        # None: an entry is not finite. numpy then gives its own values.
+        if stat is not None:
+            return stat
+    return np.einsum('ij,ik,il->jkl', posteriors, X, X)
 
 
 def _make_wrapper(func):
@@ -250,10 +285,7 @@ class BaseGaussianHMM(_AbstractHMM):
             if self.covariance_type in ('spherical', 'diag'):
                 stats['obs**2'] += posteriors.T @ X**2
             elif self.covariance_type in ('tied', 'full'):
-                # posteriors: (nt, nc); obs: (nt, nf); obs: (nt, nf)
-                # -> (nc, nf, nf)
-                stats['obs*obs.T'] += np.einsum(
-                    'ij,ik,il->jkl', posteriors, X, X)
+                stats['obs*obs.T'] += _weighted_outer_sum(posteriors, X)
 
     def _needs_sufficient_statistics_for_mean(self):
         """
