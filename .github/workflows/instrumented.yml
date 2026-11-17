@@ -66,7 +66,7 @@ jobs:
       run: |
         rm -rf build src/hmm_craft.egg-info
         python -m pip install -v --no-build-isolation --no-deps .
-        ls build/temp.*/ext/_hmmc.gcno
+        ls build/temp.*/ext/_hmmc.gcno build/temp.*/ext/_emissionsc.gcno
         find build -name '*.gcda' -delete
     - name: Suite under coverage.py
       id: suite
@@ -82,7 +82,7 @@ jobs:
     - name: Kernel coverage (ext/), floor in pyproject.toml
       if: ${{ !cancelled() && steps.suite.outcome != 'skipped' }}
       run: |
-        ls build/temp.*/ext/_hmmc.gcda
+        ls build/temp.*/ext/_hmmc.gcda build/temp.*/ext/_emissionsc.gcda
         mkdir -p "$RUNNER_TEMP/coverage-reports/kernel"
         python -I -m gcovr --root . --txt-summary \
           --html-details "$RUNNER_TEMP/coverage-reports/kernel/index.html"
@@ -135,10 +135,12 @@ jobs:
       run: |
         rm -rf build src/hmm_craft.egg-info
         python -m pip install -v --no-build-isolation --no-deps .
-        so=$(ls build/lib.*/hmmcraft/_hmmc.*.so)
-        ldd "$so"
-        ldd "$so" | grep -q libasan
-        ldd "$so" | grep -q libubsan
+        for module in _hmmc _emissionsc; do
+          so=$(ls build/lib.*/hmmcraft/$module.*.so)
+          ldd "$so"
+          ldd "$so" | grep -q libasan
+          ldd "$so" | grep -q libubsan
+        done
     - name: Suite under the sanitizers
       # Python is not built with the sanitizers, so their runtime is preloaded
       # for this command only: libasan first, then libstdc++, which the

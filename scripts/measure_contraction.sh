@@ -186,35 +186,46 @@ build_fork() {
     return "$build_status"
 }
 
-# compile_lines LOG: the compiler commands for the kernel in a build log.
+# compile_lines LOG [SOURCE]: the compiler commands for SOURCE in a build
+# log, by default the kernel, ext/_hmmc.cpp.
 compile_lines() {
-    grep -- ' -c ext/_hmmc.cpp' "$1"
+    grep -- " -c ${2:-ext/_hmmc.cpp}" "$1"
 }
 
-# option_count LOG: "<lines with the option> of <compile lines>".
+# option_count LOG [SOURCE]: "<lines with the option> of <compile lines>".
 option_count() {
-    echo "$(compile_lines "$1" | grep -c -- "$option") of" \
-        "$(compile_lines "$1" | awk 'END {print NR}')"
+    echo "$(compile_lines "$1" "$2" | grep -c -- "$option") of" \
+        "$(compile_lines "$1" "$2" | awk 'END {print NR}')"
 }
 
 # The builds are what their names say: the option on every compile line of
-# REF_OFF, on none of REF and FORK, and at least one compile line each. Only
-# the compile lines of ext/_hmmc.cpp are counted, not those of any other
-# extension module of this package.
+# REF_OFF, on none of REF and FORK, and at least one compile line each. Those
+# counts are of the compile lines of ext/_hmmc.cpp only. FORK's second module,
+# ext/_emissionsc.cpp, is counted apart: its setup.py gives it the option, so
+# every one of its compile lines carries it, and there is at least one.
 options() {
     echo "REF: $(option_count "$out/build_ref.log")"
     echo "REF_OFF: $(option_count "$out/build_ref_off.log")"
     echo "FORK: $(option_count "$out/build_fork.log")"
+    echo "FORK ext/_emissionsc.cpp:" \
+        "$(option_count "$out/build_fork.log" ext/_emissionsc.cpp)"
     for build in ref ref_off fork; do
         echo "-- $build"
         compile_lines "$out/build_$build.log"
     done
+    echo "-- fork ext/_emissionsc.cpp"
+    compile_lines "$out/build_fork.log" ext/_emissionsc.cpp
     for build in ref fork; do
         case "$(option_count "$out/build_$build.log")" in
             "0 of 0" | [1-9]*) return 1 ;;
         esac
     done
     count=$(option_count "$out/build_ref_off.log")
+    if [ "${count%% of *}" = 0 ] \
+        || [ "${count%% of *}" != "${count##* of }" ]; then
+        return 1
+    fi
+    count=$(option_count "$out/build_fork.log" ext/_emissionsc.cpp)
     if [ "${count%% of *}" = 0 ] \
         || [ "${count%% of *}" != "${count##* of }" ]; then
         return 1
@@ -273,9 +284,10 @@ summary() {
     echo "cell $cell on $(uname -sm); $(tr '\n' ' ' < "$out/pins.txt")"
     echo
     echo "$option on the compile lines of ext/_hmmc.cpp, no other file"
-    echo "(expected: every line for REF_OFF, none for REF and FORK); the lines"
-    echo "are in options.log"
-    sed -n '1,3s/^/  /p' "$out/options.log"
+    echo "(expected: every line for REF_OFF, none for REF and FORK), and on"
+    echo "those of FORK's ext/_emissionsc.cpp (expected: every line); the"
+    echo "lines are in options.log"
+    sed -n '1,4s/^/  /p' "$out/options.log"
     echo
     echo "The kernel file of each build, sha256:"
     sed 's/^/  /' "$out/kernels.log"

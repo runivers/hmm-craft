@@ -17,6 +17,7 @@ disagree.
 | `src/hmmcraft/stats.py` | `log_multivariate_normal_density` for the four covariance types |
 | `src/hmmcraft/_utils.py`, `_kl_divergence.py` | private helpers; the KL divergences of the variational lower bound |
 | `ext/_hmmc.cpp` | the C++ kernel, built by `setup.py` with pybind11 as `hmmcraft._hmmc` |
+| `ext/_emissionsc.cpp` | emission loops in C++, built by `setup.py` with pybind11 as `hmmcraft._emissionsc` |
 | `src/hmmcraft/tests/` | the suite, installed with the package |
 | `scripts/` | the bit-equality check and the CI helpers; not installed |
 
@@ -168,8 +169,9 @@ than one sample.
 `ext/_hmmc.cpp` holds the recursions that loop over every sample and every
 pair of states. It knows nothing about emissions: it receives the emission
 probabilities (or log-probabilities) of one sequence as a matrix of shape
-`(n_samples, n_components)`, already computed in Python. Every argument is a
-float64 array.
+`(n_samples, n_components)`, already computed by the emission code (in numpy,
+or for some inputs by the emission loops below). Every argument is a float64
+array.
 
 | Function | Takes | Returns |
 |---|---|---|
@@ -189,6 +191,40 @@ samples) or no columns (a model without states): the recursions use unchecked
 accessors, and hmmlearn 0.3.3's kernel indexed outside its arrays there. Each
 function releases the GIL while it loops. The kernel's source is hmmlearn
 0.3.3's apart from that check and the module's package name.
+
+## The emission loops
+
+`ext/_emissionsc.cpp` is a second extension module. It holds loops that stand
+for numpy expressions of the emission code; the Python caller uses a loop only
+for the arrays on which the tests compare it with its expression as bytes, and
+keeps numpy for the rest. `setup.py` passes the compiler `-ffp-contract=off`
+for this module on every platform but Windows, where MSVC does not take the
+option: a product and the sum it feeds are rounded one after the other and are
+not fused into one instruction. `hmmcraft._hmmc` is built without the option.
+
+| Function | Takes | Returns |
+|---|---|---|
+| `log_density_diag` | samples, means, variances per state and feature, and per state the term of the log-density that does not depend on the sample | the log-density of each sample in each state, or `None` when one of them is not finite |
+
+`log_density_diag` is the loop behind `stats.log_multivariate_normal_density`
+for `diag` and `spherical`. hmmlearn 0.3.3 computes that density as one numpy
+expression with three temporaries of shape
+`(n_samples, n_components, n_features)`. The loop makes, for each sample and
+state, the same subtraction, square and division, adds the features in the
+order numpy adds a contiguous row (in order below 8 terms, in eight running
+sums up to 128, by halves above), adds the term Python computed with numpy's
+`log`, and multiplies by -0.5. No product in it is added to anything, so its
+result does not depend on the option above. `stats.py` calls it only when `X`,
+the means and the variances are `numpy.ndarray` itself (no subclass), float64
+in native byte order, C-contiguous and aligned, of matching shapes with no
+empty dimension; when the number of features is at most `numpy.getbufsize()`
+(numpy can add a longer row in pieces); and when `numpy.geterr()["under"]` is
+`"ignore"` (the loop reports no underflow). The function takes its arrays as
+they are, raises `ValueError` for one it would have to convert, and releases
+the GIL while it loops. For every other input, and when the loop returns
+`None`, Python evaluates the numpy expression, so those values, warnings and
+errors are numpy's. `tests/test_stats.py`, installed with the package,
+compares the two paths as bytes on seeded random data.
 
 ## What the package promises
 
