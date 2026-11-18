@@ -1289,7 +1289,12 @@ def test_infinite_beta_posterior_is_not_refused_by_fit(value):
     h, X = _hand_built("VariationalGaussianHMM")
     h.beta_posterior_ = np.array([value, 10.0])
     h.n_iter = 3
-    with np.errstate(invalid="ignore"):
+    # The first bound takes the log-determinant of a NaN matrix. LAPACK's
+    # sign for it depends on the platform: where it is negative,
+    # ``_utils.logdet`` warns as well as returning NaN.
+    with np.errstate(invalid="ignore"), warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore", "invalid value encountered in log", RuntimeWarning)
         h.fit(X)
     assert np.isnan(h.monitor_.history[0])
     assert np.isfinite(list(h.monitor_.history)[1:]).all()
