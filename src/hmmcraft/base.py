@@ -1313,7 +1313,6 @@ class _AbstractHMM(BaseEstimator):
         computes by blocks, computed once before the first block from the
         parameters alone, or None. The default holds nothing.
         """
-        return None
 
     def _estep_sequence(self, compute, stats, occupancy, fallen, index,
                         sub_X, values):

@@ -337,7 +337,7 @@ def test_factors_are_held_only_for_plain_covariances_that_factor(
     """``_covar_factors`` gives one pair per state for plain C-ordered
     float64 covariances that factor, with or without ``min_covar``, and
     None for the others; it warns, raises and reports nothing."""
-    X, means, covars, held = _factor_inputs(name, covariance_type)
+    _X, means, covars, held = _factor_inputs(name, covariance_type)
     handled = []
     with (warnings.catch_warnings(record=True) as caught,
           np.errstate(call=lambda kind, flag: handled.append(kind),
