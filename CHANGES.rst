@@ -24,6 +24,8 @@ Unreleased
   now gives the one-thread result; see DIFFERENCES.md. Requires ``threadpoolctl`` 3.5.0 or newer.
 - Changed: ``fit`` computes each E-step for blocks of sequences, not one sequence at a time; a
   subclass replacing an E-step method keeps the old loop; same results in DIFFERENCES.md's check.
+- Changed: ``GaussianHMM.fit`` with ``full`` or ``tied`` covariances factors each covariance once
+  per E-step, not once per sequence; same results in DIFFERENCES.md's check.
 - Documented: the shapes ``GMMHMM`` accepts for its priors, per covariance type; when
   ``ConvergenceMonitor.converged`` is true.
 

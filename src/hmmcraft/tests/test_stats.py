@@ -4,6 +4,7 @@ import warnings
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose
+from scipy import linalg
 from scipy.stats import multivariate_normal
 
 from hmmcraft import _emissionsc, stats
@@ -12,10 +13,10 @@ from hmmcraft.hmm import GMMHMM, GaussianHMM
 N_COMPONENTS = 3
 
 
-def _make_inputs(covariance_type, n_features):
+def _make_inputs(covariance_type, n_features, n_samples=10):
     """Seeded samples, means and SPD covariances of the requested shape."""
     rs = np.random.RandomState(0)
-    X = rs.standard_normal((10, n_features))
+    X = rs.standard_normal((n_samples, n_features))
     means = rs.standard_normal((N_COMPONENTS, n_features))
     n_covars = 1 if covariance_type == "tied" else N_COMPONENTS
     a = rs.standard_normal((n_covars, n_features, n_features))
@@ -86,6 +87,314 @@ def test_full_and_tied_log_density_match_scipy(covariance_type, n_features):
         for mu, cv in zip(means, covars)])
     assert got.shape == (len(X), N_COMPONENTS)
     assert_allclose(got, expected, rtol=1e-12)
+
+
+# The full and tied log-densities with factors held for several calls.
+
+
+def _tied_as_written(X, means, covars):
+    """Compute Gaussian log-density at X for a tied model."""
+    nc, nf = means.shape
+    cv = np.broadcast_to(covars, (nc, nf, nf))
+    return _full_as_written(X, means, cv)
+
+
+def _full_as_written(X, means, covars, min_covar=1.e-7):
+    """The full log-density as the package wrote it before it could hold
+    factors; with ``_tied_as_written``, the reference the held factors must
+    reproduce as bytes, with their warnings and errors. It is not edited
+    with the package; it calls ``linalg`` through the module, so a test that
+    replaces ``linalg.cholesky`` replaces it here too."""
+    _, nf = means.shape
+    log_prob = []
+    for c, (mu, cv) in enumerate(zip(means, covars)):
+        try:
+            cv_chol = linalg.cholesky(cv, lower=True)
+        except linalg.LinAlgError:
+            # The model is most probably stuck in a component with too
+            # few observations, we need to reinitialize this components
+            try:
+                cv_chol = linalg.cholesky(cv + min_covar * np.eye(nf),
+                                          lower=True)
+            except linalg.LinAlgError:
+                raise ValueError("'covars' must be symmetric, "
+                                 "positive-definite")
+
+        # In place on a copy: numpy < 2.0.2 with AVX-512 picks its log loop by
+        # where the output lies near the input, unless the two coincide.
+        cv_diag = np.diagonal(cv_chol).copy()
+        cv_log_det = 2 * np.sum(np.log(cv_diag, out=cv_diag))
+        cv_sol = linalg.solve_triangular(cv_chol, (X - mu).T, lower=True).T
+        log_prob.append(-.5 * (nf * np.log(2 * np.pi)
+                               + (cv_sol ** 2).sum(axis=1)
+                               + cv_log_det))
+
+    return np.transpose(log_prob)
+
+
+_AS_WRITTEN = {"full": _full_as_written, "tied": _tied_as_written}
+_HELD = {"full": stats._log_multivariate_normal_density_full,
+         "tied": stats._log_multivariate_normal_density_tied}
+
+
+def _with_held_factors(covariance_type):
+    """The density as a block of the E-step computes it: the factors are
+    computed once (``_covar_factors``), then given to the density."""
+
+    def density(X, means, covars):
+        factors = stats._covar_factors(means, covars, covariance_type)
+        return _HELD[covariance_type](X, means, covars, factors=factors)
+
+    return density
+
+
+FACTOR_LAYOUTS = ["as scipy gives it", "C order", "F order"]
+
+
+def _factor_layout(monkeypatch, layout):
+    """Make ``linalg.cholesky`` return its factor in ``layout``."""
+    if layout == "as scipy gives it":
+        return
+    order = {"C order": np.ascontiguousarray,
+             "F order": np.asfortranarray}[layout]
+    real = linalg.cholesky
+
+    def cholesky(*args, **kwargs):
+        return order(real(*args, **kwargs))
+
+    monkeypatch.setattr(linalg, "cholesky", cholesky)
+
+
+# numpy's default error state; this test package sets every report to "warn".
+_DEFAULT_STATE = {"divide": "warn", "over": "warn", "under": "ignore",
+                  "invalid": "warn"}
+FACTOR_STATES = [_DEFAULT_STATE, {"all": "warn"}, {"all": "raise"},
+                 {"all": "ignore"}, {"all": "call"}]
+FACTOR_STATE_IDS = ["default", "all=warn", "all=raise", "all=ignore",
+                    "all=call"]
+
+
+def _spd(n_samples, n_features, scale=1.0):
+    """Seeded SPD inputs; X times ``scale``."""
+    def build(t):
+        X, means, covars = _make_inputs(t, n_features, n_samples)
+        return X * scale, means, covars
+    return build
+
+
+def _covar(value):
+    """State 1's covariance (tied: the covariance) set to ``value``."""
+    def change(t):
+        X, means, covars = _make_inputs(t, 2)
+        covars = covars.copy()
+        if t == "tied":
+            covars[...] = value
+        else:
+            covars[1] = value
+        return X, means, covars
+    return change
+
+
+def _x_row(value, mean=None):
+    """Row 3 of X set to ``value``, and the means to ``mean`` if given."""
+    def change(t):
+        X, means, covars = _make_inputs(t, 2)
+        X = X.copy()
+        X[3] = value
+        if mean is not None:
+            means = np.full_like(means, mean)
+        return X, means, covars
+    return change
+
+
+def _residual_1e_200(t):
+    X, means, covars = _make_inputs(t, 2)
+    return X * 1e-200, means * 1e-200, covars
+
+
+def _reports_then_raises(t):
+    """State 0's arithmetic reports an overflow; state 1 cannot be
+    factored."""
+    X, means, covars = _covar([[1.0, 2.0], [2.0, 1.0]])(t)
+    X[3] = 1e200
+    return X, means, covars
+
+
+def _screened(change):
+    def build(t):
+        X, means, covars = _make_inputs(t, 2)
+        return change(t, X, means, covars)
+    return build
+
+
+def _one_state_fewer(t, X, means, covars):
+    return X, means, covars[:-1]
+
+
+def _tied_as_3d(t, X, means, covars):
+    return X, means, covars[None]
+
+
+def _integer_means(t, X, means, covars):
+    return X, np.rint(3 * means).astype(np.int64), covars
+
+
+def _non_contiguous(t, X, means, covars):
+    return X, means, np.repeat(covars, 2, axis=-1)[..., ::2]
+
+
+# name: (inputs for a covariance type, whether factors are held,
+#        the covariance types it applies to)
+FACTOR_CASES = {
+    "1 row, 1 feature": (_spd(1, 1), True, ("full", "tied")),
+    "10 rows, 3 features": (_spd(10, 3), True, ("full", "tied")),
+    "1 row, 8 features": (_spd(1, 8), True, ("full", "tied")),
+    "300 rows, 8 features": (_spd(300, 8), True, ("full", "tied")),
+    # One row far from the means: the sum of squares is most of the value,
+    # so the last bits of the solve, which differ between the two memory
+    # orders of one factor for a one-row sequence, reach the result.
+    "1 row, 8 features, X times 20": (_spd(1, 8, 20), True, ("full", "tied")),
+    "1 row, 8 features, X times 30": (_spd(1, 8, 30), True, ("full", "tied")),
+    "1 row, 8 features, X times 50": (_spd(1, 8, 50), True, ("full", "tied")),
+    "covariance of ones": (_covar(1.0), True, ("full", "tied")),
+    "covariance of zeros": (_covar(0.0), True, ("full", "tied")),
+    "not positive definite": (
+        _covar([[1.0, 2.0], [2.0, 1.0]]), False, ("full", "tied")),
+    "NaN covariance": (_covar(np.nan), False, ("full", "tied")),
+    "inf covariance": (_covar(np.inf), False, ("full", "tied")),
+    "inf row in X": (_x_row(np.inf), True, ("full", "tied")),
+    "NaN row in X": (_x_row(np.nan), True, ("full", "tied")),
+    "1e308 against -1e308": (_x_row(1e308, -1e308), True, ("full", "tied")),
+    "row of 1e200": (_x_row(1e200), True, ("full", "tied")),
+    "residual of 1e-200": (_residual_1e_200, True, ("full", "tied")),
+    "state 0 reports, state 1 raises": (
+        _reports_then_raises, False, ("full",)),
+    "F-ordered covars": (
+        _screened(lambda t, X, m, c: (X, m, np.asfortranarray(c))), False,
+        ("full", "tied")),
+    "non-contiguous covars": (
+        _screened(_non_contiguous), False, ("full", "tied")),
+    "float32 covars": (
+        _screened(lambda t, X, m, c: (X, m, c.astype(np.float32))), False,
+        ("full", "tied")),
+    "longdouble covars": (
+        _screened(lambda t, X, m, c: (X, m, c.astype(np.longdouble))),
+        False, ("full", "tied")),
+    "integer covars": (
+        _screened(lambda t, X, m, c: (X, m, np.rint(c).astype(np.int64))),
+        False, ("full", "tied")),
+    "one state fewer than the means": (
+        _screened(_one_state_fewer), False, ("full",)),
+    "tied covariance of shape (1, nf, nf)": (
+        _screened(_tied_as_3d), False, ("tied",)),
+    "integer means": (_screened(_integer_means), True, ("full", "tied")),
+}
+FACTOR_CASE_ROWS = [(name, t) for name, (_, _, types) in FACTOR_CASES.items()
+                    for t in types]
+FACTOR_CASE_IDS = [f"{t}-{name}" for name, t in FACTOR_CASE_ROWS]
+
+
+def _factor_inputs(name, covariance_type):
+    build, held, _ = FACTOR_CASES[name]
+    with np.errstate(all="ignore"):
+        X, means, covars = build(covariance_type)
+    return X, means, covars, held
+
+
+def _outcome_in_state(state, function, *args):
+    """``_outcome`` under the numpy error ``state``, and the error handler's
+    calls."""
+    handled = []
+    with np.errstate(call=lambda kind, flag: handled.append(kind), **state):
+        outcome = _outcome(function, *args)
+    return outcome, handled
+
+
+@pytest.mark.parametrize("state", FACTOR_STATES, ids=FACTOR_STATE_IDS)
+@pytest.mark.parametrize("layout", FACTOR_LAYOUTS)
+@pytest.mark.parametrize("name, covariance_type", FACTOR_CASE_ROWS,
+                         ids=FACTOR_CASE_IDS)
+def test_densities_with_held_factors_equal_the_lines_as_written(
+        monkeypatch, name, covariance_type, layout, state):
+    """The full and tied log-densities, given the factors ``_covar_factors``
+    holds, give the values, the error and its text, the warnings and the
+    error handler's calls of the lines they replace, in every error state
+    and whatever the memory order of the factor scipy returns."""
+    _factor_layout(monkeypatch, layout)
+    X, means, covars, _ = _factor_inputs(name, covariance_type)
+    got = _outcome_in_state(state, _with_held_factors(covariance_type),
+                            X, means, covars)
+    want = _outcome_in_state(state, _AS_WRITTEN[covariance_type],
+                             X, means, covars)
+    assert got == want
+
+
+@pytest.mark.parametrize("state", FACTOR_STATES, ids=FACTOR_STATE_IDS)
+@pytest.mark.parametrize("name, covariance_type", FACTOR_CASE_ROWS,
+                         ids=FACTOR_CASE_IDS)
+def test_factors_are_held_only_for_plain_covariances_that_factor(
+        name, covariance_type, state):
+    """``_covar_factors`` gives one pair per state for plain C-ordered
+    float64 covariances that factor, with or without ``min_covar``, and
+    None for the others; it warns, raises and reports nothing."""
+    _X, means, covars, held = _factor_inputs(name, covariance_type)
+    handled = []
+    with (warnings.catch_warnings(record=True) as caught,
+          np.errstate(call=lambda kind, flag: handled.append(kind),
+                      **state)):
+        warnings.simplefilter("always")
+        factors = stats._covar_factors(means, covars, covariance_type)
+    assert caught == [] and handled == []
+    if held:
+        assert isinstance(factors, list) and len(factors) == len(means)
+    else:
+        assert factors is None
+
+
+def _factor_calls(monkeypatch):
+    """Record the factors ``linalg.cholesky`` returns, with their bytes, and
+    the factor each ``linalg.solve_triangular`` call is given."""
+    returned, solved = [], []
+    real_cholesky = linalg.cholesky
+    real_solve = linalg.solve_triangular
+
+    def cholesky(*args, **kwargs):
+        factor = real_cholesky(*args, **kwargs)
+        returned.append((factor, factor.tobytes()))
+        return factor
+
+    def solve_triangular(a, *args, **kwargs):
+        solved.append(a)
+        return real_solve(a, *args, **kwargs)
+
+    monkeypatch.setattr(linalg, "cholesky", cholesky)
+    monkeypatch.setattr(linalg, "solve_triangular", solve_triangular)
+    return returned, solved
+
+
+@pytest.mark.parametrize("layout", FACTOR_LAYOUTS)
+@pytest.mark.parametrize("n_features", [1, 3, 8])
+@pytest.mark.parametrize("covariance_type", ["full", "tied"])
+def test_a_held_factor_is_the_array_cholesky_returned(
+        monkeypatch, covariance_type, n_features, layout):
+    """Each solve with held factors is given the very array
+    ``linalg.cholesky`` returned for its state (tied: the one array), whose
+    memory order picks ``solve_triangular``'s LAPACK call, and the solves
+    leave its bytes unchanged."""
+    _factor_layout(monkeypatch, layout)
+    returned, solved = _factor_calls(monkeypatch)
+    X, means, covars = _make_inputs(covariance_type, n_features)
+    factors = stats._covar_factors(means, covars, covariance_type)
+    n_factored = 1 if covariance_type == "tied" else N_COMPONENTS
+    assert len(returned) == n_factored
+    for _ in range(2):
+        _HELD[covariance_type](X, means, covars, factors=factors)
+    assert len(returned) == n_factored
+    expected = [returned[0 if covariance_type == "tied" else c][0]
+                for c in range(N_COMPONENTS)] * 2
+    assert len(solved) == len(expected)
+    assert all(a is b for a, b in zip(solved, expected))
+    assert all(factor.tobytes() == before for factor, before in returned)
 
 
 # The diag and spherical log-densities: a C++ loop for the arrays it is proven

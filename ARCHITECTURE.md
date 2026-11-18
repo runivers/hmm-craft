@@ -177,6 +177,24 @@ mixture posteriors as ones, the value hmmlearn 0.3.3 computes there. In
 every other case, and outside `fit`, the statistics compute them again and
 prediction sets nothing.
 
+`GaussianHMM` with `full` or `tied` covariances factors each covariance once
+per E-step computed by blocks. Before the first block, `_do_estep` calls
+`_compute_estep_factors` and keeps what it returns in the private attribute
+`_estep_factors`; it drops them after the last sequence's statistics, or
+when a hook raises. For `GaussianHMM` that is the covariance array and, per state, the
+Cholesky factor and the log-determinant the `full` and `tied` log-densities
+compute from the covariance alone (`tied`: one factor for every state);
+every other class returns `None`. `_compute_log_likelihood` gives them to
+the density while `_covars_` is still that array, so each sequence's call
+makes its triangular solves with the array `scipy.linalg.cholesky`
+returned, and `scipy.linalg.solve_triangular` takes the same LAPACK path as
+without them. Nothing is kept, and every call factors as in hmmlearn 0.3.3,
+when the covariances are not a C-ordered float64 `numpy.ndarray` of the
+shape the means imply, or one of them cannot be factored: the density then
+raises where it raised before. The sequence-by-sequence E-step and the
+predictions factor at each call. `tests/test_stats.py` compares the density
+with and without kept factors as bytes, with its warnings and errors.
+
 It also sums the posteriors into `state_occupancy_`, the expected number of
 samples in each state. `BaseHMM` returns the summed log-likelihood as the
 lower bound; `VariationalBaseHMM` subtracts the KL divergences of its

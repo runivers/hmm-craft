@@ -13,6 +13,7 @@ from threadpoolctl import threadpool_limits
 
 from . import _emissions, _utils
 from .base import _ABSENT, BaseHMM, _block_estep, _ConvertedAttribute
+from .stats import _covar_factors
 from .utils import normalize
 
 __all__ = [
@@ -434,6 +435,16 @@ class GaussianHMM(_emissions.BaseGaussianHMM, BaseHMM):
         # A model pickled before covars_floor existed has no such entry.
         state.setdefault("covars_floor", None)
         super().__setstate__(state)
+
+    def _compute_estep_factors(self):
+        # The covariance array and, per state, the factor and
+        # log-determinant the full and tied densities compute from it
+        # alone; None for the other types and the inputs it is not proven
+        # for (stats._covar_factors).
+        covars = getattr(self, "_covars_", None)
+        factors = _covar_factors(
+            getattr(self, "means_", None), covars, self.covariance_type)
+        return None if factors is None else (covars, factors)
 
     def _init(self, X, lengths=None):
         super()._init(X, lengths)
