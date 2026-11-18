@@ -7,7 +7,7 @@ scikit-learn and threadpoolctl versions:
 
     python -I scripts/bit_equality.py dump --package hmmlearn --out REF
     python -I scripts/bit_equality.py dump --package hmmcraft --out FORK \
-        [--load-pickles REF]
+        [--load-pickles REF] [--n-threads N]
     python -I scripts/bit_equality.py compare REF FORK [--allow E1,E2]
 
 ``dump`` fits a fixed list of models on synthetic data (a seeded generator,
@@ -22,6 +22,12 @@ checks the two dumps byte for byte. A difference is accepted only where the
 table ``EXCEPTIONS`` names it, only if listed by ``--allow``, and only if it
 has exactly the shape that entry describes. Exit status of ``compare``: 0
 equal, 1 a difference, 2 the two dumps cannot be compared.
+
+``--n-threads N`` fits this package's models with ``n_threads=N`` (default
+1, the value the comparison with hmmlearn uses; hmmlearn has no such
+parameter). A dump at another count is compared file by file with the
+one-thread dump made in the same environment (``diff -r`` of ``cases/``):
+dumps are reproducible byte for byte, and ``n_threads`` changes no fit.
 
 Only numpy, threadpoolctl and the package under test are used, so the script
 runs under ``python -I`` in either environment.
@@ -75,7 +81,7 @@ EXCEPTIONS = {
     "E5": ("hmmlearn pull request 584",
            "normalize(axis=0) of a zero-sum slice is 0, not NaN"),
     "E6": ("fork additions",
-           "state_occupancy_ and the covars_floor parameter"),
+           "state_occupancy_ and the covars_floor and n_threads parameters"),
     "E7": (
         "hmm-craft issue 40",
         (
@@ -94,7 +100,7 @@ UNDERFLOW_ERROR = [
 ]
 
 FORK_ONLY_ARRAYS = ("state_occupancy_",)
-FORK_ONLY_PARAMS = {"covars_floor": None}
+FORK_ONLY_PARAMS = {"covars_floor": None, "n_threads": 1}
 
 
 # ---------------------------------------------------------------------------
@@ -430,13 +436,21 @@ def _mixture_covars(covs, covariance_type, n_mix):
     return np.repeat(_spherical_variances(covs)[:, None], n_mix, axis=1)
 
 
-def build_model(modules, case, data):
-    """Return the unfitted model of ``case``."""
-    cls = getattr(modules[_CLASSES[case["cls"]][0]], case["cls"])
-    name, fixed = case["cls"], case["start"] == "fixed"
+def _threaded(case, n_threads):
+    """``case`` with ``n_threads`` recorded, or ``case`` itself at 1."""
+    return case if n_threads == 1 else dict(case, n_threads=n_threads)
+
+
+def _model_keywords(case):
+    """
+    Return the constructor keywords of ``case``. ``n_threads`` is among them
+    only when the case records a count other than 1, so that hmmlearn's
+    constructors never receive it.
+    """
+    name = case["cls"]
     kw = {"n_components": N_COMPONENTS, "n_iter": N_ITER,
               "implementation": case["impl"], "random_state": MODEL_SEED}
-    if fixed:
+    if case["start"] == "fixed":
         kw["init_params"] = ""
     if case["cov"]:
         kw["covariance_type"] = case["cov"]
@@ -448,8 +462,16 @@ def build_model(modules, case, data):
         kw["n_mix"] = 2
     if name == "MultinomialHMM":
         kw["n_trials"] = N_TRIALS
-    model = cls(**kw)
-    if fixed:
+    if case.get("n_threads", 1) != 1:
+        kw["n_threads"] = case["n_threads"]
+    return kw
+
+
+def build_model(modules, case, data):
+    """Return the unfitted model of ``case``."""
+    cls = getattr(modules[_CLASSES[case["cls"]][0]], case["cls"])
+    model = cls(**_model_keywords(case))
+    if case["start"] == "fixed":
         _set_fixed_start(model, case, data["truth"])
     return model
 
@@ -883,8 +905,11 @@ def _environment(package, modules):
             key=lambda lib: (lib["filepath"], lib["internal_api"]))}
 
 
-def dump(package, out, load_pickles=None):
-    """Fit every case with ``package`` and write the dump to ``out``."""
+def dump(package, out, load_pickles=None, n_threads=1):
+    """
+    Fit every case with ``package``, its models on ``n_threads`` threads,
+    and write the dump to ``out``.
+    """
     _require_one_thread()
     import threadpoolctl
 
@@ -900,7 +925,8 @@ def dump(package, out, load_pickles=None):
         pickle_dir = out / "pickles"
         pickle_dir.mkdir(parents=True, exist_ok=True)
     results = []
-    fits = list(enumerate(build_cases()))
+    fits = [(index, _threaded(case, n_threads))
+            for index, case in enumerate(build_cases())]
     with threadpoolctl.threadpool_limits(limits=1):
         environment = _environment(package, modules)
         for index, case in fits:
@@ -915,6 +941,7 @@ def dump(package, out, load_pickles=None):
         # Last, so the cases above keep their file numbers.
         data.update(make_underflow_data(data))
         for case in build_underflow_cases():
+            case = _threaded(case, n_threads)
             family = data[case["data"]]
             lengths = family["lengths"].tolist()
             if case["step"] == "predict":
@@ -1477,13 +1504,19 @@ def main(argv=None):
     p.add_argument("--package", choices=sorted(DISTRIBUTIONS), required=True)
     p.add_argument("--out", required=True)
     p.add_argument("--load-pickles", metavar="REFDIR")
+    p.add_argument("--n-threads", type=int, default=1, metavar="N")
     p = sub.add_parser("compare")
     p.add_argument("ref")
     p.add_argument("fork")
     p.add_argument("--allow", default="")
     args = parser.parse_args(argv)
     if args.command == "dump":
-        return dump(args.package, args.out, args.load_pickles)
+        if args.n_threads < 1:
+            parser.error("--n-threads must be at least 1")
+        if args.package == "hmmlearn" and args.n_threads != 1:
+            parser.error("hmmlearn has no n_threads: --n-threads must be 1")
+        return dump(args.package, args.out, args.load_pickles,
+                    args.n_threads)
     allow = [a for a in args.allow.split(",") if a]
     unknown = [a for a in allow if a not in EXCEPTIONS]
     if unknown:

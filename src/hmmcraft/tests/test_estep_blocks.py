@@ -281,14 +281,14 @@ def _estep(model, X, lengths, state):
 @pytest.fixture
 def kernel_calls(monkeypatch):
     """Record each call of the kernel's pass functions: (name, the block
-    functions' last argument or None)."""
+    functions' ``with_xi_sum`` or None)."""
     calls = []
     for name in KERNEL:
         real = getattr(_hmmc, name)
 
         def counting(*args, _real=real, _name=name):
-            last = args[-1] if _name.startswith("estep") else None
-            calls.append((_name, last))
+            with_xi_sum = args[4] if _name.startswith("estep") else None
+            calls.append((_name, with_xi_sum))
             return _real(*args)
 
         monkeypatch.setattr(_hmmc, name, counting)
@@ -1359,9 +1359,10 @@ def test_a_flag_without_an_underflow_is_computed_per_sequence(
     expected = _fitted(factory(2, "scaling"), X)
     real = _hmmc.estep_scaling
 
-    def flagging(startprob, transmat, lattice, lengths, with_xi_sum):
+    def flagging(startprob, transmat, lattice, lengths, with_xi_sum,
+                 n_threads):
         log_prob, fwd, bwd, xi, underflow = real(
-            startprob, transmat, lattice, lengths, with_xi_sum
+            startprob, transmat, lattice, lengths, with_xi_sum, n_threads
         )
         if len(lengths) > 1:
             a, b = lengths[0], lengths[0] + lengths[1]

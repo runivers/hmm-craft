@@ -106,15 +106,22 @@ is hmmlearn 0.3.3's loop.
 By blocks. Consecutive sequences form a block of at most
 `_ESTEP_BLOCK_ROWS` rows (4096) and at most
 `max(1, _ESTEP_BLOCK_ROWS // n_components)` sequences; a longer sequence is
-a block alone. For a block, `_do_estep` first computes steps 1 and 2 for all
+a block alone. Above one thread (`n_threads`), a block first takes
+`n_threads` sequences whatever their rows, then goes on within the same
+bounds, so that sequences longer than the bound are computed together. For a
+block, `_do_estep` first computes steps 1 and 2 for all
 its sequences: the emission matrix of the stacked rows, one call of the
 kernel's `estep_log` or `estep_scaling`, and the posteriors of all rows by
 one call of `_compute_posteriors_log` or `_compute_posteriors_scaling`.
 Then, sequence after sequence in `lengths` order, it adds that sequence's
 posteriors to `state_occupancy_` and calls `_accumulate_sufficient_statistics`
 with that sequence's rows of each matrix. Every statistic is therefore
-summed per sequence, in the loop's order, and the transition counts are
-still computed per sequence.
+summed per sequence, in the loop's order. The transition counts are
+computed per sequence too: by the per-sequence kernel functions at one
+thread, and above one thread by the block call, one matrix per sequence,
+which the statistics hook reads from the private attribute `_estep_xi_sum`
+that `_do_estep` sets for that sequence's call and removes after it. A
+sequence that falls back to the log functions computes its own.
 
 The emission matrix of a block comes from one call of the emission hook
 where a row's values do not depend on the other rows of the call
@@ -207,7 +214,7 @@ A model class supplies these hooks; the loop never changes per class:
 |---|---|
 | `_init` | sets the starting parameters named in `init_params`, and any that is not yet set (k-means for Gaussian means, for instance, run on one thread) |
 | `_check` | validates shapes (`GaussianHMM`'s `means_` among them), reading the model and writing nothing; in the five expectation-maximization models, also that probabilities sum to one with no negative entry and that emission parameters are finite; in the variational models only what both `fit` and a prediction read (`VariationalGaussianHMM`: no NaN in `means_posterior_`). `VariationalGaussianHMM` does not test the shapes of its start and transition priors and posteriors, as its check never did |
-| `_store_checked` | called by `fit` alone, after `_check`: stores what the checked parameters imply (`GaussianHMM`: `n_features` from `means_`); the variational models test there the values only `fit` reads, every prior and posterior finite (`beta_posterior_`: no NaN); the base class stores and tests nothing |
+| `_store_checked` | called by `fit` alone, after `_check`: stores what the checked parameters imply (`GaussianHMM`: `n_features` from `means_`); the variational models test there the values only `fit` reads, every prior and posterior finite (`beta_posterior_`: no NaN); the base class tests `n_threads` and stores nothing |
 | `_check_for_prediction` | called by `score`/`score_samples`, `decode` and `sample` after `_check`, never by `fit`: the variational models test there the values only a prediction reads, `startprob_`, `transmat_` and `emissionprob_` finite and non-negative, `covars_` without NaN; the base class tests nothing |
 | `_check_X` | checks `X` against the model after `_check`, reading only: its number of columns, or for the categorical models that each symbol is a whole number from 0 to `n_features - 1` and that `X` is not boolean; then, for the multinomial and Poisson models, that each count is a non-negative whole number. The base class checks nothing, so a model that brings its own likelihood takes `X` as it is |
 | `_compute_likelihood` / `_compute_log_likelihood` | at least one implemented; the base class derives a missing one from the other |
@@ -272,8 +279,9 @@ probabilities (or log-probabilities) of one sequence as a matrix of shape
 `(n_samples, n_components)` (the two block functions below take the matrices
 of several sequences stacked), already computed by the emission code (in
 numpy, or for some inputs by the emission loops below). Every argument is a
-float64 array, apart from the block functions' lengths (integers) and their
-choice of transition counts (a boolean).
+float64 array, apart from the block functions' lengths (integers), their
+choice of transition counts (a boolean) and their number of threads (an
+integer).
 
 | Function | Takes | Returns |
 |---|---|---|
@@ -284,7 +292,7 @@ choice of transition counts (a boolean).
 | `compute_log_xi_sum` | forward lattice, transition matrix, backward lattice, emission log-probabilities | the expected transition counts, in log space |
 | `compute_scaling_xi_sum` | forward lattice, transition matrix, backward lattice, emission probabilities | the expected transition counts |
 | `viterbi` | start probabilities, transition matrix, emission log-probabilities | the log-probability of the best path and the path |
-| `estep_log` | start probabilities, transition matrix, the emission log-probabilities of several sequences stacked in one matrix, the number of rows of each sequence, whether the transition counts are wanted | for each sequence what `forward_log`, `backward_log` and `compute_log_xi_sum` return: the log-likelihoods, the stacked forward and backward lattices, and one matrix of expected transition counts per sequence, in log space |
+| `estep_log` | start probabilities, transition matrix, the emission log-probabilities of several sequences stacked in one matrix, the number of rows of each sequence, whether the transition counts are wanted, the number of threads (default 1) | for each sequence what `forward_log`, `backward_log` and `compute_log_xi_sum` return: the log-likelihoods, the stacked forward and backward lattices, and one matrix of expected transition counts per sequence, in log space |
 | `estep_scaling` | the same, with emission probabilities | the same from the three scaling functions, and one flag per sequence |
 
 `forward_scaling` raises `ValueError` when the probabilities of a sample sum
@@ -295,17 +303,30 @@ samples) or no columns (a model without states): the recursions use unchecked
 accessors, and hmmlearn 0.3.3's kernel indexed outside its arrays there. Each
 function releases the GIL while it loops.
 
-`estep_log` and `estep_scaling` run the three recursions for the sequences of
-a block one after the other, with the statements of the per-sequence
-functions; they take the logarithm of the start probabilities and of the
-transition matrix once per call and release the GIL once for the whole block.
-Where `forward_scaling` raises for a sequence, `estep_scaling` raises nothing:
-it sets that sequence's flag, fills its results with NaN and goes on. The
-lengths count rows of the stacked matrix. `_do_estep` calls them, without
-the transition counts, for the models it computes by blocks.
+`estep_log` and `estep_scaling` run the three recursions for each sequence of
+a block with the statements of the per-sequence functions; they take the
+logarithm of the start probabilities and of the transition matrix once per
+call and release the GIL once for the whole block. At one thread they
+compute the sequences one after the other on the calling thread and start no
+thread. Above one thread (at most one per sequence) the calling thread
+starts the others (`std::thread`) and works too; each thread takes the next
+sequence not yet taken (an atomic counter) and computes it whole, in its own
+scratch, into that sequence's rows and entries, so the results do not depend
+on which thread computed what. The threads start in the calling thread's
+floating-point environment; the exception flags they raise are raised on the
+calling thread after they are joined, and an exception thrown in one is
+rethrown there. When the system refuses a thread, the threads that started
+and the calling thread compute every sequence. A count below 1 raises
+`ValueError`. Where `forward_scaling` raises for a sequence, `estep_scaling`
+raises nothing: it sets that sequence's flag, fills its results with NaN and
+goes on. The lengths count rows of the stacked matrix. `_do_estep` calls
+them for the models it computes by blocks, with `n_threads` clamped to the
+block's sequences, and asks for the transition counts above one thread
+when `params` contains `"t"`.
 `tests/test_hmmc.py` compares them with the per-sequence functions as
-bytes, and `tests/test_estep_blocks.py` compares fits computed by blocks
-with fits computed sequence by sequence.
+bytes, `tests/test_estep_blocks.py` compares fits computed by blocks
+with fits computed sequence by sequence, and `tests/test_kernel_threads.py`
+compares the block functions and fits on several threads with one thread.
 
 The kernel's source is hmmlearn 0.3.3's apart from that check, the module's
 package name and the two block functions.

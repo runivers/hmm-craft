@@ -86,7 +86,7 @@ class VariationalCategoricalHMM(BaseCategoricalHMM, VariationalBaseHMM):
                  algorithm="viterbi", random_state=None,
                  n_iter=100, tol=1e-6, verbose=False,
                  params="ste", init_params="ste",
-                 implementation="log"):
+                 implementation="log", n_threads=1):
         """
         Parameters
         ----------
@@ -144,6 +144,22 @@ class VariationalCategoricalHMM(BaseCategoricalHMM, VariationalBaseHMM):
             Determines if the forward-backward algorithm is implemented with
             logarithms ("log"), or using scaling ("scaling").  The default is
             to use logarithms for backwards compatability.
+
+        n_threads : int, optional
+            Number of threads :meth:`fit` uses in each E-step for the
+            forward and backward passes and the expected transition
+            counts. Each sequence is computed on one thread, as it is
+            with one thread, and the results are added in the order of
+            the sequences, so the fitted model is the same at any value.
+            A sequence is never split: one sequence gains nothing.
+            Sequences computed at the same time are held in memory
+            together, so memory use grows with ``n_threads`` when the
+            sequences are long. It has no effect on a model whose E-step
+            runs one sequence at a time, such as a subclass that replaces
+            an E-step method, and prediction uses one thread. The
+            default, 1, starts no thread. A value that is not an integer
+            of at least 1 (a boolean is not one) raises ValueError in
+            :meth:`fit`.
         """
         super().__init__(
             n_components=n_components, startprob_prior=startprob_prior,
@@ -151,7 +167,7 @@ class VariationalCategoricalHMM(BaseCategoricalHMM, VariationalBaseHMM):
             algorithm=algorithm, random_state=random_state,
             n_iter=n_iter, tol=tol, verbose=verbose,
             params=params, init_params=init_params,
-            implementation=implementation
+            implementation=implementation, n_threads=n_threads
         )
         self.emissionprob_prior = emissionprob_prior
         self.n_features = n_features
@@ -386,7 +402,7 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
                  scale_prior=None, algorithm="viterbi",
                  random_state=None, n_iter=100, tol=1e-6, verbose=False,
                  params="stmc", init_params="stmc",
-                 implementation="log"):
+                 implementation="log", n_threads=1):
         """
         Parameters
         ----------
@@ -465,6 +481,22 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
             Determines if the forward-backward algorithm is implemented with
             logarithms ("log"), or using scaling ("scaling").  The default is
             to use logarithms for backwards compatability.
+
+        n_threads : int, optional
+            Number of threads :meth:`fit` uses in each E-step for the
+            forward and backward passes and the expected transition
+            counts. Each sequence is computed on one thread, as it is
+            with one thread, and the results are added in the order of
+            the sequences, so the fitted model is the same at any value.
+            A sequence is never split: one sequence gains nothing.
+            Sequences computed at the same time are held in memory
+            together, so memory use grows with ``n_threads`` when the
+            sequences are long. It has no effect on a model whose E-step
+            runs one sequence at a time, such as a subclass that replaces
+            an E-step method, and prediction uses one thread. The
+            default, 1, starts no thread. A value that is not an integer
+            of at least 1 (a boolean is not one) raises ValueError in
+            :meth:`fit`.
         """
         super().__init__(
             n_components=n_components, startprob_prior=startprob_prior,
@@ -472,7 +504,7 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
             algorithm=algorithm, random_state=random_state,
             n_iter=n_iter, tol=tol, verbose=verbose,
             params=params, init_params=init_params,
-            implementation=implementation
+            implementation=implementation, n_threads=n_threads
         )
         self.covariance_type = covariance_type
         self.means_prior = means_prior

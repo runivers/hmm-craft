@@ -1,6 +1,7 @@
 import functools
 import itertools
 import logging
+import numbers
 import string
 import sys
 from collections import deque
@@ -73,6 +74,21 @@ def _reports_as_errors():
             for kind, action in np.geterr().items()}
 
 
+def _n_threads_value(n_threads):
+    """
+    Return ``n_threads`` as an int; raise ValueError if it is not an
+    integer of at least 1 (a boolean is not one).
+    """
+    if (isinstance(n_threads, (bool, np.bool_))
+            or not isinstance(n_threads, numbers.Integral)
+            or n_threads < 1):
+        # ValueError for every invalid value, as the parameter documents.
+        raise ValueError(
+            "n_threads must be an integer of at least 1, "
+            f"got {n_threads!r}")
+    return int(n_threads)
+
+
 # The most rows of the stacked emission matrix of one block of sequences in
 # an E-step; read at each call.
 _ESTEP_BLOCK_ROWS = 4096
@@ -106,22 +122,24 @@ _ESTEP_HOOKS = (
 )
 
 
-def _estep_blocks(n_rows, n_components):
+def _estep_blocks(n_rows, n_components, n_threads=1):
     """
     Cut sequences of *n_rows* rows each into blocks of consecutive ones.
 
     Return ``(first, stop)`` pairs of sequence indices. A block takes the
     next sequence while its rows stay at most ``_ESTEP_BLOCK_ROWS`` and it
     holds fewer than ``max(1, _ESTEP_BLOCK_ROWS // n_components)``
-    sequences; it always takes one, so a longer sequence is a block alone.
+    sequences; it takes at least *n_threads* of them (one by default)
+    while any are left, so at one thread a longer sequence is a block
+    alone.
     """
     block_rows = _ESTEP_BLOCK_ROWS
     max_sequences = max(1, block_rows // max(1, n_components))
     blocks = []
     first = rows = 0
     for index, n in enumerate(n_rows):
-        if index > first and (rows + n > block_rows
-                              or index - first >= max_sequences):
+        if index - first >= n_threads and (
+                rows + n > block_rows or index - first >= max_sequences):
             blocks.append((first, index))
             first = index
             rows = 0
@@ -304,7 +322,8 @@ class _AbstractHMM(BaseEstimator):
     _derived_from_X = ("n_features",)
 
     def __init__(self, n_components, algorithm, random_state, n_iter,
-                 tol, verbose, params, init_params, implementation):
+                 tol, verbose, params, init_params, implementation,
+                 n_threads=1):
         """
         Parameters
         ----------
@@ -339,6 +358,21 @@ class _AbstractHMM(BaseEstimator):
             logarithms ("log"), or using scaling ("scaling").  The default is
             to use logarithms for backwards compatability.  However, the
             scaling implementation is generally faster.
+        n_threads : int, optional
+            Number of threads :meth:`fit` uses in each E-step for the
+            forward and backward passes and the expected transition
+            counts. Each sequence is computed on one thread, as it is
+            with one thread, and the results are added in the order of
+            the sequences, so the fitted model is the same at any value.
+            A sequence is never split: one sequence gains nothing.
+            Sequences computed at the same time are held in memory
+            together, so memory use grows with ``n_threads`` when the
+            sequences are long. It has no effect on a model whose E-step
+            runs one sequence at a time, such as a subclass that replaces
+            an E-step method, and prediction uses one thread. The
+            default, 1, starts no thread. A value that is not an integer
+            of at least 1 (a boolean is not one) raises ValueError in
+            :meth:`fit`.
         """
 
         self.n_components = n_components
@@ -350,8 +384,11 @@ class _AbstractHMM(BaseEstimator):
         self.verbose = verbose
         self.implementation = implementation
         self.random_state = random_state
+        self.n_threads = n_threads
 
     def __setstate__(self, state):
+        # A model pickled before n_threads existed has no such entry.
+        state.setdefault("n_threads", 1)
         super().__setstate__(state)
         # A pickle holds each parameter as it was stored; one written
         # before parameters were converted on assignment can hold a list.
@@ -1055,8 +1092,10 @@ class _AbstractHMM(BaseEstimator):
         validated; called by :meth:`fit` only, never on a prediction.
 
         A model may also test there the values that only :meth:`fit`
-        reads. The default stores and tests nothing.
+        reads. The default tests ``n_threads`` and stores nothing.
         """
+        # getattr: a subclass whose constructor never calls this class's.
+        _n_threads_value(getattr(self, "n_threads", 1))
 
     def _check_for_prediction(self):
         """
@@ -1189,6 +1228,12 @@ class _AbstractHMM(BaseEstimator):
     # its own is set for that call and again for its statistics.
     _estep_values = None
 
+    # None, except while _do_estep accumulates a sequence whose transition
+    # sums the block call computed (above one thread): then that sequence's
+    # sums, on the instance, for the statistics hook to read instead of
+    # computing them; never kept on an instance.
+    _estep_xi_sum = None
+
     # None, except while _do_estep computes by blocks: then what
     # _compute_estep_factors returned, on the instance, for every sequence's
     # emission hook to read; never kept on an instance.
@@ -1249,8 +1294,10 @@ class _AbstractHMM(BaseEstimator):
             # so there is no reason to update our trans. matrix estimate
             if n_samples <= 1:
                 return
-            xi_sum = _hmmc.compute_scaling_xi_sum(
-                fwdlattice, self.transmat_, bwdlattice, lattice)
+            xi_sum = self._estep_xi_sum
+            if xi_sum is None:
+                xi_sum = _hmmc.compute_scaling_xi_sum(
+                    fwdlattice, self.transmat_, bwdlattice, lattice)
             stats['trans'] += xi_sum
 
     def _accumulate_sufficient_statistics_log(
@@ -1268,8 +1315,10 @@ class _AbstractHMM(BaseEstimator):
             # so there is no reason to update our trans. matrix estimate
             if n_samples <= 1:
                 return
-            log_xi_sum = _hmmc.compute_log_xi_sum(
-                fwdlattice, self.transmat_, bwdlattice, lattice)
+            log_xi_sum = self._estep_xi_sum
+            if log_xi_sum is None:
+                log_xi_sum = _hmmc.compute_log_xi_sum(
+                    fwdlattice, self.transmat_, bwdlattice, lattice)
             with np.errstate(under="ignore"):
                 stats['trans'] += np.exp(log_xi_sum)
 
@@ -1315,13 +1364,15 @@ class _AbstractHMM(BaseEstimator):
         """
 
     def _estep_sequence(self, compute, stats, occupancy, fallen, index,
-                        sub_X, values):
+                        sub_X, values, xi_sum=None):
         """
         Accumulate the statistics of the sequence *sub_X*, number *index*,
         whose five arrays ``compute(sub_X)`` gives; add its posteriors to
         *occupancy*, and *index* to *fallen* when it was computed with the
         log functions under ``implementation="scaling"``. *values* is the
-        list ``_estep_values`` holds meanwhile. Return its log-likelihood.
+        list ``_estep_values`` holds meanwhile; *xi_sum*, when not None, the
+        transition sums ``_estep_xi_sum`` holds meanwhile, unless the
+        sequence falls back. Return its log-likelihood.
         """
         # Written through vars: a subclass's __setattr__ never sees it.
         vars(self)["_estep_values"] = values
@@ -1348,6 +1399,8 @@ class _AbstractHMM(BaseEstimator):
             occupancy += posteriors.sum(axis=0)
             if fell_back:
                 self._accumulate_as_log = True
+            elif xi_sum is not None:
+                vars(self)["_estep_xi_sum"] = xi_sum
             # Derived HMM classes will implement the following method to
             # update their probability distributions, so keep
             # a single call to this method for simplicity.
@@ -1361,18 +1414,26 @@ class _AbstractHMM(BaseEstimator):
                     del self._accumulate_as_log
         finally:
             vars(self).pop("_estep_values", None)
+            vars(self).pop("_estep_xi_sum", None)
         return logprob
 
-    def _estep_block(self, impl, X, sub_Xs):
+    def _estep_block(self, impl, X, sub_Xs, n_threads=1):
         """
         Compute the emission matrix, the forward and backward passes and the
-        posteriors of the sequences *sub_Xs*, stacked in the rows *X*.
+        posteriors of the sequences *sub_Xs*, stacked in the rows *X*, on
+        at most *n_threads* threads, a validated count.
 
         Return, for each sequence, a function giving its five arrays as
-        *impl* does and the list ``_estep_values`` holds for it; or None
-        when a floating-point report the caller's error state asks for was
-        raised, so that nothing of the block is used.
+        *impl* does, the list ``_estep_values`` holds for it, and its
+        transition sums computed by the block call (above one thread, with
+        ``"t"`` in ``params``) or None; or None when a floating-point report
+        the caller's error state asks for was raised, so that nothing of the
+        block is used.
         """
+        # The count never exceeds the sequences: a huge integer never
+        # reaches the kernel, and one sequence starts no thread.
+        n_threads = min(n_threads, len(sub_Xs))
+        with_xi = n_threads > 1 and "t" in self.params
         startprob, transmat, log_hook, hook = self._estep_inputs()
         log = self._by_implementation(log=True, scaling=False)
         if log:
@@ -1397,13 +1458,15 @@ class _AbstractHMM(BaseEstimator):
                             vars(self).pop("_estep_values", None)
                     lattice = np.concatenate(parts)
                 if log:
-                    log_prob, fwd, bwd, _ = _hmmc.estep_log(
-                        startprob, transmat, lattice, lengths, False)
+                    log_prob, fwd, bwd, xi = _hmmc.estep_log(
+                        startprob, transmat, lattice, lengths, with_xi,
+                        n_threads)
                     underflow = [False] * len(sub_Xs)
                     posteriors = self._compute_posteriors_log(fwd, bwd)
                 else:
-                    log_prob, fwd, bwd, _, underflow = _hmmc.estep_scaling(
-                        startprob, transmat, lattice, lengths, False)
+                    log_prob, fwd, bwd, xi, underflow = _hmmc.estep_scaling(
+                        startprob, transmat, lattice, lengths, with_xi,
+                        n_threads)
                     underflow = underflow.tolist()
                     posteriors = self._compute_posteriors_scaling(fwd, bwd)
         except FloatingPointError:
@@ -1423,6 +1486,7 @@ class _AbstractHMM(BaseEstimator):
         stop = 0
         for k, kept in enumerate(values):
             start, stop = stop, stop + int(lengths[k])
+            xi_sum = None
             if underflow[k]:
                 compute = functools.partial(
                     flagged, frameprob=lattice[start:stop])
@@ -1430,7 +1494,9 @@ class _AbstractHMM(BaseEstimator):
                 compute = functools.partial(computed, arrays=(
                     lattice[start:stop], log_prob[k], posteriors[start:stop],
                     fwd[start:stop], bwd[start:stop]))
-            block.append((compute, kept))
+                if with_xi:
+                    xi_sum = xi[k]
+            block.append((compute, kept, xi_sum))
         return block
 
     def _do_estep(self, X, lengths):
@@ -1453,22 +1519,27 @@ class _AbstractHMM(BaseEstimator):
             starts = [0, *itertools.accumulate(n_rows)]
             # Written through vars, as _estep_values; held for the
             # sequences computed one at a time after a report too.
+            # fit has tested it; a direct caller, or a subclass whose
+            # _store_checked skips this class's, gets the error here.
+            n_threads = _n_threads_value(getattr(self, "n_threads", 1))
             vars(self)["_estep_factors"] = self._compute_estep_factors()
             try:
-                for first, stop in _estep_blocks(n_rows, self.n_components):
+                for first, stop in _estep_blocks(
+                        n_rows, self.n_components, n_threads):
                     block = self._estep_block(
                         impl, X[starts[first]:starts[stop]],
-                        sub_Xs[first:stop])
+                        sub_Xs[first:stop], n_threads)
                     if block is None:
                         # A report in the block: its sequences one at a
                         # time, in the caller's error state.
-                        block = [(impl, [sub_X])
+                        block = [(impl, [sub_X], None)
                                  for sub_X in sub_Xs[first:stop]]
                     # The statistics of each sequence, in sequence order.
-                    for i, (compute, values) in enumerate(block, first):
+                    for i, (compute, values, xi_sum) in enumerate(
+                            block, first):
                         curr_logprob += self._estep_sequence(
                             compute, stats, occupancy, fallen, i, sub_Xs[i],
-                            values)
+                            values, xi_sum)
             finally:
                 vars(self).pop("_estep_factors", None)
         if fallen:
@@ -1517,7 +1588,7 @@ class BaseHMM(_AbstractHMM):
                  n_iter=10, tol=1e-2, verbose=False,
                  params=string.ascii_letters,
                  init_params=string.ascii_letters,
-                 implementation="log"):
+                 implementation="log", n_threads=1):
         """
         Parameters
         ----------
@@ -1558,12 +1629,27 @@ class BaseHMM(_AbstractHMM):
             logarithms ("log"), or using scaling ("scaling").  The default is
             to use logarithms for backwards compatability.  However, the
             scaling implementation is generally faster.
+        n_threads : int, optional
+            Number of threads :meth:`fit` uses in each E-step for the
+            forward and backward passes and the expected transition
+            counts. Each sequence is computed on one thread, as it is
+            with one thread, and the results are added in the order of
+            the sequences, so the fitted model is the same at any value.
+            A sequence is never split: one sequence gains nothing.
+            Sequences computed at the same time are held in memory
+            together, so memory use grows with ``n_threads`` when the
+            sequences are long. It has no effect on a model whose E-step
+            runs one sequence at a time, such as a subclass that replaces
+            an E-step method, and prediction uses one thread. The
+            default, 1, starts no thread. A value that is not an integer
+            of at least 1 (a boolean is not one) raises ValueError in
+            :meth:`fit`.
         """
         super().__init__(
             n_components=n_components, algorithm=algorithm,
             random_state=random_state, n_iter=n_iter, tol=tol,
             verbose=verbose, params=params, init_params=init_params,
-            implementation=implementation)
+            implementation=implementation, n_threads=n_threads)
         self.startprob_prior = startprob_prior
         self.transmat_prior = transmat_prior
         self.monitor_ = ConvergenceMonitor(self.tol, self.n_iter, self.verbose)
@@ -1746,12 +1832,12 @@ class VariationalBaseHMM(_AbstractHMM):
                  algorithm="viterbi", random_state=None,
                  n_iter=100, tol=1e-6, verbose=False,
                  params="ste", init_params="ste",
-                 implementation="log"):
+                 implementation="log", n_threads=1):
         super().__init__(
             n_components=n_components, algorithm=algorithm,
             random_state=random_state, n_iter=n_iter, tol=tol,
             verbose=verbose, params=params, init_params=init_params,
-            implementation=implementation)
+            implementation=implementation, n_threads=n_threads)
 
         self.startprob_prior = startprob_prior
         self.transmat_prior = transmat_prior
@@ -1927,9 +2013,11 @@ class VariationalBaseHMM(_AbstractHMM):
             if n_samples <= 1:
                 return
 
-            xi_sum = _hmmc.compute_scaling_xi_sum(fwdlattice,
-                                                  self.transmat_subnorm_,
-                                                  bwdlattice, lattice)
+            xi_sum = self._estep_xi_sum
+            if xi_sum is None:
+                xi_sum = _hmmc.compute_scaling_xi_sum(fwdlattice,
+                                                      self.transmat_subnorm_,
+                                                      bwdlattice, lattice)
             stats['trans'] += xi_sum
 
     def _accumulate_sufficient_statistics_log(
@@ -1948,9 +2036,11 @@ class VariationalBaseHMM(_AbstractHMM):
             if n_samples <= 1:
                 return
 
-            log_xi_sum = _hmmc.compute_log_xi_sum(
-                fwdlattice, self.transmat_subnorm_, bwdlattice,
-                lattice)
+            log_xi_sum = self._estep_xi_sum
+            if log_xi_sum is None:
+                log_xi_sum = _hmmc.compute_log_xi_sum(
+                    fwdlattice, self.transmat_subnorm_, bwdlattice,
+                    lattice)
             with np.errstate(under="ignore"):
                 stats['trans'] += np.exp(log_xi_sum)
 

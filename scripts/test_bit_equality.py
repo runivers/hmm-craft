@@ -170,13 +170,19 @@ def test_extra_fork_key_fails_unless_named(tmp_path):
     assert [d.key for d in result.differences] == ["posterior_mass_"]
 
 
-def test_extra_fork_parameter_fails_unless_named(tmp_path):
+@pytest.mark.parametrize(
+    "name, default, other",
+    [("covars_floor", None, 0.5), ("n_threads", 1, 2)],
+    ids=["covars_floor", "n_threads"],
+)
+def test_extra_fork_parameter_fails_unless_named(
+        tmp_path, name, default, other):
     ref, fork = pair()
     with_occupancy(fork)
-    fork["params"]["covars_floor"] = None
+    fork["params"][name] = default
     assert run(tmp_path, [ref], [fork]).code == 1
     assert run(tmp_path / "e6", [ref], [fork], allow=("E6",)).code == 0
-    fork["params"]["covars_floor"] = 0.5
+    fork["params"][name] = other
     assert run(tmp_path / "set", [ref], [fork], allow=("E6",)).code == 1
 
 
@@ -472,6 +478,41 @@ def test_dump_refuses_to_run_with_threads_unpinned(tmp_path, monkeypatch):
     with pytest.raises(SystemExit, match="refusing to run"):
         be.dump("hmmcraft", tmp_path / "out")
     assert not (tmp_path / "out").exists()
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["--package", "hmmlearn", "--n-threads", "2"],
+        ["--package", "hmmcraft", "--n-threads", "0"],
+    ],
+    ids=["reference-above-one", "below-one"],
+)
+def test_dump_refuses_a_thread_count_the_package_cannot_take(tmp_path, argv):
+    """hmmlearn has no ``n_threads``; no package takes fewer than one."""
+    with pytest.raises(SystemExit) as info:
+        be.main(["dump", "--out", str(tmp_path / "out"), *argv])
+    assert info.value.code == 2
+    assert not (tmp_path / "out").exists()
+
+
+def test_model_keywords_name_n_threads_only_above_one():
+    """A case's constructor keywords; ``n_threads`` is among them only when
+    the dump asks for more than one thread, so that the reference's
+    constructors never receive it."""
+    case = next(c for c in be.build_cases()
+                if c["cls"] == "GaussianHMM" and c["start"] == "fixed"
+                and c["tol"] == "default")
+    keywords = be._model_keywords(case)
+    assert keywords == {
+        "n_components": be.N_COMPONENTS, "n_iter": be.N_ITER,
+        "implementation": case["impl"], "random_state": be.MODEL_SEED,
+        "init_params": "", "covariance_type": case["cov"],
+        "params": case["params"]}
+    assert be._threaded(case, 1) is case
+    assert be._model_keywords(be._threaded(case, 1)) == keywords
+    assert be._model_keywords(be._threaded(case, 4)) == dict(
+        keywords, n_threads=4)
 
 
 def test_cli_exit_status_follows_the_result(tmp_path, capsys):

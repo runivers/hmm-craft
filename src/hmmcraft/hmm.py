@@ -142,7 +142,7 @@ class CategoricalHMM(_emissions.BaseCategoricalHMM, BaseHMM):
                  n_features=None, algorithm="viterbi",
                  random_state=None, n_iter=10, tol=1e-2,
                  verbose=False, params="ste", init_params="ste",
-                 implementation="log"):
+                 implementation="log", n_threads=1):
         """
         Parameters
         ----------
@@ -200,6 +200,22 @@ class CategoricalHMM(_emissions.BaseCategoricalHMM, BaseHMM):
             Determines if the forward-backward algorithm is implemented with
             logarithms ("log"), or using scaling ("scaling").  The default is
             to use logarithms for backwards compatability.
+
+        n_threads : int, optional
+            Number of threads :meth:`fit` uses in each E-step for the
+            forward and backward passes and the expected transition
+            counts. Each sequence is computed on one thread, as it is
+            with one thread, and the results are added in the order of
+            the sequences, so the fitted model is the same at any value.
+            A sequence is never split: one sequence gains nothing.
+            Sequences computed at the same time are held in memory
+            together, so memory use grows with ``n_threads`` when the
+            sequences are long. It has no effect on a model whose E-step
+            runs one sequence at a time, such as a subclass that replaces
+            an E-step method, and prediction uses one thread. The
+            default, 1, starts no thread. A value that is not an integer
+            of at least 1 (a boolean is not one) raises ValueError in
+            :meth:`fit`.
         """
         BaseHMM.__init__(self, n_components,
                          startprob_prior=startprob_prior,
@@ -208,7 +224,8 @@ class CategoricalHMM(_emissions.BaseCategoricalHMM, BaseHMM):
                          random_state=random_state,
                          n_iter=n_iter, tol=tol, verbose=verbose,
                          params=params, init_params=init_params,
-                         implementation=implementation)
+                         implementation=implementation,
+                         n_threads=n_threads)
         self.emissionprob_prior = emissionprob_prior
         self.n_features = n_features
 
@@ -293,7 +310,7 @@ class GaussianHMM(_emissions.BaseGaussianHMM, BaseHMM):
                  algorithm="viterbi", random_state=None,
                  n_iter=10, tol=1e-2, verbose=False,
                  params="stmc", init_params="stmc",
-                 implementation="log", covars_floor=None):
+                 implementation="log", covars_floor=None, n_threads=1):
         """
         Parameters
         ----------
@@ -413,6 +430,22 @@ class GaussianHMM(_emissions.BaseGaussianHMM, BaseHMM):
             and this changes a fit only if a floor binds. It is independent
             of ``min_covar``. Any other value (not a finite number above 0,
             or a boolean) raises ValueError when the model is checked.
+
+        n_threads : int, optional
+            Number of threads :meth:`fit` uses in each E-step for the
+            forward and backward passes and the expected transition
+            counts. Each sequence is computed on one thread, as it is
+            with one thread, and the results are added in the order of
+            the sequences, so the fitted model is the same at any value.
+            A sequence is never split: one sequence gains nothing.
+            Sequences computed at the same time are held in memory
+            together, so memory use grows with ``n_threads`` when the
+            sequences are long. It has no effect on a model whose E-step
+            runs one sequence at a time, such as a subclass that replaces
+            an E-step method, and prediction uses one thread. The
+            default, 1, starts no thread. A value that is not an integer
+            of at least 1 (a boolean is not one) raises ValueError in
+            :meth:`fit`.
         """
         super().__init__(n_components,
                          startprob_prior=startprob_prior,
@@ -420,7 +453,8 @@ class GaussianHMM(_emissions.BaseGaussianHMM, BaseHMM):
                          random_state=random_state, n_iter=n_iter,
                          tol=tol, params=params, verbose=verbose,
                          init_params=init_params,
-                         implementation=implementation)
+                         implementation=implementation,
+                         n_threads=n_threads)
         self.covariance_type = covariance_type
         self.min_covar = min_covar
         self.means_prior = means_prior
@@ -487,6 +521,7 @@ class GaussianHMM(_emissions.BaseGaussianHMM, BaseHMM):
             self._check_finite("covars_", covars)
 
     def _store_checked(self):
+        super()._store_checked()
         # fit leaves the number of features means_ gives.
         self.n_features = self._n_features_from_emissions()
 
@@ -609,7 +644,7 @@ class GMMHMM(_emissions.BaseGMMHMM):
                  random_state=None, n_iter=10, tol=1e-2,
                  verbose=False, params="stmcw",
                  init_params="stmcw",
-                 implementation="log"):
+                 implementation="log", n_threads=1):
         """
         Parameters
         ----------
@@ -742,6 +777,22 @@ class GMMHMM(_emissions.BaseGMMHMM):
             Determines if the forward-backward algorithm is implemented with
             logarithms ("log"), or using scaling ("scaling").  The default is
             to use logarithms for backwards compatability.
+
+        n_threads : int, optional
+            Number of threads :meth:`fit` uses in each E-step for the
+            forward and backward passes and the expected transition
+            counts. Each sequence is computed on one thread, as it is
+            with one thread, and the results are added in the order of
+            the sequences, so the fitted model is the same at any value.
+            A sequence is never split: one sequence gains nothing.
+            Sequences computed at the same time are held in memory
+            together, so memory use grows with ``n_threads`` when the
+            sequences are long. It has no effect on a model whose E-step
+            runs one sequence at a time, such as a subclass that replaces
+            an E-step method, and prediction uses one thread. The
+            default, 1, starts no thread. A value that is not an integer
+            of at least 1 (a boolean is not one) raises ValueError in
+            :meth:`fit`.
         """
         BaseHMM.__init__(self, n_components,
                          startprob_prior=startprob_prior,
@@ -749,7 +800,8 @@ class GMMHMM(_emissions.BaseGMMHMM):
                          algorithm=algorithm, random_state=random_state,
                          n_iter=n_iter, tol=tol, verbose=verbose,
                          params=params, init_params=init_params,
-                         implementation=implementation)
+                         implementation=implementation,
+                         n_threads=n_threads)
         self.covariance_type = covariance_type
         self.min_covar = min_covar
         self.n_mix = n_mix
@@ -1094,7 +1146,7 @@ class MultinomialHMM(_emissions.BaseMultinomialHMM):
                  algorithm="viterbi", random_state=None,
                  n_iter=10, tol=1e-2, verbose=False,
                  params="ste", init_params="ste",
-                 implementation="log"):
+                 implementation="log", n_threads=1):
         """
         Parameters
         ----------
@@ -1147,6 +1199,22 @@ class MultinomialHMM(_emissions.BaseMultinomialHMM):
             Determines if the forward-backward algorithm is implemented with
             logarithms ("log"), or using scaling ("scaling").  The default is
             to use logarithms for backwards compatability.
+
+        n_threads : int, optional
+            Number of threads :meth:`fit` uses in each E-step for the
+            forward and backward passes and the expected transition
+            counts. Each sequence is computed on one thread, as it is
+            with one thread, and the results are added in the order of
+            the sequences, so the fitted model is the same at any value.
+            A sequence is never split: one sequence gains nothing.
+            Sequences computed at the same time are held in memory
+            together, so memory use grows with ``n_threads`` when the
+            sequences are long. It has no effect on a model whose E-step
+            runs one sequence at a time, such as a subclass that replaces
+            an E-step method, and prediction uses one thread. The
+            default, 1, starts no thread. A value that is not an integer
+            of at least 1 (a boolean is not one) raises ValueError in
+            :meth:`fit`.
         """
         BaseHMM.__init__(self, n_components,
                          startprob_prior=startprob_prior,
@@ -1155,7 +1223,8 @@ class MultinomialHMM(_emissions.BaseMultinomialHMM):
                          random_state=random_state,
                          n_iter=n_iter, tol=tol, verbose=verbose,
                          params=params, init_params=init_params,
-                         implementation=implementation)
+                         implementation=implementation,
+                         n_threads=n_threads)
         self.n_trials = n_trials
 
     emissionprob_ = _ConvertedAttribute(np.atleast_2d)
@@ -1222,7 +1291,7 @@ class PoissonHMM(_emissions.BasePoissonHMM):
                  algorithm="viterbi", random_state=None,
                  n_iter=10, tol=1e-2, verbose=False,
                  params="stl", init_params="stl",
-                 implementation="log"):
+                 implementation="log", n_threads=1):
         """
         Parameters
         ----------
@@ -1276,6 +1345,22 @@ class PoissonHMM(_emissions.BasePoissonHMM):
             Determines if the forward-backward algorithm is implemented with
             logarithms ("log"), or using scaling ("scaling").  The default is
             to use logarithms for backwards compatability.
+
+        n_threads : int, optional
+            Number of threads :meth:`fit` uses in each E-step for the
+            forward and backward passes and the expected transition
+            counts. Each sequence is computed on one thread, as it is
+            with one thread, and the results are added in the order of
+            the sequences, so the fitted model is the same at any value.
+            A sequence is never split: one sequence gains nothing.
+            Sequences computed at the same time are held in memory
+            together, so memory use grows with ``n_threads`` when the
+            sequences are long. It has no effect on a model whose E-step
+            runs one sequence at a time, such as a subclass that replaces
+            an E-step method, and prediction uses one thread. The
+            default, 1, starts no thread. A value that is not an integer
+            of at least 1 (a boolean is not one) raises ValueError in
+            :meth:`fit`.
         """
         BaseHMM.__init__(self, n_components,
                          startprob_prior=startprob_prior,
@@ -1284,7 +1369,8 @@ class PoissonHMM(_emissions.BasePoissonHMM):
                          random_state=random_state,
                          n_iter=n_iter, tol=tol, verbose=verbose,
                          params=params, init_params=init_params,
-                         implementation=implementation)
+                         implementation=implementation,
+                         n_threads=n_threads)
         self.lambdas_prior = lambdas_prior
         self.lambdas_weight = lambdas_weight
 

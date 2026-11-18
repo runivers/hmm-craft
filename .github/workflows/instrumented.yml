@@ -1,7 +1,7 @@
 name: instrumented
 
 # The suite against instrumented builds of the C++ kernel, never used for a
-# release: nothing built here is uploaded or published. Both jobs install the
+# release: nothing built here is uploaded or published. Every job installs the
 # newest NumPy, SciPy and scikit-learn wheels. The "coverage" job builds the
 # kernel with --coverage and no optimisation, runs the suite under
 # coverage.py, and fails when the Python total or the kernel's line coverage
@@ -9,7 +9,10 @@ name: instrumented
 # the run's "coverage-reports" artifact. The "sanitizers" job builds the
 # kernel with AddressSanitizer and UndefinedBehaviorSanitizer and runs the
 # suite; the first error either finds stops the run, with its report in the
-# log.
+# log. The "thread-sanitizer" job builds the kernel with ThreadSanitizer,
+# which cannot be combined with AddressSanitizer in one build, and runs the
+# tests of the kernel's threads; the first data race it finds stops the run,
+# with its report in the log.
 
 on:
   pull_request:
@@ -161,3 +164,72 @@ jobs:
         setarch "$(uname -m)" -R env LD_PRELOAD="$preload" \
           python -I -m pytest -p no:cacheprovider -q --capture=sys \
           --pyargs hmmcraft.tests doc
+
+  thread-sanitizer:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      HMMCRAFT_SEED: "0"
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+      with:
+        python-version: "3.12"
+    - name: Build requirements, newest dependencies
+      run: |
+        python -m pip install --only-binary :all: --require-hashes \
+          -r ci/build_requirements.txt
+        python -m pip install --only-binary :all: \
+          numpy scipy scikit-learn threadpoolctl pytest
+        python -m pip freeze
+        c++ --version
+    - name: Build the kernel with ThreadSanitizer
+      # As in the other jobs, CXXFLAGS replaces the interpreter's flags, so
+      # -DNDEBUG is given again, and -g in CFLAGS keeps pybind11 from adding
+      # -g0. Both modules are built with the flags; only _hmmc starts threads.
+      env:
+        CFLAGS: -fsanitize=thread -fno-omit-frame-pointer -O1 -g
+        CXXFLAGS: -fsanitize=thread -fno-omit-frame-pointer -O1 -g -DNDEBUG
+        LDFLAGS: -fsanitize=thread
+      run: |
+        rm -rf build src/hmm_craft.egg-info
+        python -m pip install -v --no-build-isolation --no-deps .
+        for module in _hmmc _emissionsc; do
+          so=$(ls build/lib.*/hmmcraft/$module.*.so)
+          ldd "$so"
+          ldd "$so" | grep -q libtsan
+        done
+    - name: Tests of the kernel's threads under ThreadSanitizer
+      # The runtime is preloaded as in the sanitizers job: libtsan, then
+      # libstdc++. setarch -R, as there: older ThreadSanitizer runtimes expect
+      # a fixed memory layout and stop at start when mmap addresses are
+      # randomised with more bits than they know. Every test of the module
+      # runs, whatever the number of cores: each sets its own thread count.
+      # The module is named with --pyargs, so the installed package is
+      # tested, not the source tree, which holds no built kernel; a name that
+      # matches nothing fails the job (pytest exits 4 or 5).
+      # ignore_noninstrumented_modules keeps the reports to code built with
+      # ThreadSanitizer: the interpreter and NumPy are not.
+      # second_deadlock_stack prints both stacks of a lock-order report.
+      # pytest's fault handler is off: after a report, abort_on_error raises
+      # SIGABRT, and the handler, once it has printed the Python stack, hangs
+      # under ThreadSanitizer until the job's timeout instead of ending.
+      # Without its stack, -v names the failing test: each test's name is in
+      # the log before the test runs, and the report's frames stop at the
+      # interpreter.
+      env:
+        TSAN_OPTIONS: >-
+          halt_on_error=1:abort_on_error=1:second_deadlock_stack=1:ignore_noninstrumented_modules=1
+      run: |
+        preload="$(c++ -print-file-name=libtsan.so)"
+        preload="$preload $(c++ -print-file-name=libstdc++.so.6)"
+        setarch "$(uname -m)" -R env LD_PRELOAD="$preload" \
+          python -I -m pytest -p no:cacheprovider -p no:faulthandler -v \
+          --capture=sys --pyargs hmmcraft.tests.test_kernel_threads

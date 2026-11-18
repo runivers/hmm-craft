@@ -1,7 +1,11 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
+#include <atomic>
 #include <cfenv>
+#include <exception>
 #include <limits>
+#include <thread>
+#include <vector>
 
 namespace py = pybind11;
 using ssize_t = Py_ssize_t;
@@ -512,17 +516,100 @@ bool estep_scaling_sequence(
   return true;
 }
 
+// Calls work(s, k) once for every sequence s of [0, n), on n_threads
+// threads; k in [0, n_threads) tells the calling thread (0) and the
+// threads started here apart, so that each uses its own scratch.  Each
+// thread takes the next sequence not yet taken, so which thread computes a
+// sequence is not fixed; work(s, k) must write nothing another sequence
+// reads.  The threads started here compute in the calling thread's
+// floating-point environment, and the exception flags they raise are raised
+// on the calling thread before returning, as if it had computed every
+// sequence.  When the system refuses a thread, the sequences are computed
+// by the threads that started and by the calling thread.  An exception
+// thrown by work is rethrown here once every thread has ended.
+template <typename Work>
+void for_each_sequence(ssize_t n, ssize_t n_threads, Work const& work)
+{
+  std::atomic<ssize_t> next{0};  // Not "auto next = ...": no copy in C++11.
+  auto errors = std::vector<std::exception_ptr>(n_threads);
+  auto raised = std::vector<int>(n_threads, 0);
+  std::fenv_t env;
+  std::fegetenv(&env);
+  auto run = [&](ssize_t k) {
+    try {
+      if (k) {
+        std::fesetenv(&env);
+      }
+      for (auto s = next.fetch_add(1); s < n; s = next.fetch_add(1)) {
+        work(s, k);
+      }
+    } catch (...) {
+      errors[k] = std::current_exception();
+      next.store(n);  // The other threads stop after their sequence.
+    }
+    if (k) {
+      raised[k] = std::fetestexcept(FE_ALL_EXCEPT);
+    }
+  };
+  auto threads = std::vector<std::thread>{};
+  threads.reserve(n_threads - 1);  // No reallocation once one runs.
+  try {
+    for (auto k = ssize_t{1}; k < n_threads; ++k) {
+      threads.emplace_back(run, k);
+    }
+  } catch (std::exception const&) {
+    // std::system_error: the system refuses another thread; std::bad_alloc:
+    // no memory for its state.  The sequences are computed all the same.
+  }
+  run(0);
+  auto flags = 0;
+  for (auto k = size_t{0}; k < threads.size(); ++k) {
+    threads[k].join();
+    flags |= raised[k + 1];
+  }
+  if (flags) {
+    std::feraiseexcept(flags);
+  }
+  for (auto const& error : errors) {
+    if (error) {
+      std::rethrow_exception(error);
+    }
+  }
+}
+
+void check_threads(ssize_t n_threads)
+{
+  if (n_threads < 1) {
+    throw std::invalid_argument{"n_threads must be at least 1"};
+  }
+}
+
+// The first row of each sequence in the stacked lattice.
+std::vector<ssize_t> first_rows(ssize_t const* lengths, ssize_t nq)
+{
+  auto first = std::vector<ssize_t>(nq);
+  auto row = ssize_t{0};
+  for (auto s = ssize_t{0}; s < nq; ++s) {
+    first[s] = row;
+    row += lengths[s];
+  }
+  return first;
+}
+
 std::tuple<py::array_t<double>, py::array_t<double>, py::array_t<double>,
            py::array_t<double>> estep_log(
   c_array startprob_,
   c_array transmat_,
   c_array log_frameprob_,
   c_lengths lengths_,
-  bool with_xi_sum)
+  bool with_xi_sum,
+  ssize_t n_threads)
 {
   check_block(startprob_, transmat_, log_frameprob_, lengths_);
+  check_threads(n_threads);
   auto ns = log_frameprob_.shape(0), nc = log_frameprob_.shape(1);
   auto nq = lengths_.shape(0);
+  auto threads = std::min(n_threads, nq);
   auto log_startprob_ = log(startprob_);
   auto log_transmat_ = log(transmat_);
   auto buf = std::vector<double>(nc);
@@ -540,13 +627,27 @@ std::tuple<py::array_t<double>, py::array_t<double>, py::array_t<double>,
   auto xi = with_xi_sum ? log_xi_sum_.mutable_data() : nullptr;
   {
     py::gil_scoped_release nogil;
-    auto row = ssize_t{0};
-    for (auto s = ssize_t{0}; s < nq; ++s) {
-      log_prob[s] = estep_log_sequence(
-        log_startprob, log_transmat, log_frameprob + row * nc, lengths[s], nc,
-        buf.data(), fwd + row * nc, bwd + row * nc,
-        xi ? xi + s * nc * nc : nullptr);
-      row += lengths[s];
+    if (threads == 1) {
+      auto row = ssize_t{0};
+      for (auto s = ssize_t{0}; s < nq; ++s) {
+        log_prob[s] = estep_log_sequence(
+          log_startprob, log_transmat, log_frameprob + row * nc, lengths[s],
+          nc, buf.data(), fwd + row * nc, bwd + row * nc,
+          xi ? xi + s * nc * nc : nullptr);
+        row += lengths[s];
+      }
+    } else {
+      auto first = first_rows(lengths, nq);
+      // A cache line between the scratch of two threads.
+      auto stride = nc + 8;
+      auto bufs = std::vector<double>(threads * stride);
+      for_each_sequence(nq, threads, [&](ssize_t s, ssize_t k) {
+        auto row = first[s];
+        log_prob[s] = estep_log_sequence(
+          log_startprob, log_transmat, log_frameprob + row * nc, lengths[s],
+          nc, bufs.data() + k * stride, fwd + row * nc, bwd + row * nc,
+          xi ? xi + s * nc * nc : nullptr);
+      });
     }
   }
   return std::make_tuple(log_prob_, fwdlattice_, bwdlattice_, log_xi_sum_);
@@ -558,11 +659,14 @@ std::tuple<py::array_t<double>, py::array_t<double>, py::array_t<double>,
   c_array transmat_,
   c_array frameprob_,
   c_lengths lengths_,
-  bool with_xi_sum)
+  bool with_xi_sum,
+  ssize_t n_threads)
 {
   auto longest = check_block(startprob_, transmat_, frameprob_, lengths_);
+  check_threads(n_threads);
   auto ns = frameprob_.shape(0), nc = frameprob_.shape(1);
   auto nq = lengths_.shape(0);
+  auto threads = std::min(n_threads, nq);
   auto scaling = std::vector<double>(longest);
   auto log_prob_ = py::array_t<double>{{nq}};
   auto fwdlattice_ = py::array_t<double>{{ns, nc}};
@@ -581,12 +685,11 @@ std::tuple<py::array_t<double>, py::array_t<double>, py::array_t<double>,
   {
     py::gil_scoped_release nogil;
     auto nan = std::numeric_limits<double>::quiet_NaN();
-    auto row = ssize_t{0};
-    for (auto s = ssize_t{0}; s < nq; ++s) {
+    auto sequence = [&](ssize_t s, ssize_t row, double* scaling) {
       auto n = lengths[s];
       auto xi_s = xi ? xi + s * nc * nc : nullptr;
       underflow[s] = !estep_scaling_sequence(
-        startprob, transmat, frameprob + row * nc, n, nc, scaling.data(),
+        startprob, transmat, frameprob + row * nc, n, nc, scaling,
         log_prob + s, fwd + row * nc, bwd + row * nc, xi_s);
       if (underflow[s]) {
         // forward_scaling would throw: NaN in every result of the sequence,
@@ -598,7 +701,20 @@ std::tuple<py::array_t<double>, py::array_t<double>, py::array_t<double>,
           std::fill_n(xi_s, nc * nc, nan);
         }
       }
-      row += n;
+    };
+    if (threads == 1) {
+      auto row = ssize_t{0};
+      for (auto s = ssize_t{0}; s < nq; ++s) {
+        sequence(s, row, scaling.data());
+        row += lengths[s];
+      }
+    } else {
+      auto first = first_rows(lengths, nq);
+      auto stride = longest + 8;
+      auto scalings = std::vector<double>(threads * stride);
+      for_each_sequence(nq, threads, [&](ssize_t s, ssize_t k) {
+        sequence(s, first[s], scalings.data() + k * stride);
+      });
     }
   }
   return std::make_tuple(
@@ -614,7 +730,11 @@ PYBIND11_MODULE(_hmmc, m) {
     .def("compute_scaling_xi_sum", compute_scaling_xi_sum)
     .def("compute_log_xi_sum", compute_log_xi_sum)
     .def("viterbi", viterbi)
-    .def("estep_log", estep_log)
-    .def("estep_scaling", estep_scaling)
+    .def("estep_log", estep_log,
+         py::arg("startprob"), py::arg("transmat"), py::arg("log_frameprob"),
+         py::arg("lengths"), py::arg("with_xi_sum"), py::arg("n_threads") = 1)
+    .def("estep_scaling", estep_scaling,
+         py::arg("startprob"), py::arg("transmat"), py::arg("frameprob"),
+         py::arg("lengths"), py::arg("with_xi_sum"), py::arg("n_threads") = 1)
     ;
 }
