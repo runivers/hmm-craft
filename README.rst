@@ -61,6 +61,9 @@ What differs from hmmlearn 0.3.3
   state, for every model.
 * ``GaussianHMM(covars_floor=...)``: a floor on the covariances after every
   M-step. The default, ``None``, applies none and gives hmmlearn 0.3.3's fit.
+* ``n_threads``: every model's ``fit`` can compute the sequences of each
+  E-step on several threads, one sequence per thread at a time; every value
+  gives the same fit. The default, 1, starts no thread.
 * A ``GaussianHMM`` that updates covariances but not means (``params``
   containing ``"c"`` without ``"m"``) now estimates its covariances. What
   hmmlearn 0.3.3 returned there was not an estimate, or raised; the exact

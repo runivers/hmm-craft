@@ -162,3 +162,14 @@ echo "== bit equality"
     --package hmmcraft --out "$work/dump_fork" --load-pickles "$work/dump_ref"
 "$work/fork/bin/python" -I scripts/bit_equality.py compare \
     "$work/dump_ref" "$work/dump_fork" --allow "$allow"
+
+# n_threads changes no fit: the fork's dumps on 2 and 4 threads hold the
+# bytes of its one-thread dump. The comparison with hmmlearn stays at one.
+echo "== n_threads"
+for n in 2 4; do
+    "$work/fork/bin/python" -I scripts/bit_equality.py dump \
+        --package hmmcraft --out "$work/dump_fork_t$n" \
+        --load-pickles "$work/dump_ref" --n-threads "$n"
+    diff -r "$work/dump_fork/cases" "$work/dump_fork_t$n/cases"
+    echo "n_threads=$n: cases equal to the one-thread dump"
+done

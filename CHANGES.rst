@@ -26,6 +26,8 @@ Unreleased
   subclass replacing an E-step method keeps the old loop; same results in DIFFERENCES.md's check.
 - Changed: ``GaussianHMM.fit`` with ``full`` or ``tied`` covariances factors each covariance once
   per E-step, not once per sequence; same results in DIFFERENCES.md's check.
+- Added: ``n_threads`` for every model: ``fit`` computes the passes and transition counts of several
+  sequences on that many threads; default 1, as before; no value changes a fit; see DIFFERENCES.md.
 - Documented: the shapes ``GMMHMM`` accepts for its priors, per covariance type; when
   ``ConvergenceMonitor.converged`` is true.
 

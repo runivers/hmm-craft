@@ -22,9 +22,10 @@ check that finds them.
 | Underflow with `implementation="scaling"` | A sequence whose scaled forward pass underflows, because the probabilities of one of its samples sum to less than 1e-300 over the states, is computed with the log functions: in `score`, `score_samples`, `predict_proba`, `aic`, `bic`, `decode` and `predict` with `algorithm="map"`, and in each iteration of `fit`, for every model class. 0.3.3 raised `ValueError` ("forward pass failed with underflow"). The result for that sequence, and in `fit` its statistics, are those of `implementation="log"`; the other sequences are computed as before. One warning is logged (logger `hmmcraft.base`) per call and per iteration of `fit` in which a sequence was computed this way; `decode(algorithm="map")` logs one per such sequence. When the log functions give no finite log-likelihood either, as for a sample with probability zero in every state, the same `ValueError` is raised. A subclass that overrides `_accumulate_sufficient_statistics` receives the log-space `lattice`, `fwdlattice` and `bwdlattice` for such a sequence while `implementation` is `"scaling"`. Calls that returned give the same results. | none |
 | `state_occupancy_` | New attribute after `fit`, for every model: the expected number of samples in each state, from the last E-step. | none (new) |
 | `covars_floor` | New `GaussianHMM` parameter. A positive number floors the covariances after every M-step that updates them: variances (`"spherical"`, `"diag"`) and eigenvalues (`"full"`, `"tied"`) below it are raised to it. It is independent of `min_covar`, which keeps its one effect, the term added to the covariance that starts the fit. | `covars_floor=None` (default): 0.3.3's fit |
+| `n_threads` | New parameter of every model: `fit` computes the forward and backward passes and the expected transition counts of the sequences of a block on that many threads, each sequence on one thread as it is with one; the statistics are added in `lengths` order. Above one thread a block holds at least that many sequences. Prediction uses one thread. | `n_threads=1` (default): no thread is started; every value gives the same fit |
 
-A model pickled by hmmlearn 0.3.3 loads with `covars_floor=None`, and for a
-spherical model stores the same variances as before.
+A model pickled by hmmlearn 0.3.3 loads with `covars_floor=None` and
+`n_threads=1`, and for a spherical model stores the same variances as before.
 
 A spherical `GaussianHMM` whose `covars_` is set to an array of shape
 `(n_components, n_features)` with unequal values in a row keeps those values:
@@ -56,7 +57,9 @@ nothing else.
   inside `threadpool_limits(limits=1)`. Where a start is seeded, hmmlearn
   0.3.3's k-means partial sums depend on the order threads finish, and this
   package's start is its one-thread start (the k-means row above), so the two
-  are compared at one thread.
+  are compared at one thread. The comparison leaves `n_threads` at 1; `dump
+  --n-threads N` fits this package's models with `n_threads=N`, a dump
+  compared with the one-thread dump of the same environment, file by file.
 * **Data.** Generated inside the script by `numpy.random.RandomState(10)`: a
   three-state Markov chain, two sequences of 300 and 200 samples, with Gaussian
   (three features and one), Gaussian mixture, categorical, multinomial and
@@ -107,7 +110,7 @@ nothing else.
 | E3 | MAP decode | the log-probability, equal to the log of the posteriors 0.3.3 summed, recomputed from `predict_proba` |
 | E4 | covariances without means | `params` with `"c"` and not `"m"`: not compared, the fit must not raise and every array must be finite |
 | E5 | `normalize` axis 0 | zero-sum slices: NaN before, 0 now |
-| E6 | additions | `state_occupancy_` and the parameter `covars_floor` with value `None` |
+| E6 | additions | `state_occupancy_`, the parameter `covars_floor` with value `None` and the parameter `n_threads` with value 1 |
 | E7 | scaling underflow | the underflow cases: 0.3.3 raises the underflow error and this package returns; a prediction on one sequence is finite and equal byte for byte to 0.3.3's result with `implementation="log"` (the MAP log-probability as E3 recomputes it); a fit must not raise and every array must be finite |
 
 ### Running it
@@ -199,9 +202,25 @@ environments: numpy 1.26.0, scipy 1.11.2, scikit-learn 1.3.1, threadpoolctl
 3.8.0. In each environment, the package's results are byte for byte those of
 the tree before.
 
+At the tree that adds `n_threads`, which includes every change to the package
+since the tree of the factored covariances, the check gives equal apart from
+E1 to E7 on the same data and cases, with Python 3.12.3, Linux x86_64 and one
+thread, in both environments: numpy 1.26.0, scipy 1.11.2, scikit-learn 1.3.1,
+threadpoolctl 3.5.0, and numpy 2.5.4, scipy 1.18.1, scikit-learn 1.9.1,
+threadpoolctl 3.8.0. In each environment, the package's results are byte for
+byte those of the tree before, and its dumps with `--n-threads 2` and
+`--n-threads 4` (the thread variables still at 1) hold the bytes of its
+one-thread dump. In the same environments,
+`src/hmmcraft/tests/test_kernel_threads.py` compares, as bytes, the fits of
+every model class on 2 and 4 threads and on more threads than sequences with
+the fit on one thread, on its seeded data (`RandomState(10)`, the sequence
+lengths of `src/hmmcraft/tests/test_estep_blocks.py`), and the block
+functions' results on several threads with those of the per-sequence
+functions (`RandomState(0)`).
+
 This is the whole claim of the check: no result is stated for other data,
-other versions, other thread counts or another platform. The k-means row above
-states what its own test compares.
+other versions, other thread counts than those named above, or another
+platform. The k-means row above states what its own test compares.
 
 With `covars_floor` left at `None`, the fits where a floor would bind
 (`collapse` and `flat` families) are equal to 0.3.3's. With hmmlearn pull
