@@ -11,7 +11,12 @@ from sklearn.utils import check_random_state
 
 from . import _emissionsc, _utils
 from .base import BaseHMM, _AbstractHMM, _reports_as_errors
-from .stats import _read_as_is, log_multivariate_normal_density
+from .stats import (
+    _log_multivariate_normal_density_full,
+    _log_multivariate_normal_density_tied,
+    _read_as_is,
+    log_multivariate_normal_density,
+)
 from .utils import fill_covars, log_normalize
 
 _CATEGORICALHMM_DOC_SUFFIX = """
@@ -354,6 +359,14 @@ class BaseGaussianHMM(_AbstractHMM):
         }
 
     def _compute_log_likelihood(self, X):
+        # Factors held for this E-step (GaussianHMM._compute_estep_factors),
+        # used while _covars_ is the array they were computed from.
+        held = self._estep_factors
+        if held is not None and held[0] is self._covars_:
+            density = (_log_multivariate_normal_density_tied
+                       if self.covariance_type == "tied"
+                       else _log_multivariate_normal_density_full)
+            return density(X, self.means_, held[0], factors=held[1])
         return log_multivariate_normal_density(
             X, self.means_, self._covars_, self.covariance_type)
 

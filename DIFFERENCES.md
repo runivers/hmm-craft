@@ -190,6 +190,15 @@ scipy 1.11.2, scikit-learn 1.3.1, threadpoolctl 3.5.0, and numpy 2.5.4,
 scipy 1.18.1, scikit-learn 1.9.1, threadpoolctl 3.8.0. In each environment,
 the package's results are byte for byte those of the tree before.
 
+At the tree that factors each `full` and `tied` covariance of a `GaussianHMM`
+once per E-step, which includes every change to the package since the tree
+of the blocks, the check gives equal apart from E1 to E7 on the same data and
+cases, with Python 3.12.3, Linux x86_64 and one thread, in both
+environments: numpy 1.26.0, scipy 1.11.2, scikit-learn 1.3.1, threadpoolctl
+3.5.0, and numpy 2.5.4, scipy 1.18.1, scikit-learn 1.9.1, threadpoolctl
+3.8.0. In each environment, the package's results are byte for byte those of
+the tree before.
+
 This is the whole claim of the check: no result is stated for other data,
 other versions, other thread counts or another platform. The k-means row above
 states what its own test compares.

@@ -11,13 +11,15 @@ same fitted arrays, history, warnings and log records, as bytes.
 import functools
 import logging
 import os
+import pickle
+import sys
 import warnings
 
 import numpy as np
 import pytest
-from scipy import special
+from scipy import linalg, special
 
-from hmmcraft import _hmmc, base, hmm, vhmm
+from hmmcraft import _emissions, _hmmc, base, hmm, stats, vhmm
 from hmmcraft.base import BaseHMM
 
 from .test_base import (
@@ -51,6 +53,7 @@ N_ITER = 3
 
 ESTEP_HOOKS = {
     "_do_estep",
+    "_compute_estep_factors",
     "_by_implementation",
     "_initialize_sufficient_statistics",
     "_estep_begin",
@@ -307,7 +310,8 @@ def _count(calls, prefix):
 
 def test_e_step_hooks_are_the_methods_the_loop_calls():
     """The guard compares every method the per-sequence E-step calls on the
-    model, 0.3.3's names included, and each once."""
+    model, 0.3.3's names included, and the one the E-step by blocks calls
+    before its first block, ``_compute_estep_factors``; each once."""
     assert set(base._ESTEP_HOOKS) == ESTEP_HOOKS
     assert len(base._ESTEP_HOOKS) == len(ESTEP_HOOKS)
 
@@ -398,6 +402,8 @@ def _hook_owner(name):
         return _variant("GMMHMM-diag")
     if name.startswith("_compute_subnorm"):
         return _variant("VariationalCategoricalHMM")
+    if name == "_compute_estep_factors":
+        return _variant("GaussianHMM-full")
     return _variant("GaussianHMM-diag")
 
 
@@ -938,6 +944,271 @@ def test_the_deprecated_categorical_layout_keeps_the_loop(
     assert plain == _fitted(per_sequence(factory(implementation)), X)
 
 
+# Factors of full and tied covariances --------------------------------------
+
+
+@pytest.fixture
+def stats_linalg_calls(monkeypatch):
+    """Record each call of ``linalg.cholesky`` and ``linalg.solve_triangular``
+    made from ``hmmcraft.stats``: ("cholesky", the input, the array returned
+    or None when it raised) and ("solve_triangular", the factor, the number
+    of columns of the right-hand side)."""
+    calls = []
+
+    def from_stats():
+        return sys._getframe(2).f_globals.get("__name__") == stats.__name__
+
+    real_cholesky = linalg.cholesky
+    real_solve = linalg.solve_triangular
+
+    def cholesky(a, *args, **kwargs):
+        if not from_stats():
+            return real_cholesky(a, *args, **kwargs)
+        try:
+            factor = real_cholesky(a, *args, **kwargs)
+        except linalg.LinAlgError:
+            calls.append(("cholesky", a, None))
+            raise
+        calls.append(("cholesky", a, factor))
+        return factor
+
+    def solve_triangular(a, b, *args, **kwargs):
+        if from_stats():
+            calls.append(("solve_triangular", a, np.shape(b)[1]))
+        return real_solve(a, b, *args, **kwargs)
+
+    monkeypatch.setattr(linalg, "cholesky", cholesky)
+    monkeypatch.setattr(linalg, "solve_triangular", solve_triangular)
+    return calls
+
+
+def _factored(calls):
+    """The number of ``cholesky`` calls that returned a factor."""
+    return sum(1 for name, _, got in calls
+               if name == "cholesky" and got is not None)
+
+
+@pytest.mark.parametrize("implementation", ["log", "scaling"])
+@pytest.mark.parametrize("covariance_type", ["full", "tied"])
+def test_full_and_tied_covariances_are_factored_once_per_e_step(
+    stats_linalg_calls, rows_16, covariance_type, implementation
+):
+    """An E-step by blocks factors each ``full`` covariance once (``tied``:
+    its one covariance once) and solves once per state and sequence with
+    that sequence's rows; sequence by sequence, each sequence factors every
+    state's covariance again. Both give the same fit, and no factor is left
+    on the model."""
+    _, factory, X = _variant(f"GaussianHMM-{covariance_type}")
+    model = factory(3, implementation)
+    plain = _fitted(model, X)
+    assert isinstance(plain[0], dict)
+    n_iter = model.monitor_.iter
+    per_covariance = 3 if covariance_type == "full" else 1
+    assert _factored(stats_linalg_calls) == per_covariance * n_iter
+    columns = [n for name, _, n in stats_linalg_calls
+               if name == "solve_triangular"]
+    assert columns == [n for n in LENGTHS for _ in range(3)] * n_iter
+    assert "_estep_factors" not in vars(model)
+
+    del stats_linalg_calls[:]
+    loop = per_sequence(factory(3, implementation))
+    assert _fitted(loop, X) == plain
+    assert _factored(stats_linalg_calls) == (
+        3 * len(LENGTHS) * loop.monitor_.iter
+    )
+
+
+def _fixed_full_or_tied(covariance_type, implementation):
+    """A two-state GaussianHMM with fixed parameters, checked."""
+    model = hmm.GaussianHMM(
+        2,
+        covariance_type,
+        n_iter=1,
+        implementation=implementation,
+        init_params="",
+    )
+    model.startprob_ = [0.6, 0.4]
+    model.transmat_ = [[0.7, 0.3], [0.4, 0.6]]
+    model.means_ = [[0.0, 0.0], [3.0, 3.0]]
+    model.n_features = 2
+    if covariance_type == "full":
+        model.covars_ = [[[1.0, 0.5], [0.5, 1.0]], [[2.0, 0.0], [0.0, 1.0]]]
+    else:
+        model.covars_ = [[1.0, 0.5], [0.5, 1.0]]
+    model._check()
+    return model
+
+
+def _set_covariance(value):
+    """State 1's covariance (tied: the covariance), set past the checks."""
+
+    def change(model, X):
+        covars = model._covars_.copy()
+        if model.covariance_type == "tied":
+            covars[...] = value
+        else:
+            covars[1] = value
+        model._covars_ = covars
+        return X
+
+    return change
+
+
+def _set_row(value, mean=None, row=38):
+    """A row, by default row 38 in the eighth sequence, set to ``value``;
+    every mean set to ``mean`` if given."""
+
+    def change(model, X):
+        X = X.copy()
+        X[row] = value
+        if mean is not None:
+            model.means_ = np.full_like(model.means_, mean)
+        return X
+
+    return change
+
+
+def _reports_then_raises(model, X):
+    """State 0's arithmetic overflows on the first sequence, its one row;
+    state 1 cannot be factored."""
+    X = _set_covariance([[1.0, 2.0], [2.0, 1.0]])(model, X)
+    return _set_row(1e200, row=0)(model, X)
+
+
+# name: (change of the model and data, factors held, covariance types,
+#        implementations)
+HELD_CASES = {
+    "plain": (lambda model, X: X, True, ("full", "tied"), ("log", "scaling")),
+    "singular covariance": (
+        _set_covariance(1.0), True, ("full", "tied"), ("log", "scaling")),
+    "not positive definite": (
+        _set_covariance([[1.0, 2.0], [2.0, 1.0]]),
+        False,
+        ("full", "tied"),
+        ("log", "scaling"),
+    ),
+    "NaN covariance": (
+        _set_covariance(np.nan), False, ("full", "tied"), ("log", "scaling")),
+    "1e308 against -1e308": (
+        _set_row(1e308, -1e308), True, ("full", "tied"), ("log", "scaling")),
+    "row of 1e200": (
+        _set_row(1e200), True, ("full", "tied"), ("log", "scaling")),
+    "state 0 reports, state 1 raises": (
+        _reports_then_raises, False, ("full",), ("log", "scaling")),
+    "row of 1e4, flagged": (
+        _set_row(1e4), True, ("full", "tied"), ("scaling",)),
+}
+HELD_ROWS = [
+    (name, cov, impl)
+    for name, (_, _, types, impls) in HELD_CASES.items()
+    for cov in types
+    for impl in impls
+]
+HELD_STATES = [DEFAULT_STATE, *REPORT_STATES, {"all": "ignore"}]
+HELD_STATE_IDS = ["default", *REPORT_IDS, "all=ignore"]
+
+
+@pytest.mark.parametrize("state", HELD_STATES, ids=HELD_STATE_IDS)
+@pytest.mark.parametrize(
+    "name, covariance_type, implementation",
+    HELD_ROWS,
+    ids=[f"{n}-{c}-{i}" for n, c, i in HELD_ROWS],
+)
+def test_held_factors_give_the_loop_outcome(
+    stats_linalg_calls, rows_16, name, covariance_type, implementation, state
+):
+    """An E-step by blocks with factors held gives the statistics or the
+    error, the warnings in order, the handler calls and the log records of
+    the loop; the sequences of a block that reports, and a flagged
+    sequence, are computed with the held factors, so the E-step factors
+    each covariance once. Nothing is left on the model."""
+    change, held, _, _ = HELD_CASES[name]
+    X = _data()[0]
+    model = _fixed_full_or_tied(covariance_type, implementation)
+    X = change(model, X)
+    loop = per_sequence(_fixed_full_or_tied(covariance_type, implementation))
+    change(loop, _data()[0])
+    del stats_linalg_calls[:]
+    got = _estep(model, X, LENGTHS, state)
+    n_factored = _factored(stats_linalg_calls)
+    assert "_estep_factors" not in vars(model)
+    assert got == _estep(loop, X, LENGTHS, state)
+    if held:
+        assert n_factored == (2 if covariance_type == "full" else 1)
+
+
+def _factors_read_by_the_kernel(monkeypatch, model):
+    """Record ``model._estep_factors`` at each call of the kernel's block
+    functions."""
+    seen = []
+    for name in ("estep_log", "estep_scaling"):
+        real = getattr(_hmmc, name)
+
+        def reading(*args, _real=real):
+            seen.append(model._estep_factors)
+            return _real(*args)
+
+        monkeypatch.setattr(_hmmc, name, reading)
+    return seen
+
+
+def _densities_called(monkeypatch):
+    """Record the ``factors`` argument of each call of the full and tied
+    log-densities, through ``hmmcraft.stats`` and ``hmmcraft._emissions``."""
+    seen = []
+    for module in (stats, _emissions):
+        for name in (
+            "_log_multivariate_normal_density_full",
+            "_log_multivariate_normal_density_tied",
+        ):
+            real = getattr(module, name)
+
+            def recording(*args, _real=real, **kwargs):
+                seen.append(kwargs.get("factors"))
+                return _real(*args, **kwargs)
+
+            monkeypatch.setattr(module, name, recording)
+    return seen
+
+
+@pytest.mark.parametrize("variant", VARIANTS, ids=VARIANT_IDS)
+def test_only_full_and_tied_gaussian_models_hold_factors(
+    monkeypatch, rows_16, variant
+):
+    """While the E-step computes by blocks, only a GaussianHMM with full or
+    tied covariances holds factors; none is left after a fit, after an
+    E-step that raises, or in a pickle, and the predictions factor at each
+    call."""
+    name, factory, X = variant
+    holds = name in ("GaussianHMM-full", "GaussianHMM-tied")
+    model = factory(2, "log")
+    with monkeypatch.context() as patch:
+        seen = _factors_read_by_the_kernel(patch, model)
+        model.fit(X, LENGTHS)
+    assert seen and all((held is not None) == holds for held in seen)
+    if holds:
+        _, factors = seen[-1]
+        assert len(factors) == 2
+    assert "_estep_factors" not in vars(model)
+    assert "_estep_factors" not in vars(pickle.loads(pickle.dumps(model)))
+
+    def raising(*args):
+        raise ValueError("raised in the block")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(_hmmc, "estep_log", raising)
+        with pytest.raises(ValueError, match="raised in the block"):
+            model._do_estep(X, LENGTHS)
+    assert "_estep_factors" not in vars(model)
+
+    if holds:
+        with monkeypatch.context() as patch:
+            called = _densities_called(patch)
+            model.score(X, LENGTHS)
+        assert len(called) >= len(LENGTHS)
+        assert all(factors is None for factors in called)
+
+
 # Reports and underflow -------------------------------------------------------
 
 
@@ -1071,6 +1342,8 @@ def test_an_impossible_sequence_still_raises_the_underflow_error(
     "name",
     [
         "GaussianHMM-diag",
+        "GaussianHMM-full",
+        "GaussianHMM-tied",
         "GMMHMM-diag",
         "PoissonHMM",
         "VariationalCategoricalHMM",

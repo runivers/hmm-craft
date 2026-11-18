@@ -101,37 +101,94 @@ def _log_multivariate_normal_density_spherical(X, means, covars):
     return _log_multivariate_normal_density_diag(X, means, covars)
 
 
-def _log_multivariate_normal_density_tied(X, means, covars):
+def _log_multivariate_normal_density_tied(X, means, covars, factors=None):
     """Compute Gaussian log-density at X for a tied model."""
     nc, nf = means.shape
     cv = np.broadcast_to(covars, (nc, nf, nf))
-    return _log_multivariate_normal_density_full(X, means, cv)
+    return _log_multivariate_normal_density_full(X, means, cv,
+                                                 factors=factors)
 
 
-def _log_multivariate_normal_density_full(X, means, covars, min_covar=1.e-7):
-    """Log probability for full covariance matrices."""
+def _cholesky_log_det(cv, nf, min_covar):
+    """The lower Cholesky factor of ``cv``, as ``linalg.cholesky`` returns
+    it, and the log-determinant of ``cv``."""
+    try:
+        cv_chol = linalg.cholesky(cv, lower=True)
+    except linalg.LinAlgError:
+        # The model is most probably stuck in a component with too
+        # few observations, we need to reinitialize this components
+        try:
+            cv_chol = linalg.cholesky(cv + min_covar * np.eye(nf),
+                                      lower=True)
+        except linalg.LinAlgError:
+            raise ValueError("'covars' must be symmetric, "
+                             "positive-definite")
+
+    # In place on a copy: numpy < 2.0.2 with AVX-512 picks its log loop by
+    # where the output lies near the input, unless the two coincide.
+    cv_diag = np.diagonal(cv_chol).copy()
+    cv_log_det = 2 * np.sum(np.log(cv_diag, out=cv_diag))
+    return cv_chol, cv_log_det
+
+
+def _log_multivariate_normal_density_full(X, means, covars, min_covar=1.e-7,
+                                          factors=None):
+    """Log probability for full covariance matrices.
+
+    ``factors``, when given, holds ``_cholesky_log_det``'s pair for each
+    state, computed from ``covars`` (``_covar_factors``).
+    """
     _, nf = means.shape
     log_prob = []
     for c, (mu, cv) in enumerate(zip(means, covars)):
-        try:
-            cv_chol = linalg.cholesky(cv, lower=True)
-        except linalg.LinAlgError:
-            # The model is most probably stuck in a component with too
-            # few observations, we need to reinitialize this components
-            try:
-                cv_chol = linalg.cholesky(cv + min_covar * np.eye(nf),
-                                          lower=True)
-            except linalg.LinAlgError:
-                raise ValueError("'covars' must be symmetric, "
-                                 "positive-definite")
-
-        # In place on a copy: numpy < 2.0.2 with AVX-512 picks its log loop by
-        # where the output lies near the input, unless the two coincide.
-        cv_diag = np.diagonal(cv_chol).copy()
-        cv_log_det = 2 * np.sum(np.log(cv_diag, out=cv_diag))
+        if factors is not None:
+            cv_chol, cv_log_det = factors[c]
+        else:
+            cv_chol, cv_log_det = _cholesky_log_det(cv, nf, min_covar)
         cv_sol = linalg.solve_triangular(cv_chol, (X - mu).T, lower=True).T
         log_prob.append(-.5 * (nf * np.log(2 * np.pi)
                                + (cv_sol ** 2).sum(axis=1)
                                + cv_log_det))
 
     return np.transpose(log_prob)
+
+
+def _covar_factors(means, covars, covariance_type, min_covar=1.e-7):
+    """
+    The Cholesky factor and log-determinant of each state's covariance, as
+    the ``full`` and ``tied`` log-densities compute them, or None.
+
+    Return a list of ``_cholesky_log_det`` pairs, one per state (``tied``:
+    the one pair for every state), to be given to the density with the
+    same ``means`` and ``covars``. None for another covariance type, for
+    covariances that are not a plain C-ordered float64 array of the shape
+    the means imply, and when a covariance cannot be factored or a
+    floating-point report is raised: the density then factors at each call
+    and raises, warns and reports as it does without factors.
+    """
+    # Comparisons only: scipy's cholesky may warn at each call for another
+    # dtype, and its factor's memory order, which picks solve_triangular's
+    # LAPACK call, is only known for a plain float64 input.
+    if not (type(means) is np.ndarray and means.ndim == 2):
+        return None
+    nc, nf = means.shape
+    if covariance_type == "full":
+        if not (_read_as_is(covars, 3) and covars.shape == (nc, nf, nf)):
+            return None
+        slices = covars
+    elif covariance_type == "tied":
+        if not (_read_as_is(covars, 2) and covars.shape == (nf, nf)):
+            return None
+        # State 0's slice as the tied density reads it: a read-only view
+        # with the strides of covars.
+        slices = np.broadcast_to(covars, (nc, nf, nf))[:1]
+    else:
+        return None
+    try:
+        with np.errstate(all="raise"):
+            factors = [_cholesky_log_det(cv, nf, min_covar) for cv in slices]
+    except (ValueError, FloatingPointError):
+        return None
+    if covariance_type == "tied":
+        factors = factors * nc
+    return factors

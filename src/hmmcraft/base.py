@@ -78,10 +78,12 @@ def _reports_as_errors():
 _ESTEP_BLOCK_ROWS = 4096
 
 # Every method the E-step calls on the model when it computes one sequence
-# at a time, hmmlearn 0.3.3's included. A block calls them in another order,
+# at a time, hmmlearn 0.3.3's included, and the one it calls before the
+# first block, _compute_estep_factors. A block calls them in another order,
 # so a model that replaces any of them is computed one sequence at a time.
 _ESTEP_HOOKS = (
     "_do_estep",
+    "_compute_estep_factors",
     "_by_implementation",
     "_initialize_sufficient_statistics",
     "_estep_begin",
@@ -1187,6 +1189,11 @@ class _AbstractHMM(BaseEstimator):
     # its own is set for that call and again for its statistics.
     _estep_values = None
 
+    # None, except while _do_estep computes by blocks: then what
+    # _compute_estep_factors returned, on the instance, for every sequence's
+    # emission hook to read; never kept on an instance.
+    _estep_factors = None
+
     # The model class whose E-step may be computed by blocks of sequences
     # (_block_estep); None: one sequence at a time.
     _estep_owner = None
@@ -1299,6 +1306,14 @@ class _AbstractHMM(BaseEstimator):
         sequence gives. The default does not know.
         """
         return False
+
+    def _compute_estep_factors(self):
+        """
+        What every sequence's emission hook may read back while an E-step
+        computes by blocks, computed once before the first block from the
+        parameters alone, or None. The default holds nothing.
+        """
+        return None
 
     def _estep_sequence(self, compute, stats, occupancy, fallen, index,
                         sub_X, values):
@@ -1437,18 +1452,26 @@ class _AbstractHMM(BaseEstimator):
         else:
             n_rows = [len(sub_X) for sub_X in sub_Xs]
             starts = [0, *itertools.accumulate(n_rows)]
-            for first, stop in _estep_blocks(n_rows, self.n_components):
-                block = self._estep_block(
-                    impl, X[starts[first]:starts[stop]], sub_Xs[first:stop])
-                if block is None:
-                    # A report in the block: its sequences one at a time,
-                    # in the caller's error state.
-                    block = [(impl, [sub_X]) for sub_X in sub_Xs[first:stop]]
-                # The statistics of each sequence, in sequence order.
-                for i, (compute, values) in enumerate(block, first):
-                    curr_logprob += self._estep_sequence(
-                        compute, stats, occupancy, fallen, i, sub_Xs[i],
-                        values)
+            # Written through vars, as _estep_values; held for the
+            # sequences computed one at a time after a report too.
+            vars(self)["_estep_factors"] = self._compute_estep_factors()
+            try:
+                for first, stop in _estep_blocks(n_rows, self.n_components):
+                    block = self._estep_block(
+                        impl, X[starts[first]:starts[stop]],
+                        sub_Xs[first:stop])
+                    if block is None:
+                        # A report in the block: its sequences one at a
+                        # time, in the caller's error state.
+                        block = [(impl, [sub_X])
+                                 for sub_X in sub_Xs[first:stop]]
+                    # The statistics of each sequence, in sequence order.
+                    for i, (compute, values) in enumerate(block, first):
+                        curr_logprob += self._estep_sequence(
+                            compute, stats, occupancy, fallen, i, sub_Xs[i],
+                            values)
+            finally:
+                vars(self).pop("_estep_factors", None)
         if fallen:
             _warn_fallback(fallen, len(sub_Xs))
         self.state_occupancy_ = occupancy
