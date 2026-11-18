@@ -7,6 +7,17 @@ from hmmcraft import hmm
 from . import assert_log_likelihood_increasing, normalized
 
 
+def _fit_bytes(model):
+    """The fitted arrays and the history of the fit, as bytes."""
+    state = {
+        name: (np.asarray(v).dtype.str, np.shape(v), np.asarray(v).tobytes())
+        for name, v in vars(model).items()
+        if name.endswith("_") and name != "monitor_"
+    }
+    state["monitor_.history"] = list(model.monitor_.history)
+    return state
+
+
 class TestCategoricalAgainstWikipedia:
     """
     Examples from Wikipedia:
@@ -122,23 +133,49 @@ class TestCategoricalHMM:
             getattr(h, method)(X)
 
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
-    def test_fit_after_a_score_refuses_a_wider_emissionprob_as_fit_alone(
+    def test_fit_counts_symbols_from_a_kept_emissionprob_as_fit_alone(
             self, implementation):
         """
         A ``score`` leaves nothing for a later ``fit``: without
-        ``n_features``, a kept ``emissionprob_`` with more symbols than
-        ``X`` shows is refused by ``fit``, with or without a ``score``
-        before it.
+        ``n_features``, ``fit`` takes the number of symbols from a kept
+        ``emissionprob_`` with more symbols than ``X`` shows, with or
+        without a ``score`` before it, and fits as the model given that
+        number.
         """
         X = np.array([[0, 1, 1, 0, 1]]).T
+        expected = self.new_hmm(implementation)
+        expected.init_params = ""
+        expected.n_features = 3
+        expected.fit(X)
         for score_first in (False, True):
             h = self.new_hmm(implementation)
             h.init_params = ""
             if score_first:
                 h.score(X)
-            with pytest.raises(ValueError,
-                               match=r"emissionprob_ must have shape\(2, 2\)"):
-                h.fit(X)
+            h.fit(X)
+            assert h.n_features == 3
+            assert _fit_bytes(h) == _fit_bytes(expected)
+
+    @pytest.mark.parametrize("implementation", ["scaling", "log"])
+    def test_fit_refuses_a_symbol_beyond_a_kept_emissionprob(
+            self, implementation):
+        """
+        Without ``n_features``, ``fit`` refuses a symbol that a kept
+        ``emissionprob_`` does not emit, naming it, and leaves
+        ``n_features`` unset; ``X`` that shows every symbol stores the
+        count ``X`` gives, of its type.
+        """
+        h = self.new_hmm(implementation)
+        h.init_params = ""
+        with pytest.raises(ValueError, match="Largest symbol is 3"):
+            h.fit(np.array([[0, 3, 1]]).T)
+        assert h.n_features is None
+        X = np.array([[0, 1, 2, 1]]).T
+        h = self.new_hmm(implementation)
+        h.init_params = ""
+        h.fit(X)
+        assert h.n_features == 3
+        assert type(h.n_features) is type(X.max() + 1)
 
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
     def test_score_samples(self, implementation):

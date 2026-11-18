@@ -12,8 +12,12 @@ Unreleased
   starts a missing ``emissionprob_``; prediction no longer modifies a non-variational model.
 - Fixed: ``implementation="scaling"`` computes a sequence that underflows with the log functions
   instead of raising, unless they give no finite log-likelihood for it, which raises as before.
+- Fixed: a refused ``fit`` no longer makes the next one fail; ``n_features=None`` fits as unset; a
+  kept ``emissionprob_`` counts the symbols; prediction no longer modifies a variational model.
 - Changed: ``ValueError``, not a result, for invalid parameters or ``X`` and for ``sample(0)``; the
   non-variational models convert parameters to arrays when assigned; no ``MultinomialHMM`` warning.
+- Changed: the variational models refuse invalid parameters by name and convert them to arrays when
+  assigned (see DIFFERENCES.md); the other models check parameters with fewer numpy and scipy calls.
 - Changed: Gaussian emissions use C++ loops, Poisson and multinomial ones fewer scipy calls, and
   ``GMMHMM`` computes its mixture densities once per E-step; same results in DIFFERENCES.md's check.
 - Changed: the k-means start runs on one thread, so a seeded fit at two or more threads changes: it

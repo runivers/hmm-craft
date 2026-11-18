@@ -63,7 +63,12 @@ integer. `fit` first refuses an `n_components` less than 1, then passes `X`
 and `lengths` to `_utils.split_X_lengths`, which raises `ValueError` for any
 other entry and for a total that is not the number of samples, so no start is
 computed from invalid `lengths`. After `_init`, `_check` and `_store_checked`,
-and before the first E-step, `_check_X` checks `X` against the model.
+and before the first E-step, `_check_X` checks `X` against the model. If one
+of these four raises, `fit` puts back what its start derived from `X`, as the
+class lists it in `_derived_from_X`: `n_features`, unless
+`_n_features_from_emissions` gives the number it set; for `GMMHMM` also its
+priors (a covariance prior filled from `None` keeps its number). The
+categorical models list nothing. Then the error propagates.
 
 ```mermaid
 flowchart TD
@@ -183,8 +188,9 @@ A model class supplies these hooks; the loop never changes per class:
 | Hook | Does |
 |---|---|
 | `_init` | sets the starting parameters named in `init_params`, and any that is not yet set (k-means for Gaussian means, for instance, run on one thread) |
-| `_check` | validates shapes (`GaussianHMM`'s `means_` among them); in the five expectation-maximization models, also that probabilities sum to one with no negative entry and that emission parameters are finite, reading the model and writing nothing |
-| `_store_checked` | called by `fit` alone, after `_check`: stores what the checked parameters imply (`GaussianHMM`: `n_features` from `means_`); the base class stores nothing |
+| `_check` | validates shapes (`GaussianHMM`'s `means_` among them), reading the model and writing nothing; in the five expectation-maximization models, also that probabilities sum to one with no negative entry and that emission parameters are finite; in the variational models only what both `fit` and a prediction read (`VariationalGaussianHMM`: no NaN in `means_posterior_`). `VariationalGaussianHMM` does not test the shapes of its start and transition priors and posteriors, as its check never did |
+| `_store_checked` | called by `fit` alone, after `_check`: stores what the checked parameters imply (`GaussianHMM`: `n_features` from `means_`); the variational models test there the values only `fit` reads, every prior and posterior finite (`beta_posterior_`: no NaN); the base class stores and tests nothing |
+| `_check_for_prediction` | called by `score`/`score_samples`, `decode` and `sample` after `_check`, never by `fit`: the variational models test there the values only a prediction reads, `startprob_`, `transmat_` and `emissionprob_` finite and non-negative, `covars_` without NaN; the base class tests nothing |
 | `_check_X` | checks `X` against the model after `_check`, reading only: its number of columns, or for the categorical models that each symbol is a whole number from 0 to `n_features - 1` and that `X` is not boolean; then, for the multinomial and Poisson models, that each count is a non-negative whole number. The base class checks nothing, so a model that brings its own likelihood takes `X` as it is |
 | `_compute_likelihood` / `_compute_log_likelihood` | at least one implemented; the base class derives a missing one from the other |
 | `_initialize_sufficient_statistics` | the empty dictionary of statistics |
@@ -192,7 +198,7 @@ A model class supplies these hooks; the loop never changes per class:
 | `_do_mstep` | sets the parameters named in `params` from the statistics |
 | `_generate_sample_from_state` | draws one observation, for `sample` |
 | `_get_n_fit_scalars_per_param` | the free parameters, for the warning on too little data and for `aic` and `bic` |
-| `_n_features_from_emissions` | the number of features the emission parameter implies (`means_`, `means_posterior_`, `emissionprob_` or `lambdas_`) |
+| `_n_features_from_emissions` | the number of features the emission parameter implies (`means_`, `means_posterior_`, `emissionprob_`, `emissionprob_posterior_` or `lambdas_`) |
 
 `n_features` is set by `fit` alone, from `X` (`GaussianHMM` stores the width
 of `means_` in `_store_checked`); a prediction never sets it.
@@ -204,16 +210,25 @@ read.
 `_check_X` compares the columns of `X` with the count the emission parameter
 implies, not with `n_features`, which an earlier fit may have left; the
 categorical models, whose `n_features` is a constructor parameter and whose
-`X` holds symbols, test the symbols against `_get_n_features`.
+`X` holds symbols, test the symbols against `_get_n_features`. Built
+without `n_features`, the categorical models take it in `fit` from a kept
+emission parameter (`"e"` not in `init_params`), refusing a larger symbol,
+and count it from `X` otherwise; `VariationalGaussianHMM` reads it through
+`_get_n_features`.
 `implementation` is read through `_by_implementation`, which raises
 `ValueError` for a value other than `"log"` or `"scaling"`.
 
-In the five expectation-maximization models a parameter is converted to an
-array when it is assigned, by a data descriptor on the class
-(`_ConvertedAttribute`): `startprob_` and `transmat_` (`np.asarray`), the
-`emissionprob_` of `CategoricalHMM` and `MultinomialHMM` and the `lambdas_` of
-`PoissonHMM` (`np.atleast_2d`), the `means_` of `GaussianHMM` (`np.asarray`),
-and the `weights_`, `means_` and `covars_` of `GMMHMM` (`np.array`, a copy).
+In every model a parameter is converted to an array when it is assigned, by
+a data descriptor on the class (`_ConvertedAttribute`): `startprob_` and
+`transmat_` (`np.asarray`), the `emissionprob_` of `CategoricalHMM` and
+`MultinomialHMM` and the `lambdas_` of `PoissonHMM` (`np.atleast_2d`), the
+`means_` of `GaussianHMM` (`np.asarray`), and the `weights_`, `means_` and
+`covars_` of `GMMHMM` (`np.array`, a copy). The variational models convert
+their start and transition priors and posteriors (`np.asarray`), the
+emission priors, posteriors and `emissionprob_` of `VariationalCategoricalHMM`
+(`np.atleast_2d`), and the priors and posteriors of `VariationalGaussianHMM`
+to float arrays, except that its degrees of freedom keep a number as given
+(a `tied` model's) and convert anything else.
 The value is kept in the instance's `__dict__` under the parameter's own name,
 so `vars(model)` and a pickle hold what a plain attribute would.
 `_AbstractHMM.__setstate__` assigns these parameters again, so a pickle that
@@ -225,8 +240,8 @@ fits. With `implementation="scaling"` they compute a sequence whose scaled
 forward pass underflows with the log functions (`_score_log`), as the E-step
 does, and log one warning per call; `decode` scores each sequence on its own,
 so it logs one per such sequence. Each, and `decode`, runs `_check` and then
-`_check_X` on `X` before it is split into sequences; in the five
-expectation-maximization models neither writes to the model. `decode` with
+`_check_X` on `X` before it is split into sequences (`_check_for_prediction`
+between them); none writes to the model. `decode` with
 `algorithm="viterbi"` calls the kernel's `viterbi`. `sample` is a Python loop
 over the transition matrix and `_generate_sample_from_state`; it refuses fewer
 than one sample.

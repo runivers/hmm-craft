@@ -287,3 +287,85 @@ class TestMultinomialHMM:
             [0.62406281, 0.37593719],
             [0.86397706, 0.13602294],
         ], rtol=0, atol=1e-6)
+
+
+def _counts_four_then_three_symbols():
+    """50 rows of counts over four symbols, then 50 over three: 5 each."""
+    rs = np.random.RandomState(0)
+    wrong = rs.multinomial(5, [0.25] * 4, size=50)
+    right = rs.multinomial(5, [0.2, 0.3, 0.5], size=50)
+    return wrong, right
+
+
+EMISSIONPROB = [[0.1, 0.4, 0.5], [0.6, 0.3, 0.1]]
+
+
+def _without_n_trials(emissionprob):
+    """A model without ``n_trials`` that keeps *emissionprob*."""
+    model = hmm.MultinomialHMM(2, n_trials=None, init_params="st",
+                               random_state=0)
+    model.emissionprob_ = np.array(emissionprob)
+    return model
+
+
+def _by_hand(model):
+    """A model with ``n_trials=5`` and the parameters of *model*."""
+    h = hmm.MultinomialHMM(2, n_trials=5)
+    h.startprob_ = model.startprob_
+    h.transmat_ = model.transmat_
+    h.emissionprob_ = model.emissionprob_
+    return h
+
+
+def _refused_on_a_row(right):
+    """
+    A model without ``n_trials`` whose ``fit`` on *right* was refused on
+    an ``emissionprob_`` row that does not sum to 1, then repaired.
+    """
+    model = _without_n_trials([[0.1, 0.4, 0.6], [0.6, 0.3, 0.1]])
+    with pytest.raises(ValueError, match="emissionprob_"):
+        model.fit(right)
+    assert model.n_trials.tobytes() == right.sum(axis=1).tobytes()
+    assert model.n_features == 3
+    model.emissionprob_ = np.array(EMISSIONPROB)
+    return model
+
+
+def test_score_after_a_refused_fit_reads_its_n_trials():
+    """
+    A ``fit`` refused on an ``emissionprob_`` row keeps the ``n_trials``
+    it read from ``X``; with the row repaired, ``score`` equals that of a
+    model built by hand with the same parameters.
+    """
+    _, right = _counts_four_then_three_symbols()
+    model = _refused_on_a_row(right)
+    assert model.score(right) == _by_hand(model).score(right)
+
+
+def test_score_after_a_width_refusal_and_a_wider_emissionprob():
+    """
+    After a ``fit`` refused on ``X`` of another width, an ``emissionprob_``
+    of that width set by hand scores ``X`` as a model built by hand.
+    """
+    wrong, _ = _counts_four_then_three_symbols()
+    model = _without_n_trials(EMISSIONPROB)
+    with pytest.raises(ValueError):
+        model.fit(wrong)
+    model.emissionprob_ = np.array([[0.1, 0.4, 0.3, 0.2],
+                                    [0.6, 0.2, 0.1, 0.1]])
+    assert model.score(wrong) == _by_hand(model).score(wrong)
+
+
+def test_sample_after_a_refused_fit_reads_its_n_trials():
+    """
+    ``sample`` after a refused ``fit`` and a repair draws with the
+    ``n_trials`` the call read from ``X``: the draw equals that of a model
+    built by hand with that number.
+    """
+    _, right = _counts_four_then_three_symbols()
+    model = _refused_on_a_row(right)
+    X, states = model.sample(10, random_state=0)
+    X_hand, states_hand = _by_hand(model).sample(10, random_state=0)
+    assert X.tobytes() == X_hand.tobytes()
+    assert X.dtype == X_hand.dtype
+    assert states.tobytes() == states_hand.tobytes()

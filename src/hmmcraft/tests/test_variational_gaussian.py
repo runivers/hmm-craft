@@ -1,3 +1,5 @@
+import numbers
+
 import numpy as np
 import pytest
 from sklearn.utils import check_random_state
@@ -366,6 +368,31 @@ class TestTied(_TestGaussian):
         model.scale_posterior_ = [[2]]
         assert_log_likelihood_increasing(model, sequences, lengths, 10)
 
+    @pytest.mark.parametrize("attr", ["dof_prior_", "dof_posterior_"])
+    def test_dof_stays_a_number(self, attr):
+        """
+        The degrees of freedom of a ``tied`` model are numbers: a number is
+        kept as the object given, a fit leaves numbers, and a list is
+        converted to an array, which ``fit`` refuses as not numeric.
+        """
+        sequences, lengths = get_sequences(
+            20, 2, model=get_mcgrory_titterington(),
+            rs=check_random_state(0))
+        model = self.new_for_init("log")
+        number = np.int64(3)
+        setattr(model, attr, number)
+        assert getattr(model, attr) is number
+        model.n_iter = 2
+        model.fit(sequences, lengths)
+        assert isinstance(model.dof_prior_, numbers.Number)
+        assert isinstance(model.dof_posterior_, numbers.Number)
+        model = self.new_for_init("log")
+        setattr(model, attr, [1])
+        assert type(getattr(model, attr)) is np.ndarray
+        assert getattr(model, attr).dtype == float
+        with pytest.raises(ValueError, match=f"{attr} should be numeric"):
+            model.fit(sequences, lengths)
+
 
 class TestSpherical(_TestGaussian):
     test_fit_mcgrory_titterington1d_mean = 1.4105851867634462
@@ -547,6 +574,61 @@ def test_covars_before_n_features():
     assert model.covars_.tobytes() == expected.tobytes()
 
 
+def _copy_fitted(source, model):
+    """Give *model* every fitted attribute of *source* but the monitor."""
+    for name, value in vars(source).items():
+        if name.endswith("_") and name not in ("monitor_",
+                                               "state_occupancy_"):
+            setattr(model, name, value)
+
+
+def _width_refusal(covariance_type="full"):
+    """
+    ``(model, wider, X4)``: *model* has the parameters of a fit on three
+    features and no ``n_features``; *wider* is fitted on ``X4``, which has
+    four.
+    """
+    rs = np.random.RandomState(0)
+    X3 = rs.normal(size=(50, 3))
+    X4 = rs.normal(size=(50, 4))
+    narrow = vhmm.VariationalGaussianHMM(
+        2, covariance_type, random_state=0, n_iter=1).fit(X3)
+    wider = vhmm.VariationalGaussianHMM(
+        2, covariance_type, random_state=0, n_iter=1).fit(X4)
+    model = vhmm.VariationalGaussianHMM(
+        2, covariance_type, init_params="", random_state=0)
+    _copy_fitted(narrow, model)
+    return model, wider, X4
+
+
+def test_score_after_a_width_refusal_and_wider_posteriors():
+    """
+    After a ``fit`` refused on ``X`` of another width, the parameters of
+    that width set by hand score ``X`` as the model they come from.
+    """
+    model, wider, X4 = _width_refusal()
+    with pytest.raises(ValueError):
+        model.fit(X4)
+    _copy_fitted(wider, model)
+    assert model.score(X4) == wider.score(X4)
+
+
+def test_spherical_covars_after_a_refused_fit_is_as_before():
+    """
+    A ``fit`` refused on ``X`` of another width leaves the number of
+    features as it was: ``covars_`` of a ``spherical`` model keeps the
+    shape and values it had before the call.
+    """
+    model, _, X4 = _width_refusal("spherical")
+    before = model.covars_
+    assert before.shape == (2, 3, 3)
+    with pytest.raises(ValueError):
+        model.fit(X4)
+    after = model.covars_
+    assert after.shape == before.shape
+    assert after.tobytes() == before.tobytes()
+
+
 @pytest.mark.parametrize("means", [None, np.zeros(2)], ids=["unset", "1-D"])
 def test_spherical_covars_name_means_posterior(means):
     """
@@ -560,3 +642,30 @@ def test_spherical_covars_name_means_posterior(means):
         model.means_posterior_ = means
     with pytest.raises(ValueError, match="means_posterior_"):
         _ = model.covars_
+
+
+@pytest.mark.parametrize("covariance_type",
+                         ["full", "diag", "spherical", "tied"])
+def test_list_start_and_transition_posteriors_fit(covariance_type):
+    """
+    A ``startprob_posterior_`` and a ``transmat_posterior_`` given as lists
+    are converted when assigned, so a refit from them equals the refit from
+    the arrays.
+    """
+    X = np.random.RandomState(10).normal(size=(100, 2))
+    fitted = vhmm.VariationalGaussianHMM(
+        2, covariance_type, random_state=0, n_iter=5).fit(X)
+    from_arrays = vhmm.VariationalGaussianHMM(
+        2, covariance_type, init_params="", random_state=0, n_iter=5)
+    _copy_fitted(fitted, from_arrays)
+    from_lists = vhmm.VariationalGaussianHMM(
+        2, covariance_type, init_params="", random_state=0, n_iter=5)
+    _copy_fitted(fitted, from_lists)
+    from_lists.startprob_posterior_ = fitted.startprob_posterior_.tolist()
+    from_lists.transmat_posterior_ = fitted.transmat_posterior_.tolist()
+    from_arrays.fit(X)
+    from_lists.fit(X)
+    assert (from_lists.monitor_.history
+            == from_arrays.monitor_.history)
+    assert (from_lists.means_posterior_.tobytes()
+            == from_arrays.means_posterior_.tobytes())

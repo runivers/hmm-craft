@@ -19,6 +19,8 @@ from . import _kl_divergence as _kl
 from .utils import log_normalize, normalize
 
 _log = logging.getLogger(__name__)
+# An attribute the instance does not have, as opposed to one set to None.
+_ABSENT = object()
 #: Supported decoder algorithms.
 DECODER_ALGORITHMS = frozenset(("viterbi", "map"))
 
@@ -32,6 +34,16 @@ _SCALING_UNDERFLOW = "forward pass failed with underflow"
 def _is_scaling_underflow(exc):
     """Return whether *exc* is the scaled forward pass's underflow error."""
     return str(exc).startswith(_SCALING_UNDERFLOW)
+
+
+def _sums_to_1(s):
+    """Return whether every sum in *s* is 1, as ``np.allclose(s, 1)`` does."""
+    if type(s) is np.float64 or (
+            type(s) is np.ndarray and s.dtype == np.float64):
+        # np.allclose's comparison with its default rtol and atol, on a
+        # float64 sum, without its calls; any other type keeps its answer.
+        return bool((np.abs(s - 1) <= 1e-08 + 1e-05).all())
+    return np.allclose(s, 1)
 
 
 def _warn_fallback(fallen, n_sequences):
@@ -285,6 +297,10 @@ class _AbstractHMM(BaseEstimator):
     and Variational Bayes.
     """
 
+    # What the start of fit derives from X; a fit refused before its first
+    # iteration puts it back (_restore_derived_from_X).
+    _derived_from_X = ("n_features",)
+
     def __init__(self, n_components, algorithm, random_state, n_iter,
                  tol, verbose, params, init_params, implementation):
         """
@@ -430,6 +446,7 @@ class _AbstractHMM(BaseEstimator):
         """
         check_is_fitted(self, "startprob_")
         self._check()
+        self._check_for_prediction()
 
         X = check_array(X)
         self._check_X(X)
@@ -569,6 +586,7 @@ class _AbstractHMM(BaseEstimator):
         """
         check_is_fitted(self, "startprob_")
         self._check()
+        self._check_for_prediction()
 
         algorithm = algorithm or self.algorithm
         if algorithm not in DECODER_ALGORITHMS:
@@ -684,6 +702,7 @@ class _AbstractHMM(BaseEstimator):
             raise ValueError(
                 f"n_samples must be at least 1, got {n_samples!r}")
         self._check()
+        self._check_for_prediction()
 
         if random_state is None:
             random_state = self.random_state
@@ -716,6 +735,13 @@ class _AbstractHMM(BaseEstimator):
         EM algorithm. If you want to avoid this step for a subset of
         the parameters, pass proper ``init_params`` keyword argument
         to estimator's constructor.
+
+        If ``fit`` raises before its first iteration, ``n_features`` is put
+        back as it was before the call, unless the emission parameter gives
+        the number the call set; so are the priors of a ``GMMHMM``, a
+        covariance prior that the call filled in keeping its number. The
+        parameters its start drew, and the ``n_trials`` of a
+        ``MultinomialHMM``, stay.
 
         Parameters
         ----------
@@ -755,12 +781,18 @@ class _AbstractHMM(BaseEstimator):
 
         # A fit that runs no EM iteration must not keep an earlier fit's value.
         vars(self).pop("state_occupancy_", None)
-        self._init(X, lengths)
-        self._check()
-        self._store_checked()
-        # X against the parameters _check has validated, before the first
-        # E-step reads it.
-        self._check_X(X)
+        saved = {name: vars(self).get(name, _ABSENT)
+                 for name in self._derived_from_X}
+        try:
+            self._init(X, lengths)
+            self._check()
+            self._store_checked()
+            # X against the parameters _check has validated, before the
+            # first E-step reads it.
+            self._check_X(X)
+        except BaseException:
+            self._restore_derived_from_X(saved)
+            raise
         self.monitor_._reset()
 
         for iter in range(self.n_iter):
@@ -861,15 +893,57 @@ class _AbstractHMM(BaseEstimator):
         """
         raise ValueError("the number of features is unknown: set n_features")
 
+    def _restore_derived_from_X(self, saved):
+        """
+        Put back what the start of a refused :meth:`fit` derived from ``X``.
+
+        *saved* maps each name in ``_derived_from_X`` to its value before
+        the call, or ``_ABSENT``. Each attribute the call changed gets the
+        value :meth:`_value_after_refused_fit` gives, an absent one is
+        removed again; ``n_features`` stays when the emission parameter
+        gives the number the call set.
+        """
+        for name, before in saved.items():
+            current = vars(self).get(name, _ABSENT)
+            if current is before:
+                continue
+            if (name == "n_features"
+                    and self._emissions_give_n_features(current)):
+                continue
+            value = self._value_after_refused_fit(name, before, current)
+            if value is _ABSENT:
+                vars(self).pop(name, None)
+            else:
+                setattr(self, name, value)
+
+    def _emissions_give_n_features(self, n_features):
+        """
+        Return whether the emission parameter gives *n_features*; a missing
+        or malformed parameter gives no number.
+        """
+        if n_features is _ABSENT or n_features is None:
+            return False
+        try:
+            return self._n_features_from_emissions() == n_features
+        except ValueError:
+            return False
+
+    def _value_after_refused_fit(self, name, before, current):
+        """
+        Return the value a refused :meth:`fit` leaves for *name*: by
+        default *before*, its value before the call (``_ABSENT``: none).
+        """
+        return before
+
     def _check_and_set_n_features(self, X):
         _, n_features = X.shape
-        if hasattr(self, "n_features"):
-            if self.n_features != n_features:
-                raise ValueError(
-                    f"Unexpected number of dimensions, got {n_features} but "
-                    f"expected {self.n_features}")
-        else:
+        # None counts as not set, as in _get_n_features.
+        if getattr(self, "n_features", None) is None:
             self.n_features = n_features
+        elif self.n_features != n_features:
+            raise ValueError(
+                f"Unexpected number of dimensions, got {n_features} but "
+                f"expected {self.n_features}")
 
     def _get_n_fit_scalars_per_param(self):
         """
@@ -902,7 +976,7 @@ class _AbstractHMM(BaseEstimator):
         if value is None:
             value = getattr(self, name)
         s = value.sum(axis=-1)
-        if not np.allclose(s, 1):
+        if not _sums_to_1(s):
             raise ValueError(
                 f"{name} must sum to 1 (got {s:.4f})"
                 if s.ndim == 0
@@ -928,6 +1002,20 @@ class _AbstractHMM(BaseEstimator):
             raise ValueError(f"{name} must contain only finite values")
 
     @staticmethod
+    def _check_not_nan(name, value):
+        """
+        Check that an array holds no NaN; infinities are not tested.
+
+        Raises
+        ------
+        ValueError
+            If an entry of ``value`` is NaN.
+        """
+        # Converted to floats, as np.isnan refuses an object array.
+        if np.isnan(np.asarray(value, dtype=float)).any():
+            raise ValueError(f"{name} must not contain NaN")
+
+    @staticmethod
     def _check_nonnegative(name, value):
         """
         Check that an array has no negative entry; zeros, ``-0.0``
@@ -947,8 +1035,8 @@ class _AbstractHMM(BaseEstimator):
         """
         Validate model parameters before fitting or predicting.
 
-        :meth:`fit` and every prediction call it; in the models fitted by
-        expectation-maximization it reads the model and writes nothing.
+        :meth:`fit` and every prediction call it; it reads the model and
+        writes nothing.
 
         Raises
         ------
@@ -964,7 +1052,21 @@ class _AbstractHMM(BaseEstimator):
         Store what follows from the parameters :meth:`_check` has just
         validated; called by :meth:`fit` only, never on a prediction.
 
-        The default stores nothing.
+        A model may also test there the values that only :meth:`fit`
+        reads. The default stores and tests nothing.
+        """
+
+    def _check_for_prediction(self):
+        """
+        Test the values that only a prediction reads; called after
+        :meth:`_check` by every prediction, never by :meth:`fit`.
+
+        The default tests nothing.
+
+        Raises
+        ------
+        ValueError
+            If such a value is invalid.
         """
 
     def _check_X(self, X):
@@ -1634,6 +1736,13 @@ class VariationalBaseHMM(_AbstractHMM):
         self.monitor_ = ConvergenceMonitor(
             self.tol, self.n_iter, self.verbose)
 
+    startprob_prior_ = _ConvertedAttribute(np.asarray)
+    startprob_posterior_ = _ConvertedAttribute(np.asarray)
+    transmat_prior_ = _ConvertedAttribute(np.asarray)
+    transmat_posterior_ = _ConvertedAttribute(np.asarray)
+    startprob_ = _ConvertedAttribute(np.asarray)
+    transmat_ = _ConvertedAttribute(np.asarray)
+
     def _init(self, X, lengths=None):
         """
         Initialize model parameters prior to fitting.
@@ -1719,32 +1828,52 @@ class VariationalBaseHMM(_AbstractHMM):
 
     def _check(self):
         """
-        Validate model parameters prior to fitting.
+        Validate the shapes of the model parameters before fitting or
+        predicting; reads the model and writes nothing.
+
+        The values are tested where they are read: those only :meth:`fit`
+        reads by :meth:`_store_checked`, those only a prediction reads by
+        :meth:`_check_for_prediction`.
 
         Raises
         ------
         ValueError
-            If any of the parameters are invalid, e.g. if :attr:`startprob_`
-            don't sum to 1.
+            If a prior or posterior of the start or transition
+            probabilities has the wrong shape.
         """
         nc = self.n_components
 
-        self.startprob_prior_ = np.asarray(self.startprob_prior_)
         if len(self.startprob_prior_) != nc:
             raise ValueError("startprob_prior_ must have length n_components")
-        self.startprob_posterior_ = np.asarray(self.startprob_posterior_)
         if len(self.startprob_posterior_) != nc:
             raise ValueError("startprob_posterior_ must have length "
                              "n_components")
 
-        self.transmat_prior_ = np.asarray(self.transmat_prior_)
         if self.transmat_prior_.shape != (nc, nc):
             raise ValueError("transmat_prior_ must have shape "
                              "(n_components, n_components)")
-        self.transmat_posterior_ = np.asarray(self.transmat_posterior_)
         if self.transmat_posterior_.shape != (nc, nc):
             raise ValueError("transmat_posterior_ must have shape "
                              "(n_components, n_components)")
+
+    def _store_checked(self):
+        # The priors and posteriors are read by fit alone. Their signs and
+        # sums are not tested: they are concentrations, which a fitted
+        # posterior gives summing to more than 1.
+        super()._store_checked()
+        for name in ("startprob_prior_", "startprob_posterior_",
+                     "transmat_prior_", "transmat_posterior_"):
+            self._check_finite(name, getattr(self, name))
+
+    def _check_for_prediction(self):
+        # A prediction reads startprob_ and transmat_, which fit only
+        # writes. Rows not summing to 1 are not refused: such a model
+        # scores a finite number.
+        super()._check_for_prediction()
+        for name in ("startprob_", "transmat_"):
+            value = getattr(self, name)
+            self._check_finite(name, value)
+            self._check_nonnegative(name, value)
 
     def _compute_subnorm_likelihood(self, X):
         if (self._compute_subnorm_log_likelihood !=  # prevent recursion

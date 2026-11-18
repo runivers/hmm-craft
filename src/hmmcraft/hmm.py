@@ -12,7 +12,7 @@ from sklearn.utils import check_random_state
 from threadpoolctl import threadpool_limits
 
 from . import _emissions, _utils
-from .base import BaseHMM, _block_estep, _ConvertedAttribute
+from .base import _ABSENT, BaseHMM, _block_estep, _ConvertedAttribute
 from .utils import normalize
 
 __all__ = [
@@ -44,6 +44,37 @@ def _covars_floor_value(covars_floor):
     if not (np.isfinite(value) and value > 0):
         raise ValueError(message)
     return value
+
+
+def _covars_pass_on_stack(covars):  # shape and finiteness already tested
+    """
+    Return True when every covariance matrix in the float64 stack *covars*
+    is symmetric and clearly positive definite; False leaves the decision
+    to the tests made one matrix at a time.
+    """
+    if (type(covars) is not np.ndarray or covars.dtype != np.float64
+            or covars.size == 0):
+        return False
+    try:
+        a = np.abs(covars)
+        # Comparisons set no floating-point flag; inside these bounds
+        # neither does the arithmetic below.
+        if not ((a == 0) | ((a >= 2.0**-1000) & (a <= 2.0**1022))).all():
+            return False
+        ct = covars.swapaxes(-1, -2)
+        # np.allclose(covar, covar.T)'s comparison, with its defaults.
+        if not (np.abs(covars - ct)
+                <= 1e-08 + 1e-05 * a.swapaxes(-1, -2)).all():
+            return False
+        w = np.linalg.eigvalsh(covars)  # ascending
+    except (np.linalg.LinAlgError, MemoryError):
+        return False
+    # numpy's and scipy's eigvalsh can disagree on the sign of an eigenvalue
+    # near zero, so the stack decides only matrices well clear of it.
+    c = 1024 * covars.shape[-1] * np.finfo(np.float64).eps
+    lo = w[..., 0]
+    return bool((lo > np.finfo(np.float64).tiny / c).all()
+                and (lo > c * w[..., -1]).all())
 
 
 def _floor_covars(covars, covariance_type, min_covar):
@@ -130,8 +161,9 @@ class CategoricalHMM(_emissions.BaseCategoricalHMM, BaseHMM):
             :attr:`emissionprob_`.
 
         n_features: int, optional
-            The number of categorical symbols in the HMM.  Will be inferred
-            from the data if not set.
+            The number of categorical symbols in the HMM. If not set, taken
+            from ``emissionprob_`` when it is kept (``"e"`` not in
+            ``init_params``), otherwise from the data.
 
         algorithm : {"viterbi", "map"}, optional
             Decoder algorithm.
@@ -805,6 +837,11 @@ class GMMHMM(_emissions.BaseGMMHMM):
             if self.covars_weight is None:
                 self.covars_weight = 0.0
 
+    # The priors fit broadcasts to the width of X (_prior_shapes): keep the
+    # two lists in step.
+    _derived_from_X = ("n_features", "weights_prior", "means_prior",
+                       "means_weight", "covars_prior", "covars_weight")
+
     def _prior_shapes(self, nf):
         """
         Return ``(name, shape)`` for each prior, in the order they are
@@ -832,6 +869,17 @@ class GMMHMM(_emissions.BaseGMMHMM):
         for name, shape in self._prior_shapes(self.n_features):
             setattr(self, name,
                     np.broadcast_to(getattr(self, name), shape).copy())
+
+    def _value_after_refused_fit(self, name, before, current):
+        # _init_covar_priors fills a None covariance prior with a number;
+        # the prior keeps that number, without the width of the refused X,
+        # so a later fit reads the value it read before. A prior broadcast
+        # to an empty shape (n_mix=0) holds no number and goes back to None.
+        if (name in ("covars_prior", "covars_weight") and before is None
+                and current is not None and current is not _ABSENT
+                and np.size(current) > 0):
+            return float(np.asarray(current).flat[0])
+        return super()._value_after_refused_fit(name, before, current)
 
     def _check(self):
         super()._check()
@@ -888,6 +936,8 @@ class GMMHMM(_emissions.BaseGMMHMM):
                                  f"must be non-negative")
             if np.any(self.covars_ == 0):
                 _log.warning("Degenerate mixture covariance")
+        elif _covars_pass_on_stack(self.covars_):
+            pass  # every matrix symmetric and clearly positive definite
         elif self.covariance_type == "tied":
             for i, covar in enumerate(self.covars_):
                 if not np.allclose(covar, covar.T):
