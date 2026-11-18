@@ -118,12 +118,17 @@ class GMMHMMTestMixin:
 
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
     @pytest.mark.parametrize("name", ["means_", "covars_"])
-    def test_nan_parameter_raises(self, name, implementation):
-        """A NaN in ``means_`` or ``covars_`` is refused, naming it."""
+    @pytest.mark.parametrize("bad", [np.nan, np.inf])
+    def test_nonfinite_parameter_raises(self, name, implementation, bad):
+        """
+        A NaN or an infinity in ``means_`` or ``covars_`` is refused, naming
+        it, also where hmmlearn 0.3.3 scored an infinite ``spherical`` or
+        ``diag`` entry as a component that emits nothing.
+        """
         h = self.new_hmm(implementation)
         X, _ = h.sample(10, random_state=0)
         value = getattr(h, name).astype(float)
-        value.flat[0] = np.nan
+        value.flat[0] = bad
         setattr(h, name, value)
         # Without the check the NaN arithmetic would warn; ignoring it lets
         # a missing refusal show as one.
