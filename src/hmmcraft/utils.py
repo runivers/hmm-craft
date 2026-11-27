@@ -1,3 +1,5 @@
+"""Helpers to normalize arrays and to expand covariance arrays."""
+
 import numpy as np
 from scipy import special
 
@@ -56,6 +58,25 @@ def log_normalize(a, axis=None):
 
 
 def fill_covars(covars, covariance_type="full", n_components=1, n_features=1):
+    """
+    Expand covariances to one full matrix per state.
+
+    Parameters
+    ----------
+    covars : array
+        Covariances in the layout of `covariance_type`.
+    covariance_type : {"full", "diag", "tied", "spherical"}
+        Layout of `covars`.
+    n_components : int
+        Number of states, used by the ``tied`` type.
+    n_features : int
+        Number of features, used by the ``spherical`` type.
+
+    Returns
+    -------
+    array, shape (n_components, n_features, n_features)
+        The covariance matrix of each state.
+    """
     if covariance_type == "full":
         return covars
     elif covariance_type == "diag":

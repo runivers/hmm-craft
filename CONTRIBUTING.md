@@ -44,7 +44,8 @@ Report a security problem as described in `SECURITY.md`, not in an issue.
        python -m coverage report
 
 3. Keep every Python line under 80 characters, as upstream does. CI also runs
-   `ruff check .` (pyflakes and syntax errors), `ruff format --check .` (the
+   `ruff check .` (pyflakes, syntax errors, and a docstring on every public
+   module, class and function of the package), `ruff format --check .` (the
    formatter's style) and a check that no other style finding is added to a
    file. With the ruff version CI uses
    (`pip install --require-hashes -r ci/lint_requirements.txt`; another

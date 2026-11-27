@@ -1,3 +1,5 @@
+"""Log densities of the multivariate normal for each covariance type."""
+
 import numpy as np
 from scipy import linalg
 

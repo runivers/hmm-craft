@@ -1,3 +1,5 @@
+"""Hidden Markov Models trained with variational inference."""
+
 import logging
 import numbers
 

@@ -1,3 +1,5 @@
+"""Base classes of the hidden Markov models and the convergence monitor."""
+
 import functools
 import itertools
 import logging
@@ -222,6 +224,7 @@ class ConvergenceMonitor:
         self.iter = 0
 
     def __repr__(self):
+        """Return the monitor's attributes, one per line, sorted by name."""
         class_name = self.__class__.__name__
         params = sorted(dict(vars(self), history=list(self.history)).items())
         return (
@@ -1972,6 +1975,13 @@ _BaseHMM = BaseHMM  # Backcompat name, will be deprecated in the future.
 
 
 class VariationalBaseHMM(_AbstractHMM):
+    """
+    Base class for Hidden Markov Models learned via Variational Bayes.
+
+    Its subclasses document the parameters, the Dirichlet priors
+    ``startprob_prior`` and ``transmat_prior`` included.
+    """
+
     def __init__(
         self,
         n_components=1,
