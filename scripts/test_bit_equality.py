@@ -23,12 +23,20 @@ import pytest
 LENGTHS = [4, 2]
 NC, NF = 3, 2
 ENVIRONMENT = {
-    "package": "hmmlearn", "package_version": "0.3.3",
-    "extension_sha256": "a", "script_sha256": "s", "python": "3.12.3",
-    "numpy": "1.26.0", "scipy": "1.11.2", "scikit_learn": "1.3.1",
-    "threadpoolctl": "3.8.0", "machine": "Linux x86_64",
+    "package": "hmmlearn",
+    "package_version": "0.3.3",
+    "extension_sha256": "a",
+    "script_sha256": "s",
+    "python": "3.12.3",
+    "numpy": "1.26.0",
+    "scipy": "1.11.2",
+    "scikit_learn": "1.3.1",
+    "threadpoolctl": "3.8.0",
+    "machine": "Linux x86_64",
     "thread_variables": {v: "1" for v in be.THREAD_VARIABLES},
-    "threadpool_info": [], "pickles_loaded": False}
+    "threadpool_info": [],
+    "pickles_loaded": False,
+}
 DATA_SHA256 = {"d": "0" * 64}
 MASS = np.array([1.0, 2.0, 3.0])
 ALL_BUT_E6 = tuple(e for e in be.EXCEPTIONS if e != "E6")
@@ -56,36 +64,67 @@ def fit_case(name, cov="diag", params="stmc", cls="GaussianHMM", nf=NF):
     else:
         covars, full = rs.rand(NC, nf) + 1, np.tile(np.eye(nf), (NC, 1, 1))
     arrays = {
-        "means_": rs.rand(NC, nf), "_covars_": covars, "covars_": full,
-        "transmat_": rs.rand(NC, NC), "startprob_": rs.rand(NC),
-        "monitor_history": rs.rand(3), "score": np.asarray(rs.rand()),
+        "means_": rs.rand(NC, nf),
+        "_covars_": covars,
+        "covars_": full,
+        "transmat_": rs.rand(NC, NC),
+        "startprob_": rs.rand(NC),
+        "monitor_history": rs.rand(3),
+        "score": np.asarray(rs.rand()),
         "decode_viterbi_logprob": np.asarray(rs.rand()),
         "decode_viterbi_states": rs.randint(0, NC, sum(LENGTHS)),
         "decode_map_logprob": _map_logprob(post, logged=False),
         "decode_map_states": post.argmax(axis=1),
         "predict_proba": post,
-        "sample_X": rs.rand(5, nf), "sample_states": rs.randint(0, NC, 5),
-        "m01_post_sum_last": MASS.copy(), "m01_stat_last": MASS.copy(),
+        "sample_X": rs.rand(5, nf),
+        "sample_states": rs.randint(0, NC, 5),
+        "m01_post_sum_last": MASS.copy(),
+        "m01_stat_last": MASS.copy(),
     }
-    meta = {"name": name, "kind": "fit", "cls": cls, "cov": cov,
-            "params": params, "data": "d", "lengths": LENGTHS,
-            "n_features": nf, "index": 0, "stat_key": "post",
-            "stat_defined": "m" in params}
-    return {"meta": meta, "arrays": arrays, "errors": {},
-            "params": {"n_iter": 10}}
+    meta = {
+        "name": name,
+        "kind": "fit",
+        "cls": cls,
+        "cov": cov,
+        "params": params,
+        "data": "d",
+        "lengths": LENGTHS,
+        "n_features": nf,
+        "index": 0,
+        "stat_key": "post",
+        "stat_defined": "m" in params,
+    }
+    return {
+        "meta": meta,
+        "arrays": arrays,
+        "errors": {},
+        "params": {"n_iter": 10},
+    }
 
 
 def make_dump(path, cases, environment=None, data_sha256=None):
-    be.write_dump(path, environment or copy.deepcopy(ENVIRONMENT),
-                  data_sha256 or DATA_SHA256, cases)
+    be.write_dump(
+        path,
+        environment or copy.deepcopy(ENVIRONMENT),
+        data_sha256 or DATA_SHA256,
+        cases,
+    )
     return path
 
 
 def run(tmp_path, ref_cases, fork_cases, allow=(), **kwargs):
-    ref = make_dump(tmp_path / "ref", ref_cases, kwargs.get("ref_env"),
-                    kwargs.get("ref_data"))
-    fork = make_dump(tmp_path / "fork", fork_cases, kwargs.get("fork_env"),
-                     kwargs.get("fork_data"))
+    ref = make_dump(
+        tmp_path / "ref",
+        ref_cases,
+        kwargs.get("ref_env"),
+        kwargs.get("ref_data"),
+    )
+    fork = make_dump(
+        tmp_path / "fork",
+        fork_cases,
+        kwargs.get("fork_env"),
+        kwargs.get("fork_data"),
+    )
     return be.compare_dumps(ref, fork, allow)
 
 
@@ -176,7 +215,8 @@ def test_extra_fork_key_fails_unless_named(tmp_path):
     ids=["covars_floor", "n_threads"],
 )
 def test_extra_fork_parameter_fails_unless_named(
-        tmp_path, name, default, other):
+    tmp_path, name, default, other
+):
     ref, fork = pair()
     with_occupancy(fork)
     fork["params"][name] = default
@@ -202,7 +242,8 @@ def test_state_occupancy_is_checked_against_the_recorded_sums(tmp_path):
 
 
 def test_state_occupancy_skips_the_class_statistic_where_it_is_undefined(
-        tmp_path):
+    tmp_path,
+):
     ref, fork = pair(params="stc")
     ref["arrays"]["m01_stat_last"] = np.zeros(NC)
     fork["arrays"]["m01_stat_last"] = np.zeros(NC)
@@ -226,7 +267,8 @@ def _spherical_pair(nf=3):
     variances = np.array([0.5, 1.5, 2.5])
     ref["arrays"]["_covars_"] = np.tile(variances[:, None], (1, nf))
     ref["arrays"]["covars_"] = np.concatenate(
-        [v * np.eye(nf)[None] for v in variances.repeat(nf)])
+        [v * np.eye(nf)[None] for v in variances.repeat(nf)]
+    )
     fork["arrays"]["_covars_"] = variances
     fork["arrays"]["covars_"] = variances[:, None, None] * np.eye(nf)
     return ref, fork
@@ -303,7 +345,8 @@ def test_map_rule_is_exact(tmp_path):
 def test_map_rule_does_not_excuse_a_changed_state_sequence(tmp_path):
     ref, fork = pair()
     fork["arrays"]["decode_map_logprob"] = _map_logprob(
-        ref["arrays"]["predict_proba"], logged=True)
+        ref["arrays"]["predict_proba"], logged=True
+    )
     states = fork["arrays"]["decode_map_states"]
     states[0] = (states[0] + 1) % NC
     result = run(tmp_path, [ref], [fork], allow=("E3",))
@@ -375,12 +418,24 @@ def _normalize_pair(axis, zero):
     expected = np.array([[0.25, 0.0, 0.5], [0.75, 0.0, 0.5]])
     ref_result = expected.copy()
     ref_result[:, 1] = np.nan if zero == "nan" else 0.0
-    kind = {"name": "n", "kind": "normalize", "options": {"axis": axis},
-                "dtype": "float64"}
-    ref = {"meta": kind, "arrays": {"input": source, "result": ref_result},
-               "errors": {}, "params": None}
-    fork = {"meta": kind, "arrays": {"input": source, "result": expected},
-                "errors": {}, "params": None}
+    kind = {
+        "name": "n",
+        "kind": "normalize",
+        "options": {"axis": axis},
+        "dtype": "float64",
+    }
+    ref = {
+        "meta": kind,
+        "arrays": {"input": source, "result": ref_result},
+        "errors": {},
+        "params": None,
+    }
+    fork = {
+        "meta": kind,
+        "arrays": {"input": source, "result": expected},
+        "errors": {},
+        "params": None,
+    }
     return ref, fork
 
 
@@ -402,16 +457,32 @@ def test_e5_excuses_a_zero_slice_on_axis_zero_only(tmp_path):
 def test_e1_applies_to_fill_covars_results(tmp_path):
     variances = np.array([0.1, 0.2])
     source = np.tile(variances[:, None], (1, 3))
-    meta = {"name": "f", "kind": "fill_covars", "dtype": "float64",
-                "options": {"covariance_type": "spherical", "n_components": 2,
-                             "n_features": 3}}
+    meta = {
+        "name": "f",
+        "kind": "fill_covars",
+        "dtype": "float64",
+        "options": {
+            "covariance_type": "spherical",
+            "n_components": 2,
+            "n_features": 3,
+        },
+    }
     ref_result = np.concatenate(
-        [v * np.eye(3)[None] for v in variances.repeat(3)])
+        [v * np.eye(3)[None] for v in variances.repeat(3)]
+    )
     fork_result = variances[:, None, None] * np.eye(3)
-    ref = {"meta": meta, "arrays": {"input": source, "result": ref_result},
-               "errors": {}, "params": None}
-    fork = {"meta": meta, "arrays": {"input": source, "result": fork_result},
-                "errors": {}, "params": None}
+    ref = {
+        "meta": meta,
+        "arrays": {"input": source, "result": ref_result},
+        "errors": {},
+        "params": None,
+    }
+    fork = {
+        "meta": meta,
+        "arrays": {"input": source, "result": fork_result},
+        "errors": {},
+        "params": None,
+    }
     assert run(tmp_path / "off", [ref], [fork]).code == 1
     assert run(tmp_path / "on", [ref], [fork], allow=("E1",)).code == 0
     fork_result[1] = np.nextafter(fork_result[1], np.inf)
@@ -423,15 +494,18 @@ def test_pickled_case_is_compared_with_its_reference_case(tmp_path):
     fork_pickled = copy.deepcopy(fork)
     fork_pickled["meta"] = dict(fork["meta"], name="pickled:c", kind="pickled")
     fork_pickled["arrays"] = {
-        k: v for k, v in fork["arrays"].items()
-        if k in ("score", "predict_proba", "covars_")}
+        k: v
+        for k, v in fork["arrays"].items()
+        if k in ("score", "predict_proba", "covars_")
+    }
     result = run(tmp_path / "ok", [ref], [fork, fork_pickled])
     assert result.code == 0
     value = fork_pickled["arrays"]["score"]
     fork_pickled["arrays"]["score"] = np.nextafter(value, np.inf)
     result = run(tmp_path / "ulp", [ref], [fork, fork_pickled])
     assert [(d.case, d.key) for d in result.differences] == [
-        ("pickled:c", "score")]
+        ("pickled:c", "score")
+    ]
 
 
 def test_environment_mismatch_refuses(tmp_path):
@@ -443,8 +517,10 @@ def test_environment_mismatch_refuses(tmp_path):
     assert any("numpy" in text for text in result.refused)
 
 
-@pytest.mark.parametrize("field", ["python", "scipy", "scikit_learn",
-                                   "threadpoolctl", "script_sha256"])
+@pytest.mark.parametrize(
+    "field",
+    ["python", "scipy", "scikit_learn", "threadpoolctl", "script_sha256"],
+)
 def test_every_version_and_the_script_must_match(tmp_path, field):
     ref, fork = pair()
     env = copy.deepcopy(ENVIRONMENT)
@@ -500,19 +576,28 @@ def test_model_keywords_name_n_threads_only_above_one():
     """A case's constructor keywords; ``n_threads`` is among them only when
     the dump asks for more than one thread, so that the reference's
     constructors never receive it."""
-    case = next(c for c in be.build_cases()
-                if c["cls"] == "GaussianHMM" and c["start"] == "fixed"
-                and c["tol"] == "default")
+    case = next(
+        c
+        for c in be.build_cases()
+        if c["cls"] == "GaussianHMM"
+        and c["start"] == "fixed"
+        and c["tol"] == "default"
+    )
     keywords = be._model_keywords(case)
     assert keywords == {
-        "n_components": be.N_COMPONENTS, "n_iter": be.N_ITER,
-        "implementation": case["impl"], "random_state": be.MODEL_SEED,
-        "init_params": "", "covariance_type": case["cov"],
-        "params": case["params"]}
+        "n_components": be.N_COMPONENTS,
+        "n_iter": be.N_ITER,
+        "implementation": case["impl"],
+        "random_state": be.MODEL_SEED,
+        "init_params": "",
+        "covariance_type": case["cov"],
+        "params": case["params"],
+    }
     assert be._threaded(case, 1) is case
     assert be._model_keywords(be._threaded(case, 1)) == keywords
     assert be._model_keywords(be._threaded(case, 4)) == dict(
-        keywords, n_threads=4)
+        keywords, n_threads=4
+    )
 
 
 def test_cli_exit_status_follows_the_result(tmp_path, capsys):
@@ -530,7 +615,15 @@ def test_cli_exit_status_follows_the_result(tmp_path, capsys):
 def test_data_are_reproducible_and_pure_numpy():
     first, second = be.make_data(), be.make_data()
     assert set(first) == {
-        "gauss3", "gauss1", "collapse", "flat", "gmm", "cat", "multi", "pois"}
+        "gauss3",
+        "gauss1",
+        "collapse",
+        "flat",
+        "gmm",
+        "cat",
+        "multi",
+        "pois",
+    }
     for name in first:
         assert first[name]["X"].tobytes() == second[name]["X"].tobytes()
         assert first[name]["lengths"].sum() == len(first[name]["X"])
@@ -555,8 +648,11 @@ N_TWO_SEQUENCE_CASES = 374
 
 
 def _short_cases():
-    return [(index, c) for index, c in enumerate(be.build_cases())
-            if c["data"].startswith("short-")]
+    return [
+        (index, c)
+        for index, c in enumerate(be.build_cases())
+        if c["data"].startswith("short-")
+    ]
 
 
 def test_short_sequence_family_covers_every_class():
@@ -566,13 +662,16 @@ def test_short_sequence_family_covers_every_class():
     assert {c["cls"] for _, c in short} == set(be._CLASSES)
     for cls in be._COVARIANCE_CLASSES:
         assert {c["cov"] for _, c in short if c["cls"] == cls} == set(
-            be.COVARIANCE_TYPES)
+            be.COVARIANCE_TYPES
+        )
     assert {c["impl"] for _, c in short} == set(be.IMPLEMENTATIONS)
     # Appended after every two-sequence case, so those keep their numbers.
     assert [i for i, _ in short] == list(
-        range(N_TWO_SEQUENCE_CASES, len(cases)))
-    assert not any(c["data"].startswith("short-")
-                   for c in cases[:N_TWO_SEQUENCE_CASES])
+        range(N_TWO_SEQUENCE_CASES, len(cases))
+    )
+    assert not any(
+        c["data"].startswith("short-") for c in cases[:N_TWO_SEQUENCE_CASES]
+    )
     names = [c["name"] for c in cases]
     assert len(names) == len(set(names))
     state = np.random.get_state()
@@ -592,17 +691,23 @@ def test_short_sequence_family_covers_every_class():
 
 
 def test_one_ulp_in_a_short_sequence_case_fails(tmp_path):
-    gaussian = [(i, c) for i, c in _short_cases()
-                if c["cls"] == "GaussianHMM"]
+    gaussian = [(i, c) for i, c in _short_cases() if c["cls"] == "GaussianHMM"]
     assert gaussian
     index, recipe = gaussian[0]
     lengths = np.asarray(be.SHORT_LENGTHS)
-    ref = fit_case(recipe["name"], cov=recipe["cov"],
-                   params=recipe["params"], nf=3)
-    ref["meta"] = dict(ref["meta"], **recipe, index=index,
-                       lengths=lengths.tolist(), n_features=3)
+    ref = fit_case(
+        recipe["name"], cov=recipe["cov"], params=recipe["params"], nf=3
+    )
+    ref["meta"] = dict(
+        ref["meta"],
+        **recipe,
+        index=index,
+        lengths=lengths.tolist(),
+        n_features=3,
+    )
     ref["arrays"]["predict_proba"] = np.random.RandomState(0).dirichlet(
-        np.ones(NC), size=int(lengths.sum()))
+        np.ones(NC), size=int(lengths.sum())
+    )
     fork = copy.deepcopy(ref)
     old = fit_case("old")
     starts = np.cumsum(lengths) - lengths
@@ -610,11 +715,16 @@ def test_one_ulp_in_a_short_sequence_case_fails(tmp_path):
     value = fork["arrays"]["predict_proba"]
     value[row, 0] = np.nextafter(value[row, 0], np.inf)
     for allow in ((), ALL_BUT_E6):
-        result = run(tmp_path / str(len(allow)), [old, ref],
-                     [copy.deepcopy(old), fork], allow=allow)
+        result = run(
+            tmp_path / str(len(allow)),
+            [old, ref],
+            [copy.deepcopy(old), fork],
+            allow=allow,
+        )
         assert result.code == 1
         assert [(d.case, d.key) for d in result.differences] == [
-            (recipe["name"], "predict_proba")]
+            (recipe["name"], "predict_proba")
+        ]
         assert f"({row}, 0)" in result.differences[0].text
 
 
@@ -625,8 +735,12 @@ def test_threadpool_info_is_recorded_in_a_fixed_order(monkeypatch, tmp_path):
 
     libraries = [
         {"filepath": path, "internal_api": api, "num_threads": 1}
-        for path, api in [("/lib/b.so", "openblas"), ("/lib/a.so", "openmp"),
-                          ("/lib/c.so", "openblas")]]
+        for path, api in [
+            ("/lib/b.so", "openblas"),
+            ("/lib/a.so", "openmp"),
+            ("/lib/c.so", "openblas"),
+        ]
+    ]
     extension = tmp_path / "_hmmc.so"
     extension.write_bytes(b"x")
     package = types.ModuleType("fakepackage")
@@ -637,12 +751,14 @@ def test_threadpool_info_is_recorded_in_a_fixed_order(monkeypatch, tmp_path):
     monkeypatch.setitem(be.DISTRIBUTIONS, "fakepackage", "numpy")
     recorded = []
     for order in (libraries, libraries[::-1], libraries[1:] + libraries[:1]):
-        monkeypatch.setattr(threadpoolctl, "threadpool_info",
-                            lambda order=order: list(order))
+        monkeypatch.setattr(
+            threadpoolctl, "threadpool_info", lambda order=order: list(order)
+        )
         recorded.append(be._environment("fakepackage", {})["threadpool_info"])
     assert recorded[0] == recorded[1] == recorded[2]
     assert sorted(lib["filepath"] for lib in libraries) == [
-        lib["filepath"] for lib in recorded[0]]
+        lib["filepath"] for lib in recorded[0]
+    ]
 
 
 def test_verdict_says_bit_equal_only_when_no_exception_fired(tmp_path):
@@ -651,7 +767,8 @@ def test_verdict_says_bit_equal_only_when_no_exception_fired(tmp_path):
     assert result.code == 0 and not result.fired
     assert be.format_result(result).endswith("result: bit-equal (exit 0)")
     fork["arrays"]["decode_map_logprob"] = _map_logprob(
-        ref["arrays"]["predict_proba"], logged=True)
+        ref["arrays"]["predict_proba"], logged=True
+    )
     result = run(tmp_path / "fired", [ref], [fork], allow=("E3",))
     assert result.code == 0 and result.fired["E3"] == 1
     last = be.format_result(result).splitlines()[-1]

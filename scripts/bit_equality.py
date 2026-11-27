@@ -64,24 +64,41 @@ N_SAMPLES = 50
 COVARIANCE_TYPES = ("spherical", "diag", "full", "tied")
 IMPLEMENTATIONS = ("log", "scaling")
 THREAD_VARIABLES = (
-    "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS")
+    "OMP_NUM_THREADS",
+    "OPENBLAS_NUM_THREADS",
+    "MKL_NUM_THREADS",
+)
 DISTRIBUTIONS = {"hmmlearn": "hmmlearn", "hmmcraft": "hmm-craft"}
 
 # id -> (item, what it excuses). The rules are in ``_RULES`` below.
 EXCEPTIONS = {
-    "E1": ("hmmlearn pull request 589",
-           "covars_ of a spherical GaussianHMM has one matrix per state"),
-    "E2": ("hmmlearn pull request 589",
-           ("sample() of a spherical GaussianHMM uses the variance of the "
-           "state drawn")),
-    "E3": ("hmmlearn issue 188",
-           "the log-probability of decode(algorithm='map')"),
-    "E4": ("hmmlearn pull request 573",
-           "a GaussianHMM that updates covariances but not means fits"),
-    "E5": ("hmmlearn pull request 584",
-           "normalize(axis=0) of a zero-sum slice is 0, not NaN"),
-    "E6": ("fork additions",
-           "state_occupancy_ and the covars_floor and n_threads parameters"),
+    "E1": (
+        "hmmlearn pull request 589",
+        "covars_ of a spherical GaussianHMM has one matrix per state",
+    ),
+    "E2": (
+        "hmmlearn pull request 589",
+        (
+            "sample() of a spherical GaussianHMM uses the variance of the "
+            "state drawn"
+        ),
+    ),
+    "E3": (
+        "hmmlearn issue 188",
+        "the log-probability of decode(algorithm='map')",
+    ),
+    "E4": (
+        "hmmlearn pull request 573",
+        "a GaussianHMM that updates covariances but not means fits",
+    ),
+    "E5": (
+        "hmmlearn pull request 584",
+        "normalize(axis=0) of a zero-sum slice is 0, not NaN",
+    ),
+    "E6": (
+        "fork additions",
+        "state_occupancy_ and the covars_floor and n_threads parameters",
+    ),
     "E7": (
         "hmm-craft issue 40",
         (
@@ -108,28 +125,33 @@ FORK_ONLY_PARAMS = {"covars_floor": None, "n_threads": 1}
 # ---------------------------------------------------------------------------
 
 _STARTPROB = np.array([0.5, 0.3, 0.2])
-_TRANSMAT = np.array([[0.80, 0.15, 0.05],
-                      [0.10, 0.80, 0.10],
-                      [0.05, 0.15, 0.80]])
-_GAUSS3_MEANS = np.array([[0.0, 0.0, 0.0], [3.0, -2.0, 1.0],
-                          [-3.0, 2.0, 4.0]])
-_GAUSS3_FACTORS = np.array([
-    np.diag([0.5, 0.7, 0.9]),
-    [[1.0, 0.0, 0.0], [0.6, 0.8, 0.0], [0.3, 0.2, 0.9]],
-    np.diag([1.2, 0.6, 0.8]),
-])
+_TRANSMAT = np.array(
+    [[0.80, 0.15, 0.05], [0.10, 0.80, 0.10], [0.05, 0.15, 0.80]]
+)
+_GAUSS3_MEANS = np.array([[0.0, 0.0, 0.0], [3.0, -2.0, 1.0], [-3.0, 2.0, 4.0]])
+_GAUSS3_FACTORS = np.array(
+    [
+        np.diag([0.5, 0.7, 0.9]),
+        [[1.0, 0.0, 0.0], [0.6, 0.8, 0.0], [0.3, 0.2, 0.9]],
+        np.diag([1.2, 0.6, 0.8]),
+    ]
+)
 _GAUSS1_MEANS = np.array([[-2.0], [0.0], [3.0]])
 _GAUSS1_SCALES = np.array([0.5, 1.0, 0.7])
-_MIX_MEANS = np.array([[[-4.0, -4.0], [-1.0, -1.0]],
-                       [[1.0, 5.0], [4.0, 2.0]],
-                       [[6.0, -3.0], [9.0, -6.0]]])
+_MIX_MEANS = np.array(
+    [
+        [[-4.0, -4.0], [-1.0, -1.0]],
+        [[1.0, 5.0], [4.0, 2.0]],
+        [[6.0, -3.0], [9.0, -6.0]],
+    ]
+)
 _MIX_SCALE = 0.8
-_CAT_PROBS = np.array([[0.7, 0.1, 0.1, 0.1],
-                       [0.1, 0.7, 0.1, 0.1],
-                       [0.1, 0.1, 0.4, 0.4]])
-_MULTI_PROBS = np.array([[0.4, 0.3, 0.2, 0.1],
-                         [0.1, 0.2, 0.3, 0.4],
-                         [0.25, 0.25, 0.25, 0.25]])
+_CAT_PROBS = np.array(
+    [[0.7, 0.1, 0.1, 0.1], [0.1, 0.7, 0.1, 0.1], [0.1, 0.1, 0.4, 0.4]]
+)
+_MULTI_PROBS = np.array(
+    [[0.4, 0.3, 0.2, 0.1], [0.1, 0.2, 0.3, 0.4], [0.25, 0.25, 0.25, 0.25]]
+)
 _LAMBDAS = np.array([[2.0, 5.0, 1.0], [10.0, 2.0, 4.0], [1.0, 1.0, 12.0]])
 # 120 consecutive rows replaced by one repeated row, far from the rest: a
 # state that holds only these rows has no spread, and a covariance floor binds.
@@ -159,7 +181,8 @@ def make_data():
     are these moved by a fixed amount.
     """
     return _draw_families(
-        np.random.RandomState(10), np.array(SEQUENCE_LENGTHS))
+        np.random.RandomState(10), np.array(SEQUENCE_LENGTHS)
+    )
 
 
 # The families drawn again on the short sequences, each renamed "short-<name>".
@@ -182,8 +205,9 @@ def _draw_families(rs, lengths):
     common = {"startprob": _STARTPROB, "transmat": _TRANSMAT}
 
     z = rs.standard_normal((n, 3))
-    gauss3 = (_GAUSS3_MEANS[states]
-              + np.einsum("tij,tj->ti", _GAUSS3_FACTORS[states], z))
+    gauss3 = _GAUSS3_MEANS[states] + np.einsum(
+        "tij,tj->ti", _GAUSS3_FACTORS[states], z
+    )
     covs3 = np.einsum("kij,klj->kil", _GAUSS3_FACTORS, _GAUSS3_FACTORS)
     collapse = gauss3.copy()
     collapse[_COLLAPSE_ROWS] = _COLLAPSE_ROW
@@ -192,18 +216,19 @@ def _draw_families(rs, lengths):
 
     z = rs.standard_normal((n, 1))
     gauss1 = _GAUSS1_MEANS[states] + _GAUSS1_SCALES[states][:, None] * z
-    covs1 = (_GAUSS1_SCALES ** 2)[:, None, None]
+    covs1 = (_GAUSS1_SCALES**2)[:, None, None]
 
     comp = (rs.rand(n) > 0.5).astype(int)
     z = rs.standard_normal((n, 2))
     gmm = _MIX_MEANS[states, comp] + _MIX_SCALE * z
-    mix_covs = np.tile(_MIX_SCALE ** 2 * np.eye(2), (nc, 1, 1))
+    mix_covs = np.tile(_MIX_SCALE**2 * np.eye(2), (nc, 1, 1))
 
     cdf = _CAT_PROBS.cumsum(axis=1)[states]
     cat = (cdf > rs.rand(n)[:, None]).argmax(axis=1)[:, None]
 
-    multi = np.array([rs.multinomial(N_TRIALS, _MULTI_PROBS[s])
-                      for s in states])
+    multi = np.array(
+        [rs.multinomial(N_TRIALS, _MULTI_PROBS[s]) for s in states]
+    )
     pois = rs.poisson(_LAMBDAS[states])
 
     gauss3_truth = dict(common, means=_GAUSS3_MEANS, covs=covs3)
@@ -215,22 +240,35 @@ def _draw_families(rs, lengths):
     gauss1_truth = dict(common, means=_GAUSS1_MEANS, covs=covs1)
     # GMMHMM: two components per state, around each state's mean.
     gauss1_truth["mix_means"] = (
-        _GAUSS1_MEANS[:, None, :] + np.array([-0.5, 0.5])[None, :, None])
+        _GAUSS1_MEANS[:, None, :] + np.array([-0.5, 0.5])[None, :, None]
+    )
     gauss1_truth["mix_covs"] = covs1
     gmm_truth = dict(common, mix_means=_MIX_MEANS, mix_covs=mix_covs)
     return {
         "gauss3": {"X": gauss3, "lengths": lengths, "truth": gauss3_truth},
         "flat": {"X": flat, "lengths": lengths, "truth": gauss3_truth},
         "gauss1": {"X": gauss1, "lengths": lengths, "truth": gauss1_truth},
-        "collapse": {"X": collapse, "lengths": lengths,
-                     "truth": collapse_truth},
+        "collapse": {
+            "X": collapse,
+            "lengths": lengths,
+            "truth": collapse_truth,
+        },
         "gmm": {"X": gmm, "lengths": lengths, "truth": gmm_truth},
-        "cat": {"X": cat, "lengths": lengths,
-                "truth": dict(common, emission=_CAT_PROBS)},
-        "multi": {"X": multi, "lengths": lengths,
-                  "truth": dict(common, emission=_MULTI_PROBS)},
-        "pois": {"X": pois, "lengths": lengths,
-                 "truth": dict(common, lambdas=_LAMBDAS)},
+        "cat": {
+            "X": cat,
+            "lengths": lengths,
+            "truth": dict(common, emission=_CAT_PROBS),
+        },
+        "multi": {
+            "X": multi,
+            "lengths": lengths,
+            "truth": dict(common, emission=_MULTI_PROBS),
+        },
+        "pois": {
+            "X": pois,
+            "lengths": lengths,
+            "truth": dict(common, lambdas=_LAMBDAS),
+        },
     }
 
 
@@ -271,8 +309,7 @@ def _digest(*arrays):
 # class -> (module, name of the sufficient statistic holding the state mass,
 #           data families)
 _CLASSES = {
-    "GaussianHMM": (
-        "hmm", "post", ("gauss3", "gauss1", "collapse", "flat")),
+    "GaussianHMM": ("hmm", "post", ("gauss3", "gauss1", "collapse", "flat")),
     "GMMHMM": ("hmm", "post_sum", ("gmm", "gauss1")),
     "VariationalGaussianHMM": ("vhmm", "post", ("gauss3",)),
     "CategoricalHMM": ("hmm", None, ("cat",)),
@@ -282,10 +319,19 @@ _CLASSES = {
 }
 _COVARIANCE_CLASSES = ("GaussianHMM", "GMMHMM", "VariationalGaussianHMM")
 _FIXED_CLASSES = (
-    "GaussianHMM", "GMMHMM", "CategoricalHMM", "MultinomialHMM", "PoissonHMM")
+    "GaussianHMM",
+    "GMMHMM",
+    "CategoricalHMM",
+    "MultinomialHMM",
+    "PoissonHMM",
+)
 _GAUSSIAN_PARAMS = (
-    ("stmc", "neginf"), ("stmc", "default"), ("stm", "default"),
-    ("st", "default"), ("stc", "default"))
+    ("stmc", "neginf"),
+    ("stmc", "default"),
+    ("stm", "default"),
+    ("st", "default"),
+    ("stc", "default"),
+)
 # class -> its data family on the short sequences. GaussianHMM is fitted with
 # one of its variants: the others change only which Gaussian statistics are
 # gathered, not how the sequences are taken.
@@ -304,7 +350,8 @@ _SHORT_GAUSSIAN_PARAMS = (("stmc", "neginf"),)
 def _case_name(cls, data, cov, start, impl, params, tol):
     suffix = "" if tol == "default" else "-tol" + tol
     return "|".join(
-        [cls, data, cov or "-", start, impl, (params or "default") + suffix])
+        [cls, data, cov or "-", start, impl, (params or "default") + suffix]
+    )
 
 
 def build_cases():
@@ -315,12 +362,16 @@ def build_cases():
     """
     cases = []
     for cls, (_, stat_key, families) in _CLASSES.items():
-        variants = (_GAUSSIAN_PARAMS if cls == "GaussianHMM"
-                    else ((None, "default"),))
+        variants = (
+            _GAUSSIAN_PARAMS if cls == "GaussianHMM" else ((None, "default"),)
+        )
         cases += _class_cases(cls, stat_key, families, variants)
     for cls, family in _SHORT_CLASSES.items():
-        variants = (_SHORT_GAUSSIAN_PARAMS if cls == "GaussianHMM"
-                    else ((None, "default"),))
+        variants = (
+            _SHORT_GAUSSIAN_PARAMS
+            if cls == "GaussianHMM"
+            else ((None, "default"),)
+        )
         cases += _class_cases(cls, _CLASSES[cls][1], (family,), variants)
     return cases
 
@@ -339,15 +390,25 @@ def _class_cases(cls, stat_key, families, variants):
                 for impl in IMPLEMENTATIONS:
                     for params, tol in variants:
                         stat_defined = stat_key is not None and (
-                            cls != "GaussianHMM" or "m" in params)
-                        cases.append({
-                            "name": _case_name(
-                                cls, data, cov, start, impl, params, tol),
-                            "kind": "fit", "cls": cls, "data": data,
-                            "cov": cov, "start": start, "impl": impl,
-                            "params": params,
-                            "tol": tol, "stat_key": stat_key,
-                            "stat_defined": stat_defined})
+                            cls != "GaussianHMM" or "m" in params
+                        )
+                        cases.append(
+                            {
+                                "name": _case_name(
+                                    cls, data, cov, start, impl, params, tol
+                                ),
+                                "kind": "fit",
+                                "cls": cls,
+                                "data": data,
+                                "cov": cov,
+                                "start": start,
+                                "impl": impl,
+                                "params": params,
+                                "tol": tol,
+                                "stat_key": stat_key,
+                                "stat_defined": stat_defined,
+                            }
+                        )
     return cases
 
 
@@ -448,8 +509,12 @@ def _model_keywords(case):
     constructors never receive it.
     """
     name = case["cls"]
-    kw = {"n_components": N_COMPONENTS, "n_iter": N_ITER,
-              "implementation": case["impl"], "random_state": MODEL_SEED}
+    kw = {
+        "n_components": N_COMPONENTS,
+        "n_iter": N_ITER,
+        "implementation": case["impl"],
+        "random_state": MODEL_SEED,
+    }
     if case["start"] == "fixed":
         kw["init_params"] = ""
     if case["cov"]:
@@ -499,6 +564,7 @@ def _set_fixed_start(model, case, truth):
 # What is recorded for one fitted model.
 # ---------------------------------------------------------------------------
 
+
 def _as_array(name, value):
     array = np.asarray(value)
     if array.dtype == object:
@@ -517,7 +583,8 @@ def _model_arrays(model):
         arrays["n_features"] = np.asarray(n_features)
     monitor = model.monitor_
     arrays["monitor_history"] = np.asarray(
-        list(monitor.history), dtype=np.float64)
+        list(monitor.history), dtype=np.float64
+    )
     arrays["monitor_iter"] = np.asarray(monitor.iter)
     arrays["monitor_converged"] = np.asarray(monitor.converged)
     rs = vars(model).get("random_state")
@@ -575,21 +642,26 @@ def _probe_inference(model, X, lengths, arrays, errors, prefix=""):
     run, put = _recorders(arrays, errors, prefix)
     put("score", run("score", lambda: model.score(X, lengths)))
     for algorithm in ("viterbi", "map"):
-        out = run(f"decode_{algorithm}",
-                  lambda a=algorithm: model.decode(X, lengths, a))
+        out = run(
+            f"decode_{algorithm}",
+            lambda a=algorithm: model.decode(X, lengths, a),
+        )
         if out is not None:
             put(f"decode_{algorithm}_logprob", out[0])
             put(f"decode_{algorithm}_states", out[1])
-    put("predict_proba", run("predict_proba",
-                             lambda: model.predict_proba(X, lengths)))
+    put(
+        "predict_proba",
+        run("predict_proba", lambda: model.predict_proba(X, lengths)),
+    )
 
 
 def _probe(model, X, lengths, arrays, errors, prefix=""):
     """Run every read-only call on a fitted model, recording each result."""
     _probe_inference(model, X, lengths, arrays, errors, prefix)
     run, put = _recorders(arrays, errors, prefix)
-    out = run("sample",
-              lambda: model.sample(N_SAMPLES, random_state=SAMPLE_SEED))
+    out = run(
+        "sample", lambda: model.sample(N_SAMPLES, random_state=SAMPLE_SEED)
+    )
     if out is not None:
         put("sample_X", out[0])
         put("sample_states", out[1])
@@ -610,12 +682,14 @@ def _recording_class(cls, stat_key):
 
     class Recorder(cls):
         def _accumulate_sufficient_statistics(
-                self, stats, X, lattice, posteriors, fwdlattice, bwdlattice):
+            self, stats, X, lattice, posteriors, fwdlattice, bwdlattice
+        ):
             if getattr(self, "_rec_sum", None) is None:
                 self._rec_sum = np.zeros(self.n_components)
             self._rec_sum += posteriors.sum(axis=0)
             super()._accumulate_sufficient_statistics(
-                stats, X, lattice, posteriors, fwdlattice, bwdlattice)
+                stats, X, lattice, posteriors, fwdlattice, bwdlattice
+            )
 
         def _do_mstep(self, stats):
             self._rec_post_sum = self._rec_sum
@@ -633,17 +707,22 @@ def _fit_recorded(modules, case, data, plain_arrays):
     """Refit with the recording subclass; check it changed nothing."""
     recorder_cls = _recording_class(
         getattr(modules[_CLASSES[case["cls"]][0]], case["cls"]),
-        case["stat_key"])
+        case["stat_key"],
+    )
     np.random.seed(0)
     model = build_model(modules, case, data)
     model.__class__ = recorder_cls
     model.fit(data["X"], data["lengths"])
     arrays = _model_arrays(model)
     for key in sorted(set(arrays) | set(plain_arrays)):
-        if key not in arrays or key not in plain_arrays or (
-                arrays[key].tobytes() != plain_arrays[key].tobytes()):
+        if (
+            key not in arrays
+            or key not in plain_arrays
+            or (arrays[key].tobytes() != plain_arrays[key].tobytes())
+        ):
             raise AssertionError(
-                f"{case['name']}: the recording subclass moved {key}")
+                f"{case['name']}: the recording subclass moved {key}"
+            )
     out = {"m01_post_sum_last": model._rec_post_sum}
     if case["stat_key"] is not None:
         out["m01_stat_last"] = model._rec_stat
@@ -729,7 +808,7 @@ class _MappingUnpickler(pickle.Unpickler):
 
     def find_class(self, module, name):
         if module == self._source or module.startswith(self._source + "."):
-            module = self._target + module[len(self._source):]
+            module = self._target + module[len(self._source) :]
         return super().find_class(module, name)
 
 
@@ -738,20 +817,27 @@ def _dump_pickled(package, pickle_file, case, data):
     with open(pickle_file, "rb") as f:
         model = _MappingUnpickler(f, "hmmlearn", package).load()
     _probe(model, data["X"], data["lengths"], arrays, errors)
-    return {"meta": dict(case, kind="pickled"), "arrays": arrays,
-                "errors": errors, "params": _params_json(model)}
+    return {
+        "meta": dict(case, kind="pickled"),
+        "arrays": arrays,
+        "errors": errors,
+        "params": _params_json(model),
+    }
 
 
 # ---------------------------------------------------------------------------
 # Utilities: normalize and fill_covars on fixed arrays.
 # ---------------------------------------------------------------------------
 
+
 def _utility_inputs():
     rs = np.random.RandomState(10)
     cases = []
     a1 = rs.rand(7) + 0.1
-    cases += [("normalize", {"axis": None}, a1),
-              ("normalize", {"axis": 0}, a1)]
+    cases += [
+        ("normalize", {"axis": None}, a1),
+        ("normalize", {"axis": 0}, a1),
+    ]
     a2 = rs.rand(4, 5) + 0.1
     a2[1, :] = 0
     a2[:, 3] = 0
@@ -767,27 +853,53 @@ def _utility_inputs():
         cases.append(("normalize", {"axis": axis}, a3))
     nc, nf = 3, 2
     cases += [
-        ("fill_covars", {"covariance_type": "full", "n_components": nc,
-                             "n_features": nf}, rs.rand(nc, nf, nf) + 1),
-        ("fill_covars", {"covariance_type": "diag", "n_components": nc,
-                             "n_features": nf}, rs.rand(nc, nf) + 1),
-        ("fill_covars", {"covariance_type": "tied", "n_components": nc,
-                             "n_features": nf}, rs.rand(nf, nf) + 1),
-        ("fill_covars", {"covariance_type": "spherical", "n_components": nc,
-                             "n_features": nf}, rs.rand(nc) + 1),
+        (
+            "fill_covars",
+            {"covariance_type": "full", "n_components": nc, "n_features": nf},
+            rs.rand(nc, nf, nf) + 1,
+        ),
+        (
+            "fill_covars",
+            {"covariance_type": "diag", "n_components": nc, "n_features": nf},
+            rs.rand(nc, nf) + 1,
+        ),
+        (
+            "fill_covars",
+            {"covariance_type": "tied", "n_components": nc, "n_features": nf},
+            rs.rand(nf, nf) + 1,
+        ),
+        (
+            "fill_covars",
+            {
+                "covariance_type": "spherical",
+                "n_components": nc,
+                "n_features": nf,
+            },
+            rs.rand(nc) + 1,
+        ),
     ]
     # The layouts a spherical GaussianHMM holds: one variance repeated over
     # the features, whether it comes from the start or from a fit.
     for label, values, nf in (
-            ("start-0.1", np.full(3, 0.1), 3),
-            ("start-steps", np.array([0.1, 0.2, 0.3]), 3),
-            ("start-one-feature", np.array([0.1, 0.7]), 1),
-            ("fitted", rs.rand(3) + 0.5, 3),
-            ("fitted-wide", rs.rand(2) + 0.5, 9)):
+        ("start-0.1", np.full(3, 0.1), 3),
+        ("start-steps", np.array([0.1, 0.2, 0.3]), 3),
+        ("start-one-feature", np.array([0.1, 0.7]), 1),
+        ("fitted", rs.rand(3) + 0.5, 3),
+        ("fitted-wide", rs.rand(2) + 0.5, 9),
+    ):
         tiled = np.tile(values[:, None], (1, nf))
-        cases.append(("fill_covars", {
-            "covariance_type": "spherical", "n_components": len(values),
-            "n_features": nf, "layout": label}, tiled))
+        cases.append(
+            (
+                "fill_covars",
+                {
+                    "covariance_type": "spherical",
+                    "n_components": len(values),
+                    "n_features": nf,
+                    "layout": label,
+                },
+                tiled,
+            )
+        )
     return cases
 
 
@@ -799,9 +911,15 @@ def _utility_name(index, kind, options):
 def build_utility_cases():
     out = []
     for index, (kind, options, array) in enumerate(_utility_inputs()):
-        out.append({
-            "name": _utility_name(index, kind, options), "kind": kind,
-            "options": options, "input": array, "dtype": str(array.dtype)})
+        out.append(
+            {
+                "name": _utility_name(index, kind, options),
+                "kind": kind,
+                "options": options,
+                "input": array,
+                "dtype": str(array.dtype),
+            }
+        )
     return out
 
 
@@ -831,6 +949,7 @@ def _dump_utility(package, case):
 # Writing and reading a dump.
 # ---------------------------------------------------------------------------
 
+
 def write_dump(out, environment, data_sha256, cases):
     """
     Write ``cases`` (dicts ``meta``, ``arrays``, ``errors``, ``params``) and
@@ -843,13 +962,26 @@ def write_dump(out, environment, data_sha256, cases):
         file = f"{number:04d}.npz"
         np.savez(out / "cases" / file, **case["arrays"])
         entries[case["meta"]["name"]] = {
-            "meta": case["meta"], "errors": case["errors"],
-            "params": case["params"], "file": file}
-    manifest = {"format": 1, "environment": environment,
-                "data_sha256": data_sha256, "cases": entries}
+            "meta": case["meta"],
+            "errors": case["errors"],
+            "params": case["params"],
+            "file": file,
+        }
+    manifest = {
+        "format": 1,
+        "environment": environment,
+        "data_sha256": data_sha256,
+        "cases": entries,
+    }
     (out / "manifest.json").write_text(
-        json.dumps(manifest, indent=1, sort_keys=True, default=_json_default,
-                   allow_nan=True))
+        json.dumps(
+            manifest,
+            indent=1,
+            sort_keys=True,
+            default=_json_default,
+            allow_nan=True,
+        )
+    )
 
 
 def read_dump(path):
@@ -868,13 +1000,21 @@ def read_dump(path):
 # The dump command.
 # ---------------------------------------------------------------------------
 
+
 def _require_one_thread():
-    wrong = {v: os.environ.get(v) for v in THREAD_VARIABLES
-             if os.environ.get(v) != "1"}
+    wrong = {
+        v: os.environ.get(v)
+        for v in THREAD_VARIABLES
+        if os.environ.get(v) != "1"
+    }
     if wrong:
         raise SystemExit(
-            "refusing to run: set " + ", ".join(THREAD_VARIABLES)
-            + " to 1 before starting Python (now: " + repr(wrong) + ")")
+            "refusing to run: set "
+            + ", ".join(THREAD_VARIABLES)
+            + " to 1 before starting Python (now: "
+            + repr(wrong)
+            + ")"
+        )
 
 
 def _file_sha256(path):
@@ -893,7 +1033,8 @@ def _environment(package, modules):
         "extension_sha256": _file_sha256(extension.__file__),
         "script_sha256": _file_sha256(__file__),
         "python": platform.python_version(),
-        "numpy": np.__version__, "scipy": scipy.__version__,
+        "numpy": np.__version__,
+        "scipy": scipy.__version__,
         "scikit_learn": sklearn.__version__,
         "threadpoolctl": threadpoolctl.__version__,
         "machine": f"{platform.system()} {platform.machine()}",
@@ -902,7 +1043,9 @@ def _environment(package, modules):
         # which changes between runs.
         "threadpool_info": sorted(
             threadpoolctl.threadpool_info(),
-            key=lambda lib: (lib["filepath"], lib["internal_api"]))}
+            key=lambda lib: (lib["filepath"], lib["internal_api"]),
+        ),
+    }
 
 
 def dump(package, out, load_pickles=None, n_threads=1):
@@ -917,7 +1060,8 @@ def dump(package, out, load_pickles=None, n_threads=1):
     logging.disable(logging.CRITICAL)
     modules = {
         name: importlib.import_module(f"{package}.{name}")
-        for name in ("hmm", "vhmm")}
+        for name in ("hmm", "vhmm")
+    }
     data = make_data()
     out = Path(out)
     pickle_dir = None
@@ -925,19 +1069,23 @@ def dump(package, out, load_pickles=None, n_threads=1):
         pickle_dir = out / "pickles"
         pickle_dir.mkdir(parents=True, exist_ok=True)
     results = []
-    fits = [(index, _threaded(case, n_threads))
-            for index, case in enumerate(build_cases())]
+    fits = [
+        (index, _threaded(case, n_threads))
+        for index, case in enumerate(build_cases())
+    ]
     with threadpoolctl.threadpool_limits(limits=1):
         environment = _environment(package, modules)
         for index, case in fits:
             if not _is_short(case):
                 results.append(
-                    _dump_indexed_fit(modules, index, case, data, pickle_dir))
+                    _dump_indexed_fit(modules, index, case, data, pickle_dir)
+                )
         for case in build_utility_cases():
             results.append(_dump_utility(package, case))
         if load_pickles is not None:
             results += _pickle_pass(
-                package, Path(load_pickles), data, short=False)
+                package, Path(load_pickles), data, short=False
+            )
         # Last, so the cases above keep their file numbers.
         data.update(make_underflow_data(data))
         for case in build_underflow_cases():
@@ -956,12 +1104,15 @@ def dump(package, out, load_pickles=None, n_threads=1):
         for index, case in fits:
             if _is_short(case):
                 results.append(
-                    _dump_indexed_fit(modules, index, case, data, pickle_dir))
+                    _dump_indexed_fit(modules, index, case, data, pickle_dir)
+                )
         if load_pickles is not None:
             results += _pickle_pass(
-                package, Path(load_pickles), data, short=True)
-    data_sha256 = {name: _digest(d["X"], d["lengths"])
-                   for name, d in data.items()}
+                package, Path(load_pickles), data, short=True
+            )
+    data_sha256 = {
+        name: _digest(d["X"], d["lengths"]) for name, d in data.items()
+    }
     for case in build_utility_cases():
         data_sha256[case["name"]] = _digest(case["input"])
     environment["pickles_loaded"] = load_pickles is not None
@@ -977,8 +1128,12 @@ def dump(package, out, load_pickles=None, n_threads=1):
 
 def _dump_indexed_fit(modules, index, case, data, pickle_dir):
     family = data[case["data"]]
-    case = dict(case, index=index, lengths=family["lengths"].tolist(),
-                n_features=int(family["X"].shape[1]))
+    case = dict(
+        case,
+        index=index,
+        lengths=family["lengths"].tolist(),
+        n_features=int(family["X"].shape[1]),
+    )
     return _dump_fit(modules, case, family, pickle_dir)
 
 
@@ -1005,11 +1160,22 @@ def _pickle_pass(package, ref_dir, data, short):
 Difference = namedtuple("Difference", "case key text")
 
 _COMPARED_ENVIRONMENT = (
-    "python", "numpy", "scipy", "scikit_learn", "threadpoolctl",
-    "script_sha256", "machine")
+    "python",
+    "numpy",
+    "scipy",
+    "scikit_learn",
+    "threadpoolctl",
+    "script_sha256",
+    "machine",
+)
 _PROBE_STEPS = (
-    "score", "decode_viterbi", "decode_map", "predict_proba", "sample",
-    "covars_")
+    "score",
+    "decode_viterbi",
+    "decode_map",
+    "predict_proba",
+    "sample",
+    "covars_",
+)
 _PICKLED = "pickled:"
 # The prediction steps E7 applies to -> the keys each records.
 _E7_STEPS = {
@@ -1046,8 +1212,11 @@ class Result:
 
 
 def _same(a, b):
-    return a.dtype == b.dtype and a.shape == b.shape and (
-        a.tobytes() == b.tobytes())
+    return (
+        a.dtype == b.dtype
+        and a.shape == b.shape
+        and (a.tobytes() == b.tobytes())
+    )
 
 
 def _finite(value):
@@ -1066,8 +1235,10 @@ def _describe(ref, fork):
     # Plain Python values: numpy 2 prints a scalar as np.float64(...).
     index = tuple(int(i) for i in np.unravel_index(first, ref.shape))
     a, b = ref.reshape(-1)[first].item(), fork.reshape(-1)[first].item()
-    return (f"{ref.dtype} {ref.shape}: first difference at {index}: "
-            f"reference {a!r}, fork {b!r}")
+    return (
+        f"{ref.dtype} {ref.shape}: first difference at {index}: "
+        f"reference {a!r}, fork {b!r}"
+    )
 
 
 def _canonical(value):
@@ -1088,29 +1259,30 @@ def _refusals(ref, fork):
         if ref_env.get(field) != fork_env.get(field):
             reasons.append(
                 f"environment differs in {field}: reference "
-                f"{ref_env.get(field)!r}, fork {fork_env.get(field)!r}")
+                f"{ref_env.get(field)!r}, fork {fork_env.get(field)!r}"
+            )
     for label, env in (("reference", ref_env), ("fork", fork_env)):
-        wrong = {k: v for k, v in env["thread_variables"].items()
-                 if v != "1"}
+        wrong = {k: v for k, v in env["thread_variables"].items() if v != "1"}
         if wrong:
             reasons.append(f"{label} was not run at one thread: {wrong}")
     if ref[0]["data_sha256"] != fork[0]["data_sha256"]:
         reasons.append("the two sides saw different input data")
-    ref_cases = {n: c for n, c in ref[1].items()
-                 if not n.startswith(_PICKLED)}
-    fork_cases = {n: c for n, c in fork[1].items()
-                  if not n.startswith(_PICKLED)}
+    ref_cases = {n: c for n, c in ref[1].items() if not n.startswith(_PICKLED)}
+    fork_cases = {
+        n: c for n, c in fork[1].items() if not n.startswith(_PICKLED)
+    }
     if set(ref_cases) != set(fork_cases):
         reasons.append(
             "the case lists differ: "
-            f"{sorted(set(ref_cases) ^ set(fork_cases))[:5]}")
+            f"{sorted(set(ref_cases) ^ set(fork_cases))[:5]}"
+        )
     else:
         for name in ref_cases:
             if ref_cases[name]["meta"] != fork_cases[name]["meta"]:
                 reasons.append(f"the recipe of case {name} differs")
                 break
     for name in fork[1]:
-        if name.startswith(_PICKLED) and name[len(_PICKLED):] not in ref[1]:
+        if name.startswith(_PICKLED) and name[len(_PICKLED) :] not in ref[1]:
             reasons.append(f"{name} has no reference case")
     return reasons
 
@@ -1139,9 +1311,13 @@ class _Case:
         return self.meta["kind"] in ("fit", "pickled")
 
     def _is(self, cls, covariance_type=None):
-        return (self.is_fit and self.meta["cls"] == cls and (
-            covariance_type is None
-            or self.meta["cov"] == covariance_type))
+        return (
+            self.is_fit
+            and self.meta["cls"] == cls
+            and (
+                covariance_type is None or self.meta["cov"] == covariance_type
+            )
+        )
 
     def collect(self):
         """Strict comparison: every difference, before any exception."""
@@ -1153,8 +1329,7 @@ class _Case:
             a = _normalised_error(ref["errors"].get(step))
             b = _normalised_error(fork["errors"].get(step))
             if a != b:
-                self.pending["errors:" + step] = (
-                    f"reference {a}, fork {b}")
+                self.pending["errors:" + step] = f"reference {a}, fork {b}"
         ref_params, fork_params = ref["params"], fork["params"]
         if (ref_params is None) != (fork_params is None):
             self.pending["params"] = "one side has no parameters"
@@ -1163,10 +1338,12 @@ class _Case:
                 a = _canonical(ref_params.get(name, "<absent>"))
                 b = _canonical(fork_params.get(name, "<absent>"))
                 if a != b:
-                    self.pending["params:" + name] = (
-                        f"reference {a}, fork {b}")
-        keys = set(fork["arrays"]) if self.pickled else (
-            set(ref["arrays"]) | set(fork["arrays"]))
+                    self.pending["params:" + name] = f"reference {a}, fork {b}"
+        keys = (
+            set(fork["arrays"])
+            if self.pickled
+            else (set(ref["arrays"]) | set(fork["arrays"]))
+        )
         for key in sorted(keys):
             if key not in fork["arrays"]:
                 self.pending[key] = "missing in the fork"
@@ -1206,23 +1383,32 @@ class _Case:
 
     def _e4_applies(self):
         params = self.meta.get("params") or ""
-        return (self.meta["kind"] == "fit" and self._is("GaussianHMM")
-                and "c" in params and "m" not in params)
+        return (
+            self.meta["kind"] == "fit"
+            and self._is("GaussianHMM")
+            and "c" in params
+            and "m" not in params
+        )
 
     def _rule_e4(self):
         fork = self.fork
         if fork["errors"]:
-            self.problem("E4", "the fork's fit or probe raised: "
-                         f"{fork['errors']}")
+            self.problem(
+                "E4", f"the fork's fit or probe raised: {fork['errors']}"
+            )
             return False
-        bad = [k for k, v in fork["arrays"].items()
-               if v.dtype.kind == "f" and not np.isfinite(v).all()]
+        bad = [
+            k
+            for k, v in fork["arrays"].items()
+            if v.dtype.kind == "f" and not np.isfinite(v).all()
+        ]
         if bad:
             self.problem("E4", f"non-finite in the fork: {bad}")
             return False
         for key in list(self.pending):
             if key not in FORK_ONLY_ARRAYS and not key.startswith(
-                    "params:covars_floor"):
+                "params:covars_floor"
+            ):
                 self.pending.pop(key)
         self.result.fire("E4", self.name)
         return True
@@ -1315,11 +1501,16 @@ class _Case:
 
     def _rule_e6(self, skip_ref):
         for key in list(self.pending):
-            name = key[len("params:"):]
-            if key.startswith("params:") and name in FORK_ONLY_PARAMS and (
+            name = key[len("params:") :]
+            if (
+                key.startswith("params:")
+                and name in FORK_ONLY_PARAMS
+                and (
                     name not in (self.ref["params"] or {})
                     and (self.fork["params"] or {}).get(name)
-                    == FORK_ONLY_PARAMS[name]):
+                    == FORK_ONLY_PARAMS[name]
+                )
+            ):
                 self.excuse("E6", key)
         if self.meta["kind"] != "fit" or "fit" in self.fork["errors"]:
             return
@@ -1330,8 +1521,10 @@ class _Case:
             return
         self.result.n_arrays += 1
         recorded = []
-        for side, arrays in (("reference", self.ref["arrays"]),
-                             ("fork", self.fork["arrays"])):
+        for side, arrays in (
+            ("reference", self.ref["arrays"]),
+            ("fork", self.fork["arrays"]),
+        ):
             if side == "reference" and skip_ref:
                 continue
             names = ["m01_post_sum_last"]
@@ -1345,18 +1538,21 @@ class _Case:
             if not _same(value, occupancy):
                 self.pending[key] = (
                     f"differs from the {side}'s {name}: "
-                    + _describe(value, occupancy))
+                    + _describe(value, occupancy)
+                )
                 return
         self.excuse("E6", key)
 
 
 def _rule_e1(case, key):
     meta, ref, fork = case.meta, case.ref, case.fork
-    if case._is("GaussianHMM", "spherical") and key in (
-            "_covars_", "covars_"):
+    if case._is("GaussianHMM", "spherical") and key in ("_covars_", "covars_"):
         n_features = meta["n_features"]
-    elif (meta["kind"] == "fill_covars" and key == "result"
-          and meta["options"]["covariance_type"] == "spherical"):
+    elif (
+        meta["kind"] == "fill_covars"
+        and key == "result"
+        and meta["options"]["covariance_type"] == "spherical"
+    ):
         n_features = meta["options"]["n_features"]
     else:
         return False
@@ -1364,8 +1560,9 @@ def _rule_e1(case, key):
     if a.dtype != b.dtype or a.shape == b.shape:
         return False
     if a.ndim == 2 and b.ndim == 1 and a.shape[0] == b.shape[0]:
-        ok = all(_same(np.ascontiguousarray(a[:, j]), b)
-                 for j in range(a.shape[1]))
+        ok = all(
+            _same(np.ascontiguousarray(a[:, j]), b) for j in range(a.shape[1])
+        )
     elif a.ndim == 3 and b.ndim == 3:
         ok = _same(np.ascontiguousarray(a[::n_features]), b)
     else:
@@ -1376,8 +1573,11 @@ def _rule_e1(case, key):
 
 
 def _rule_e2(case, key):
-    if not (case._is("GaussianHMM", "spherical") and key == "sample_X"
-            and case.meta["n_features"] > 1):
+    if not (
+        case._is("GaussianHMM", "spherical")
+        and key == "sample_X"
+        and case.meta["n_features"] > 1
+    ):
         return False
     ref, fork = case.ref["arrays"], case.fork["arrays"]
     states = ref.get("sample_states")
@@ -1385,22 +1585,31 @@ def _rule_e2(case, key):
         return False
     first = states == 0
     a, b = ref[key], fork[key]
-    if a.dtype != b.dtype or a.shape != b.shape or not _same(
-            np.ascontiguousarray(a[first]), np.ascontiguousarray(b[first])):
+    if (
+        a.dtype != b.dtype
+        or a.shape != b.shape
+        or not _same(
+            np.ascontiguousarray(a[first]), np.ascontiguousarray(b[first])
+        )
+    ):
         return False
     case.excuse("E2", key)
     return True
 
 
 def _rule_e3(case, key):
-    if key != "decode_map_logprob" or "predict_proba" not in case.ref[
-            "arrays"]:
+    if (
+        key != "decode_map_logprob"
+        or "predict_proba" not in case.ref["arrays"]
+    ):
         return False
     posteriors = case.ref["arrays"]["predict_proba"]
     lengths = case.meta["lengths"]
     a, b = case.ref["arrays"][key], case.fork["arrays"][key]
-    if not (_same(a, _map_sum(posteriors, lengths, logged=False))
-            and _same(b, _map_sum(posteriors, lengths, logged=True))):
+    if not (
+        _same(a, _map_sum(posteriors, lengths, logged=False))
+        and _same(b, _map_sum(posteriors, lengths, logged=True))
+    ):
         return False
     case.excuse("E3", key)
     return True
@@ -1408,24 +1617,35 @@ def _rule_e3(case, key):
 
 def _rule_e5(case, key):
     meta = case.meta
-    if not (meta["kind"] == "normalize" and key == "result"
-            and meta["options"].get("axis") == 0):
+    if not (
+        meta["kind"] == "normalize"
+        and key == "result"
+        and meta["options"].get("axis") == 0
+    ):
         return False
     source = case.ref["arrays"]["input"]
     zero = np.broadcast_to(source.sum(axis=0) == 0, source.shape)
     a, b = case.ref["arrays"][key], case.fork["arrays"][key]
     if a.dtype != b.dtype or a.shape != b.shape:
         return False
-    ok = (np.isnan(a[zero]).all() and (b[zero] == 0).all()
-          and _same(np.ascontiguousarray(a[~zero]),
-                    np.ascontiguousarray(b[~zero])))
+    ok = (
+        np.isnan(a[zero]).all()
+        and (b[zero] == 0).all()
+        and _same(
+            np.ascontiguousarray(a[~zero]), np.ascontiguousarray(b[~zero])
+        )
+    )
     if ok:
         case.excuse("E5", key)
     return ok
 
 
-_KEY_RULES = (("E1", _rule_e1), ("E2", _rule_e2), ("E3", _rule_e3),
-              ("E5", _rule_e5))
+_KEY_RULES = (
+    ("E1", _rule_e1),
+    ("E2", _rule_e2),
+    ("E3", _rule_e3),
+    ("E5", _rule_e5),
+)
 
 
 def compare_dumps(ref_dir, fork_dir, allow=()):
@@ -1449,46 +1669,63 @@ def compare_dumps(ref_dir, fork_dir, allow=()):
         case.apply_exceptions()
         result.n_cases += 1
     if result.fork_environment.get("pickles_loaded"):
-        eligible = {n for n, c in ref[1].items()
-                    if c["meta"]["kind"] == "fit"
-                    and "fit" not in c["errors"]}
-        loaded = {n[len(_PICKLED):] for n in fork[1]
-                  if n.startswith(_PICKLED)}
+        eligible = {
+            n
+            for n, c in ref[1].items()
+            if c["meta"]["kind"] == "fit" and "fit" not in c["errors"]
+        }
+        loaded = {
+            n[len(_PICKLED) :] for n in fork[1] if n.startswith(_PICKLED)
+        }
         for name in sorted(eligible - loaded):
-            result.differences.append(Difference(
-                _PICKLED + name, "case", "no pickled model was loaded"))
+            result.differences.append(
+                Difference(
+                    _PICKLED + name, "case", "no pickled model was loaded"
+                )
+            )
     return result
 
 
 def format_result(result):
     """The text ``compare`` prints."""
     lines = []
-    for label, env in (("reference", result.ref_environment),
-                       ("fork", result.fork_environment)):
+    for label, env in (
+        ("reference", result.ref_environment),
+        ("fork", result.fork_environment),
+    ):
         lines.append(
             f"{label}: {env['package']} {env['package_version']}, "
             f"Python {env['python']}, numpy {env['numpy']}, scipy "
             f"{env['scipy']}, scikit-learn {env['scikit_learn']}, "
             f"threadpoolctl {env['threadpoolctl']}, {env['machine']}, "
-            f"threads {sorted(set(env['thread_variables'].values()))}")
+            f"threads {sorted(set(env['thread_variables'].values()))}"
+        )
     for reason in result.refused:
         lines.append(f"REFUSED: {reason}")
     if not result.refused:
         lines.append(
             f"compared {result.n_cases} cases, {result.n_arrays} arrays "
-            "byte for byte")
+            "byte for byte"
+        )
         for exception, count in sorted(result.fired.items()):
             item, what = EXCEPTIONS[exception]
             lines.append(
                 f"exception {exception} ({item}: {what}) excused {count} "
                 f"difference(s) in {len(result.examples[exception])} "
-                f"case(s), e.g. {result.examples[exception][0]}")
+                f"case(s), e.g. {result.examples[exception][0]}"
+            )
     for diff in result.differences:
         lines.append(f"DIFFERENCE {diff.case} | {diff.key} | {diff.text}")
-    equal = ("equal apart from the named exceptions" if result.fired
-             else "bit-equal")
-    verdict = {0: equal, 1: f"{len(result.differences)} difference(s)",
-               2: "not comparable"}[result.code]
+    equal = (
+        "equal apart from the named exceptions"
+        if result.fired
+        else "bit-equal"
+    )
+    verdict = {
+        0: equal,
+        1: f"{len(result.differences)} difference(s)",
+        2: "not comparable",
+    }[result.code]
     lines.append(f"result: {verdict} (exit {result.code})")
     return "\n".join(lines)
 
@@ -1496,6 +1733,7 @@ def format_result(result):
 # ---------------------------------------------------------------------------
 # Command line.
 # ---------------------------------------------------------------------------
+
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[1])
@@ -1515,8 +1753,7 @@ def main(argv=None):
             parser.error("--n-threads must be at least 1")
         if args.package == "hmmlearn" and args.n_threads != 1:
             parser.error("hmmlearn has no n_threads: --n-threads must be 1")
-        return dump(args.package, args.out, args.load_pickles,
-                    args.n_threads)
+        return dump(args.package, args.out, args.load_pickles, args.n_threads)
     allow = [a for a in args.allow.split(",") if a]
     unknown = [a for a in allow if a not in EXCEPTIONS]
     if unknown:
