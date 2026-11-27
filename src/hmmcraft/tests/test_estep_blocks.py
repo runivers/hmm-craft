@@ -86,8 +86,9 @@ def _data(n_rows=N_ROWS):
     # int64 on every platform: RandomState returns C long, which is 32 bits
     # on Windows, and the shorter Poisson and multinomial forms take int64.
     counts = rs.poisson(4, (n_rows, 3)).astype(np.int64)
-    multinomial = rs.multinomial(
-        5, [0.2, 0.3, 0.5], size=n_rows).astype(np.int64)
+    multinomial = rs.multinomial(5, [0.2, 0.3, 0.5], size=n_rows).astype(
+        np.int64
+    )
     return continuous, symbols, counts, multinomial
 
 
@@ -984,8 +985,9 @@ def stats_linalg_calls(monkeypatch):
 
 def _factored(calls):
     """The number of ``cholesky`` calls that returned a factor."""
-    return sum(1 for name, _, got in calls
-               if name == "cholesky" and got is not None)
+    return sum(
+        1 for name, _, got in calls if name == "cholesky" and got is not None
+    )
 
 
 @pytest.mark.parametrize("implementation", ["log", "scaling"])
@@ -1005,8 +1007,9 @@ def test_full_and_tied_covariances_are_factored_once_per_e_step(
     n_iter = model.monitor_.iter
     per_covariance = 3 if covariance_type == "full" else 1
     assert _factored(stats_linalg_calls) == per_covariance * n_iter
-    columns = [n for name, _, n in stats_linalg_calls
-               if name == "solve_triangular"]
+    columns = [
+        n for name, _, n in stats_linalg_calls if name == "solve_triangular"
+    ]
     assert columns == [n for n in LENGTHS for _ in range(3)] * n_iter
     assert "_estep_factors" not in vars(model)
 
@@ -1080,7 +1083,11 @@ def _reports_then_raises(model, X):
 HELD_CASES = {
     "plain": (lambda model, X: X, True, ("full", "tied"), ("log", "scaling")),
     "singular covariance": (
-        _set_covariance(1.0), True, ("full", "tied"), ("log", "scaling")),
+        _set_covariance(1.0),
+        True,
+        ("full", "tied"),
+        ("log", "scaling"),
+    ),
     "not positive definite": (
         _set_covariance([[1.0, 2.0], [2.0, 1.0]]),
         False,
@@ -1088,15 +1095,35 @@ HELD_CASES = {
         ("log", "scaling"),
     ),
     "NaN covariance": (
-        _set_covariance(np.nan), False, ("full", "tied"), ("log", "scaling")),
+        _set_covariance(np.nan),
+        False,
+        ("full", "tied"),
+        ("log", "scaling"),
+    ),
     "1e308 against -1e308": (
-        _set_row(1e308, -1e308), True, ("full", "tied"), ("log", "scaling")),
+        _set_row(1e308, -1e308),
+        True,
+        ("full", "tied"),
+        ("log", "scaling"),
+    ),
     "row of 1e200": (
-        _set_row(1e200), True, ("full", "tied"), ("log", "scaling")),
+        _set_row(1e200),
+        True,
+        ("full", "tied"),
+        ("log", "scaling"),
+    ),
     "state 0 reports, state 1 raises": (
-        _reports_then_raises, False, ("full",), ("log", "scaling")),
+        _reports_then_raises,
+        False,
+        ("full",),
+        ("log", "scaling"),
+    ),
     "row of 1e4, flagged": (
-        _set_row(1e4), True, ("full", "tied"), ("scaling",)),
+        _set_row(1e4),
+        True,
+        ("full", "tied"),
+        ("scaling",),
+    ),
 }
 HELD_ROWS = [
     (name, cov, impl)
@@ -1359,8 +1386,9 @@ def test_a_flag_without_an_underflow_is_computed_per_sequence(
     expected = _fitted(factory(2, "scaling"), X)
     real = _hmmc.estep_scaling
 
-    def flagging(startprob, transmat, lattice, lengths, with_xi_sum,
-                 n_threads):
+    def flagging(
+        startprob, transmat, lattice, lengths, with_xi_sum, n_threads
+    ):
         log_prob, fwd, bwd, xi, underflow = real(
             startprob, transmat, lattice, lengths, with_xi_sum, n_threads
         )

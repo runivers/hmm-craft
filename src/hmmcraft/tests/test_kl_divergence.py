@@ -4,7 +4,6 @@ from hmmcraft import _kl_divergence as _kl
 
 
 class TestKLDivergence:
-
     def test_dirichlet(self):
         v1 = [1, 2, 3, 4]
         v2 = [4, 3, 2, 1]
@@ -21,8 +20,8 @@ class TestKLDivergence:
         mean_p = [0]
         var_p = [[1]]
         kl_equal = _kl.kl_multivariate_normal_distribution(
-            mean_p, var_p,
-            mean_p, var_p)
+            mean_p, var_p, mean_p, var_p
+        )
         assert kl_equal == 0
         # Compare with univariate implementation
         uv = _kl.kl_normal_distribution(0, 1, 0, 1)
@@ -31,17 +30,17 @@ class TestKLDivergence:
         mean_q = [1]
         var_q = [[1]]
         kl_ne = _kl.kl_multivariate_normal_distribution(
-            mean_p, var_p,
-            mean_q, var_q)
+            mean_p, var_p, mean_q, var_q
+        )
 
         # Compare with univariate implementation
         uv = _kl.kl_normal_distribution(0, 1, 1, 1)
         assert kl_ne == uv
 
     def test_gamma(self):
-        assert _kl.kl_gamma_distribution(1, .01, 1, .01) == 0
-        assert _kl.kl_gamma_distribution(1, .01, 2, .01) > 0
-        assert _kl.kl_gamma_distribution(1, .01, 1, .02) > 0
+        assert _kl.kl_gamma_distribution(1, 0.01, 1, 0.01) == 0
+        assert _kl.kl_gamma_distribution(1, 0.01, 2, 0.01) > 0
+        assert _kl.kl_gamma_distribution(1, 0.01, 1, 0.02) > 0
 
     def test_wishart(self):
         dof1 = 952

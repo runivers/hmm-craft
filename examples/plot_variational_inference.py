@@ -22,8 +22,9 @@ from sklearn.utils import check_random_state
 from hmmcraft import hmm, vhmm
 
 
-def gaussian_hinton_diagram(startprob, transmat, means,
-                            variances, vmin=0, vmax=1, infer_hidden=True):
+def gaussian_hinton_diagram(
+    startprob, transmat, means, variances, vmin=0, vmax=1, infer_hidden=True
+):
     """
     Show the initial state probabilities, the transition probabilities
     as heatmaps, and draw the emission distributions.
@@ -31,7 +32,7 @@ def gaussian_hinton_diagram(startprob, transmat, means,
 
     num_states = transmat.shape[0]
 
-    f = plt.figure(figsize=(3*(num_states), 2*num_states))
+    f = plt.figure(figsize=(3 * (num_states), 2 * num_states))
     grid = gs.GridSpec(3, 3)
 
     ax = f.add_subplot(grid[0, 0])
@@ -46,7 +47,8 @@ def gaussian_hinton_diagram(startprob, transmat, means,
     for i in range(num_states):
         keep = True
         if infer_hidden and np.all(
-                np.abs(transmat[i] - transmat[i][0]) < 1e-4):
+            np.abs(transmat[i] - transmat[i][0]) < 1e-4
+        ):
             keep = False
         if keep:
             s_min = means[i] - 10 * variances[i]
@@ -54,14 +56,15 @@ def gaussian_hinton_diagram(startprob, transmat, means,
             xx = np.arange(s_min, s_max, (s_max - s_min) / 1000)
             norm = scipy.stats.norm(means[i], np.sqrt(variances[i]))
             yy = norm.pdf(xx)
-            keep = yy > .01
+            keep = yy > 0.01
             ax.plot(xx[keep], yy[keep], label=f"State: {i}")
     ax.set_title("Emissions Probabilities", size=14)
     ax.legend(loc="best")
     f.tight_layout()
     return f
 
-np.set_printoptions(formatter={'float_kind': "{:.3f}".format})
+
+np.set_printoptions(formatter={"float_kind": "{:.3f}".format})
 rs = check_random_state(2022)
 sample_length = 500
 num_samples = 1
@@ -80,19 +83,17 @@ model.n_features = 4
 model.startprob_ = np.array([0.25, 0.25, 0.25, 0.25])
 # The transition matrix, note that there are no transitions possible
 # between component 1 and 3
-model.transmat_ = np.array([[0.2, 0.2, 0.3, 0.3],
-                            [0.3, 0.2, 0.2, 0.3],
-                            [0.2, 0.3, 0.3, 0.2],
-                            [0.3, 0.3, 0.2, 0.2]])
+model.transmat_ = np.array(
+    [
+        [0.2, 0.2, 0.3, 0.3],
+        [0.3, 0.2, 0.2, 0.3],
+        [0.2, 0.3, 0.3, 0.2],
+        [0.3, 0.3, 0.2, 0.2],
+    ]
+)
 # The means and covariance of each component
-model.means_ = np.array([[-1.5],
-                         [0],
-                         [1.5],
-                         [3.]])
-model.covars_ = np.array([[0.25],
-                          [0.25],
-                          [0.25],
-                          [0.25]])**2
+model.means_ = np.array([[-1.5], [0], [1.5], [3.0]])
+model.covars_ = np.array([[0.25], [0.25], [0.25], [0.25]]) ** 2
 
 # Generate training data
 sequences = []
@@ -109,32 +110,40 @@ best_scores = collections.defaultdict(dict)
 best_models = collections.defaultdict(dict)
 for n in num_states:
     for i in range(num_inits):
-        vi = vhmm.VariationalGaussianHMM(n,
-                                         n_iter=1000,
-                                         covariance_type="full",
-                                         implementation="scaling",
-                                         tol=1e-6,
-                                         random_state=rs,
-                                         verbose=verbose)
+        vi = vhmm.VariationalGaussianHMM(
+            n,
+            n_iter=1000,
+            covariance_type="full",
+            implementation="scaling",
+            tol=1e-6,
+            random_state=rs,
+            verbose=verbose,
+        )
         vi.fit(sequences, lengths)
         lb = vi.monitor_.history[-1]
-        print(f"Training VI({n}) Variational Lower Bound={lb} "
-              f"Iterations={len(vi.monitor_.history)} ")
+        print(
+            f"Training VI({n}) Variational Lower Bound={lb} "
+            f"Iterations={len(vi.monitor_.history)} "
+        )
         if best_models["VI"].get(n) is None or best_scores["VI"][n] < lb:
             best_models["VI"][n] = vi
             best_scores["VI"][n] = lb
 
-        em = hmm.GaussianHMM(n,
-                             n_iter=1000,
-                             covariance_type="full",
-                             implementation="scaling",
-                             tol=1e-6,
-                             random_state=rs,
-                             verbose=verbose)
+        em = hmm.GaussianHMM(
+            n,
+            n_iter=1000,
+            covariance_type="full",
+            implementation="scaling",
+            tol=1e-6,
+            random_state=rs,
+            verbose=verbose,
+        )
         em.fit(sequences, lengths)
         ll = em.monitor_.history[-1]
-        print(f"Training EM({n}) Final Log Likelihood={ll} "
-              f"Iterations={len(vi.monitor_.history)} ")
+        print(
+            f"Training EM({n}) Final Log Likelihood={ll} "
+            f"Iterations={len(vi.monitor_.history)} "
+        )
         if best_models["EM"].get(n) is None or best_scores["EM"][n] < ll:
             best_models["EM"][n] = em
             best_scores["EM"][n] = ll

@@ -18,8 +18,7 @@ import pytest
 SCRIPT = pathlib.Path(__file__).resolve().parent / "check_signoff.py"
 ME = ("Ann Example", "ann@example.org")
 OTHER = ("Bob Example", "bob@example.org")
-BOT = ("dependabot[bot]",
-       "49699333+dependabot[bot]@users.noreply.github.com")
+BOT = ("dependabot[bot]", "49699333+dependabot[bot]@users.noreply.github.com")
 GITHUB = ("GitHub", "noreply@github.com")
 
 
@@ -33,13 +32,19 @@ def _env():
 
 def _git(repo, *args, author=ME, committer=ME):
     env = _env()
-    env.update(GIT_AUTHOR_NAME=author[0], GIT_AUTHOR_EMAIL=author[1],
-               GIT_COMMITTER_NAME=committer[0],
-               GIT_COMMITTER_EMAIL=committer[1])
+    env.update(
+        GIT_AUTHOR_NAME=author[0],
+        GIT_AUTHOR_EMAIL=author[1],
+        GIT_COMMITTER_NAME=committer[0],
+        GIT_COMMITTER_EMAIL=committer[1],
+    )
     result = subprocess.run(
-        ["git", "-C", str(repo), "-c", "core.hooksPath=" + os.devnull,
-         *args],
-        env=env, check=True, capture_output=True, text=True)
+        ["git", "-C", str(repo), "-c", "core.hooksPath=" + os.devnull, *args],
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
     return result.stdout.strip()
 
 
@@ -54,19 +59,31 @@ def repo(tmp_path):
     return tmp_path
 
 
-def _commit(repo, name, message, author=ME, committer=ME,
-            cleanup="default"):
+def _commit(repo, name, message, author=ME, committer=ME, cleanup="default"):
     (repo / name).write_text(name + "\n")
     _git(repo, "add", name)
-    _git(repo, "commit", "-q", "--cleanup=" + cleanup, "-m", message,
-         author=author, committer=committer)
+    _git(
+        repo,
+        "commit",
+        "-q",
+        "--cleanup=" + cleanup,
+        "-m",
+        message,
+        author=author,
+        committer=committer,
+    )
     return _git(repo, "rev-parse", "HEAD")
 
 
 def _check(repo, base, head="HEAD"):
     return subprocess.run(
         [sys.executable, "-I", str(SCRIPT), base, head],
-        cwd=repo, env=_env(), capture_output=True, text=True, check=False)
+        cwd=repo,
+        env=_env(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
 
 
 def _branch(repo):
@@ -116,11 +133,15 @@ def test_address_compared_without_case(repo):
 
 def test_crlf_message_passes(repo):
     base = _branch(repo)
-    _commit(repo, "a", "fix: a\r\n\r\n" + _signoff(ME) + "\r\n",
-            cleanup="verbatim")
-    stored = subprocess.run(["git", "-C", str(repo), "cat-file", "-p",
-                             "HEAD"], env=_env(), check=True,
-                            capture_output=True).stdout
+    _commit(
+        repo, "a", "fix: a\r\n\r\n" + _signoff(ME) + "\r\n", cleanup="verbatim"
+    )
+    stored = subprocess.run(
+        ["git", "-C", str(repo), "cat-file", "-p", "HEAD"],
+        env=_env(),
+        check=True,
+        capture_output=True,
+    ).stdout
     assert b"\r\n" in stored
     assert _check(repo, base).returncode == 0
 
@@ -154,15 +175,13 @@ def test_committer_signoff_accepted_for_a_commit_taken_over(repo):
     # A commit taken from upstream keeps its author, who did not sign off;
     # the committer who took it signs off.
     base = _branch(repo)
-    _commit(repo, "a", "fix: a\n\n" + _signoff(ME), author=OTHER,
-            committer=ME)
+    _commit(repo, "a", "fix: a\n\n" + _signoff(ME), author=OTHER, committer=ME)
     assert _check(repo, base).returncode == 0
 
 
 def test_signoff_line_must_be_a_whole_line(repo):
     base = _branch(repo)
-    _commit(repo, "a",
-            "fix: a\n\nSee " + _signoff(ME) + " in the template.")
+    _commit(repo, "a", "fix: a\n\nSee " + _signoff(ME) + " in the template.")
     assert _check(repo, base).returncode == 1
 
 
@@ -213,7 +232,12 @@ def test_unknown_revision_is_an_error(repo):
 
 
 def test_wrong_arguments_are_an_error(repo):
-    result = subprocess.run([sys.executable, "-I", str(SCRIPT), "HEAD"],
-                            cwd=repo, env=_env(), capture_output=True,
-                            text=True, check=False)
+    result = subprocess.run(
+        [sys.executable, "-I", str(SCRIPT), "HEAD"],
+        cwd=repo,
+        env=_env(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
     assert result.returncode == 2

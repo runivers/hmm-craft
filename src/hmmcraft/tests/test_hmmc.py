@@ -35,9 +35,15 @@ def _arguments(name, n_samples, n_components):
 
 
 KERNEL_FUNCTIONS = [
-    "forward_log", "forward_scaling", "backward_log", "backward_scaling",
-    "compute_log_xi_sum", "compute_scaling_xi_sum", "viterbi",
-    "estep_log", "estep_scaling",
+    "forward_log",
+    "forward_scaling",
+    "backward_log",
+    "backward_scaling",
+    "compute_log_xi_sum",
+    "compute_scaling_xi_sum",
+    "viterbi",
+    "estep_log",
+    "estep_scaling",
 ]
 
 
@@ -202,7 +208,8 @@ def _per_sequence(implementation, start, trans, lattice, lengths):
         else:
             try:
                 log_prob, fwd, scaling = _hmmc.forward_scaling(
-                    start, trans, rows)
+                    start, trans, rows
+                )
             except ValueError as exc:
                 assert str(exc) == UNDERFLOW_TEXT
                 flag = True
@@ -218,10 +225,17 @@ def _per_sequence(implementation, start, trans, lattice, lengths):
         bwds.append(bwd)
         sums.append(xi_sum)
         flags.append(flag)
-    expected = dict(zip(BLOCK_RESULTS, [
-        np.array(log_probs), np.concatenate(fwds), np.concatenate(bwds),
-        np.stack(sums),
-    ]))
+    expected = dict(
+        zip(
+            BLOCK_RESULTS,
+            [
+                np.array(log_probs),
+                np.concatenate(fwds),
+                np.concatenate(bwds),
+                np.stack(sums),
+            ],
+        )
+    )
     if implementation == "scaling":
         expected["underflow"] = np.array(flags)
     return expected
@@ -230,9 +244,11 @@ def _per_sequence(implementation, start, trans, lattice, lengths):
 def _block(implementation, start, trans, lattice, lengths, with_xi_sum=True):
     """Call the block function of ``implementation``; name its results."""
     results = getattr(_hmmc, "estep_" + implementation)(
-        start, trans, lattice, lengths, with_xi_sum)
-    names = BLOCK_RESULTS + (["underflow"] if implementation == "scaling"
-                             else [])
+        start, trans, lattice, lengths, with_xi_sum
+    )
+    names = BLOCK_RESULTS + (
+        ["underflow"] if implementation == "scaling" else []
+    )
     assert len(results) == len(names)
     return dict(zip(names, results))
 
@@ -263,7 +279,8 @@ def test_block_functions_equal_the_per_sequence_functions_as_bytes(
     C-contiguous writeable arrays, and leaves its inputs unchanged.
     """
     start, trans, lattice = _block_inputs(
-        implementation, n_components, lengths, data)
+        implementation, n_components, lengths, data
+    )
     lengths = np.array(lengths, dtype=np.intp)
     inputs = [start, trans, lattice, lengths]
     before = [array.tobytes() for array in inputs]
@@ -281,13 +298,18 @@ def test_estep_log_of_a_hand_written_one_state_block():
     One state, sequences of one and two rows: the values worked out by hand,
     all exact in binary.
     """
-    got = _block("log", np.array([1.]), np.array([[1.]]),
-                 np.array([[-1.], [-2.], [-0.5]]), np.array([1, 2]))
+    got = _block(
+        "log",
+        np.array([1.0]),
+        np.array([[1.0]]),
+        np.array([[-1.0], [-2.0], [-0.5]]),
+        np.array([1, 2]),
+    )
     expected = {
-        "log_prob": np.array([-1., -2.5]),
-        "fwdlattice": np.array([[-1.], [-2.], [-2.5]]),
-        "bwdlattice": np.array([[0.], [-0.5], [0.]]),
-        "xi_sum": np.array([[[-np.inf]], [[0.]]]),
+        "log_prob": np.array([-1.0, -2.5]),
+        "fwdlattice": np.array([[-1.0], [-2.0], [-2.5]]),
+        "bwdlattice": np.array([[0.0], [-0.5], [0.0]]),
+        "xi_sum": np.array([[[-np.inf]], [[0.0]]]),
     }
     _assert_same_bytes(got, expected)
 
@@ -298,17 +320,23 @@ UNDERFLOW_LENGTHS = [3, 4, 1, 2]
 @pytest.mark.parametrize(
     "rows, value, flagged",
     [
-        ([3], 0., [False, True, False, False]),
-        ([4], 0., [False, True, False, False]),
-        ([6], 0., [False, True, False, False]),
-        ([7], 0., [False, False, True, False]),
-        ([1, 8], 0., [True, False, False, True]),
+        ([3], 0.0, [False, True, False, False]),
+        ([4], 0.0, [False, True, False, False]),
+        ([6], 0.0, [False, True, False, False]),
+        ([7], 0.0, [False, False, True, False]),
+        ([1, 8], 0.0, [True, False, False, True]),
         ([4], 1e-301, [False, True, False, False]),
         ([4], 1e-299, [False, False, False, False]),
     ],
-    ids=["zero-first-row", "zero-middle-row", "zero-last-row",
-         "zero-one-row-sequence", "two-sequences", "below-the-floor",
-         "above-the-floor"],
+    ids=[
+        "zero-first-row",
+        "zero-middle-row",
+        "zero-last-row",
+        "zero-one-row-sequence",
+        "two-sequences",
+        "below-the-floor",
+        "above-the-floor",
+    ],
 )
 def test_estep_scaling_flags_an_underflow_and_raises_nothing(
     rows, value, flagged
@@ -319,7 +347,8 @@ def test_estep_scaling_flags_an_underflow_and_raises_nothing(
     per-sequence functions compute them.
     """
     start, trans, frame = _block_inputs(
-        "scaling", 2, UNDERFLOW_LENGTHS, "dense")
+        "scaling", 2, UNDERFLOW_LENGTHS, "dense"
+    )
     frame[rows] = value
     lengths = np.array(UNDERFLOW_LENGTHS)
     got = _block("scaling", start, trans, frame, lengths)
@@ -337,7 +366,8 @@ def test_estep_scaling_flags_an_underflow_and_raises_nothing(
             _hmmc.forward_scaling(start, trans, sequence)
         assert str(info.value) == UNDERFLOW_TEXT
     _assert_same_bytes(
-        got, _per_sequence("scaling", start, trans, frame, lengths))
+        got, _per_sequence("scaling", start, trans, frame, lengths)
+    )
 
 
 def test_estep_log_of_a_zero_probability_sequence_raises_nothing():
@@ -345,8 +375,9 @@ def test_estep_log_of_a_zero_probability_sequence_raises_nothing():
     A sequence with a row of zero probability gets a log-likelihood of
     ``-inf`` and NaN transition sums, the bytes of the per-sequence functions.
     """
-    start, trans, log_frame = _block_inputs("log", 3, UNDERFLOW_LENGTHS,
-                                            "dense")
+    start, trans, log_frame = _block_inputs(
+        "log", 3, UNDERFLOW_LENGTHS, "dense"
+    )
     log_frame[4] = -np.inf
     lengths = np.array(UNDERFLOW_LENGTHS)
     got = _block("log", start, trans, log_frame, lengths)
@@ -354,7 +385,8 @@ def test_estep_log_of_a_zero_probability_sequence_raises_nothing():
     assert np.isfinite(got["log_prob"][[0, 2, 3]]).all()
     assert np.isnan(got["xi_sum"][1]).all()
     _assert_same_bytes(
-        got, _per_sequence("log", start, trans, log_frame, lengths))
+        got, _per_sequence("log", start, trans, log_frame, lengths)
+    )
 
 
 @pytest.mark.parametrize("implementation", ["log", "scaling"])
@@ -364,7 +396,8 @@ def test_block_functions_without_transition_sums(implementation):
     is the one computed with them.
     """
     start, trans, lattice = _block_inputs(
-        implementation, 3, SHORT_AND_LONG, "zeros")
+        implementation, 3, SHORT_AND_LONG, "zeros"
+    )
     lengths = np.array(SHORT_AND_LONG)
     with_sums = _block(implementation, start, trans, lattice, lengths, True)
     without = _block(implementation, start, trans, lattice, lengths, False)
@@ -376,8 +409,13 @@ def test_block_functions_without_transition_sums(implementation):
 
 @pytest.mark.parametrize(
     "layout",
-    ["fortran", "every-second-row", "float32", "int32-lengths",
-     "list-lengths"],
+    [
+        "fortran",
+        "every-second-row",
+        "float32",
+        "int32-lengths",
+        "list-lengths",
+    ],
 )
 @pytest.mark.parametrize("implementation", ["log", "scaling"])
 def test_block_functions_read_other_layouts_and_dtypes(implementation, layout):
@@ -387,7 +425,8 @@ def test_block_functions_read_other_layouts_and_dtypes(implementation, layout):
     functions on the same inputs.
     """
     start, trans, lattice = _block_inputs(
-        implementation, 3, SHORT_AND_LONG, "dense")
+        implementation, 3, SHORT_AND_LONG, "dense"
+    )
     lengths = np.array(SHORT_AND_LONG, dtype=np.intp)
     if layout == "fortran":
         lattice = np.asfortranarray(lattice)
@@ -403,10 +442,12 @@ def test_block_functions_read_other_layouts_and_dtypes(implementation, layout):
         lengths = lengths.astype(np.int32)
     else:
         lengths = list(SHORT_AND_LONG)
-    expected = _per_sequence(implementation, start, trans, lattice,
-                             SHORT_AND_LONG)
+    expected = _per_sequence(
+        implementation, start, trans, lattice, SHORT_AND_LONG
+    )
     _assert_same_bytes(
-        _block(implementation, start, trans, lattice, lengths), expected)
+        _block(implementation, start, trans, lattice, lengths), expected
+    )
 
 
 SUM_TEXT = "^lengths do not sum to the lattice rows$"
@@ -428,9 +469,18 @@ SHAPE_TEXT = "^shape mismatch$"
         ({"start": np.ones(1)}, SHAPE_TEXT),
         ({"trans": np.full((2, 3), 1 / 3)}, SHAPE_TEXT),
     ],
-    ids=["sum-below-rows", "sum-above-rows", "huge-lengths", "no-lengths",
-         "zero-length", "negative-length", "2d-lengths", "1d-lattice",
-         "short-start", "non-square-transitions"],
+    ids=[
+        "sum-below-rows",
+        "sum-above-rows",
+        "huge-lengths",
+        "no-lengths",
+        "zero-length",
+        "negative-length",
+        "2d-lengths",
+        "1d-lattice",
+        "short-start",
+        "non-square-transitions",
+    ],
 )
 @pytest.mark.parametrize("name", BLOCK_FUNCTIONS)
 def test_block_functions_refuse_inconsistent_inputs(name, change, text):
@@ -443,5 +493,10 @@ def test_block_functions_refuse_inconsistent_inputs(name, change, text):
     }
     arguments.update(change)
     with pytest.raises(ValueError, match=text):
-        getattr(_hmmc, name)(arguments["start"], arguments["trans"],
-                             arguments["lattice"], arguments["lengths"], True)
+        getattr(_hmmc, name)(
+            arguments["start"],
+            arguments["trans"],
+            arguments["lattice"],
+            arguments["lengths"],
+            True,
+        )

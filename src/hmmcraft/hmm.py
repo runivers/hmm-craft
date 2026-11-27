@@ -17,7 +17,11 @@ from .stats import _covar_factors
 from .utils import normalize
 
 __all__ = [
-    "GMMHMM", "CategoricalHMM", "GaussianHMM", "MultinomialHMM", "PoissonHMM",
+    "GMMHMM",
+    "CategoricalHMM",
+    "GaussianHMM",
+    "MultinomialHMM",
+    "PoissonHMM",
 ]
 
 
@@ -32,10 +36,13 @@ def _covars_floor_value(covars_floor):
     """
     if covars_floor is None:
         return None
-    message = ("covars_floor must be None or a finite number above 0, "
-               f"got {covars_floor!r}")
+    message = (
+        "covars_floor must be None or a finite number above 0, "
+        f"got {covars_floor!r}"
+    )
     if not isinstance(covars_floor, numbers.Real) or isinstance(
-            covars_floor, (bool, np.bool_)):
+        covars_floor, (bool, np.bool_)
+    ):
         # ValueError for every invalid value, as the parameter documents.
         raise ValueError(message)  # noqa: TRY004
     try:
@@ -53,8 +60,11 @@ def _covars_pass_on_stack(covars):  # shape and finiteness already tested
     is symmetric and clearly positive definite; False leaves the decision
     to the tests made one matrix at a time.
     """
-    if (type(covars) is not np.ndarray or covars.dtype != np.float64
-            or covars.size == 0):
+    if (
+        type(covars) is not np.ndarray
+        or covars.dtype != np.float64
+        or covars.size == 0
+    ):
         return False
     try:
         a = np.abs(covars)
@@ -64,8 +74,9 @@ def _covars_pass_on_stack(covars):  # shape and finiteness already tested
             return False
         ct = covars.swapaxes(-1, -2)
         # np.allclose(covar, covar.T)'s comparison, with its defaults.
-        if not (np.abs(covars - ct)
-                <= 1e-08 + 1e-05 * a.swapaxes(-1, -2)).all():
+        if not (
+            np.abs(covars - ct) <= 1e-08 + 1e-05 * a.swapaxes(-1, -2)
+        ).all():
             return False
         w = np.linalg.eigvalsh(covars)  # ascending
     except (np.linalg.LinAlgError, MemoryError):
@@ -74,8 +85,10 @@ def _covars_pass_on_stack(covars):  # shape and finiteness already tested
     # near zero, so the stack decides only matrices well clear of it.
     c = 1024 * covars.shape[-1] * np.finfo(np.float64).eps
     lo = w[..., 0]
-    return bool((lo > np.finfo(np.float64).tiny / c).all()
-                and (lo > c * w[..., -1]).all())
+    return bool(
+        (lo > np.finfo(np.float64).tiny / c).all()
+        and (lo > c * w[..., -1]).all()
+    )
 
 
 def _floor_covars(covars, covariance_type, min_covar):
@@ -90,7 +103,7 @@ def _floor_covars(covars, covariance_type, min_covar):
     """
     if min_covar <= 0:
         return covars
-    if covariance_type in ('spherical', 'diag'):
+    if covariance_type in ("spherical", "diag"):
         return np.maximum(covars, min_covar)
 
     def floor_matrix(cv):
@@ -99,7 +112,7 @@ def _floor_covars(covars, covariance_type, min_covar):
             return cv
         return (eigvecs * np.maximum(eigvals, min_covar)) @ eigvecs.T
 
-    if covariance_type == 'tied':
+    if covariance_type == "tied":
         return floor_matrix(covars)
     return np.array([floor_matrix(cv) for cv in covars])
 
@@ -137,12 +150,24 @@ class CategoricalHMM(_emissions.BaseCategoricalHMM, BaseHMM):
     CategoricalHMM(n_components=2)
     """
 
-    def __init__(self, n_components=1, startprob_prior=1.0,
-                 transmat_prior=1.0, *, emissionprob_prior=1.0,
-                 n_features=None, algorithm="viterbi",
-                 random_state=None, n_iter=10, tol=1e-2,
-                 verbose=False, params="ste", init_params="ste",
-                 implementation="log", n_threads=1):
+    def __init__(
+        self,
+        n_components=1,
+        startprob_prior=1.0,
+        transmat_prior=1.0,
+        *,
+        emissionprob_prior=1.0,
+        n_features=None,
+        algorithm="viterbi",
+        random_state=None,
+        n_iter=10,
+        tol=1e-2,
+        verbose=False,
+        params="ste",
+        init_params="ste",
+        implementation="log",
+        n_threads=1,
+    ):
         """
         Parameters
         ----------
@@ -217,15 +242,21 @@ class CategoricalHMM(_emissions.BaseCategoricalHMM, BaseHMM):
             of at least 1 (a boolean is not one) raises ValueError in
             :meth:`fit`.
         """
-        BaseHMM.__init__(self, n_components,
-                         startprob_prior=startprob_prior,
-                         transmat_prior=transmat_prior,
-                         algorithm=algorithm,
-                         random_state=random_state,
-                         n_iter=n_iter, tol=tol, verbose=verbose,
-                         params=params, init_params=init_params,
-                         implementation=implementation,
-                         n_threads=n_threads)
+        BaseHMM.__init__(
+            self,
+            n_components,
+            startprob_prior=startprob_prior,
+            transmat_prior=transmat_prior,
+            algorithm=algorithm,
+            random_state=random_state,
+            n_iter=n_iter,
+            tol=tol,
+            verbose=verbose,
+            params=params,
+            init_params=init_params,
+            implementation=implementation,
+            n_threads=n_threads,
+        )
         self.emissionprob_prior = emissionprob_prior
         self.n_features = n_features
 
@@ -236,9 +267,10 @@ class CategoricalHMM(_emissions.BaseCategoricalHMM, BaseHMM):
 
         self.random_state = check_random_state(self.random_state)
 
-        if self._needs_init('e', 'emissionprob_'):
+        if self._needs_init("e", "emissionprob_"):
             self.emissionprob_ = self.random_state.rand(
-                self.n_components, self.n_features)
+                self.n_components, self.n_features
+            )
             normalize(self.emissionprob_, axis=1)
 
     def _check(self):
@@ -248,14 +280,16 @@ class CategoricalHMM(_emissions.BaseCategoricalHMM, BaseHMM):
         if self.emissionprob_.shape != (self.n_components, n_features):
             raise ValueError(
                 f"emissionprob_ must have shape"
-                f"({self.n_components}, {n_features})")
+                f"({self.n_components}, {n_features})"
+            )
         self._check_sum_1("emissionprob_")
 
     def _do_mstep(self, stats):
         super()._do_mstep(stats)
-        if 'e' in self.params:
+        if "e" in self.params:
             self.emissionprob_ = np.maximum(
-                self.emissionprob_prior - 1 + stats['obs'], 0)
+                self.emissionprob_prior - 1 + stats["obs"], 0
+            )
             normalize(self.emissionprob_, axis=1)
 
 
@@ -302,15 +336,28 @@ class GaussianHMM(_emissions.BaseGaussianHMM, BaseHMM):
     GaussianHMM(n_components=2)
     """
 
-    def __init__(self, n_components=1, covariance_type='diag',
-                 min_covar=1e-3,
-                 startprob_prior=1.0, transmat_prior=1.0,
-                 means_prior=0, means_weight=0,
-                 covars_prior=1e-2, covars_weight=1,
-                 algorithm="viterbi", random_state=None,
-                 n_iter=10, tol=1e-2, verbose=False,
-                 params="stmc", init_params="stmc",
-                 implementation="log", covars_floor=None, n_threads=1):
+    def __init__(
+        self,
+        n_components=1,
+        covariance_type="diag",
+        min_covar=1e-3,
+        startprob_prior=1.0,
+        transmat_prior=1.0,
+        means_prior=0,
+        means_weight=0,
+        covars_prior=1e-2,
+        covars_weight=1,
+        algorithm="viterbi",
+        random_state=None,
+        n_iter=10,
+        tol=1e-2,
+        verbose=False,
+        params="stmc",
+        init_params="stmc",
+        implementation="log",
+        covars_floor=None,
+        n_threads=1,
+    ):
         """
         Parameters
         ----------
@@ -447,14 +494,20 @@ class GaussianHMM(_emissions.BaseGaussianHMM, BaseHMM):
             of at least 1 (a boolean is not one) raises ValueError in
             :meth:`fit`.
         """
-        super().__init__(n_components,
-                         startprob_prior=startprob_prior,
-                         transmat_prior=transmat_prior, algorithm=algorithm,
-                         random_state=random_state, n_iter=n_iter,
-                         tol=tol, params=params, verbose=verbose,
-                         init_params=init_params,
-                         implementation=implementation,
-                         n_threads=n_threads)
+        super().__init__(
+            n_components,
+            startprob_prior=startprob_prior,
+            transmat_prior=transmat_prior,
+            algorithm=algorithm,
+            random_state=random_state,
+            n_iter=n_iter,
+            tol=tol,
+            params=params,
+            verbose=verbose,
+            init_params=init_params,
+            implementation=implementation,
+            n_threads=n_threads,
+        )
         self.covariance_type = covariance_type
         self.min_covar = min_covar
         self.means_prior = means_prior
@@ -477,16 +530,19 @@ class GaussianHMM(_emissions.BaseGaussianHMM, BaseHMM):
         # for (stats._covar_factors).
         covars = getattr(self, "_covars_", None)
         factors = _covar_factors(
-            getattr(self, "means_", None), covars, self.covariance_type)
+            getattr(self, "means_", None), covars, self.covariance_type
+        )
         return None if factors is None else (covars, factors)
 
     def _init(self, X, lengths=None):
         super()._init(X, lengths)
 
         if self._needs_init("m", "means_"):
-            kmeans = cluster.KMeans(n_clusters=self.n_components,
-                                    random_state=self.random_state,
-                                    n_init=10)  # sklearn <1.4 backcompat.
+            kmeans = cluster.KMeans(
+                n_clusters=self.n_components,
+                random_state=self.random_state,
+                n_init=10,
+            )  # sklearn <1.4 backcompat.
             # One thread: scikit-learn's k-means adds per-thread partial
             # sums, so a seeded start would depend on the thread count.
             with threadpool_limits(limits=1):
@@ -496,9 +552,11 @@ class GaussianHMM(_emissions.BaseGaussianHMM, BaseHMM):
             cv = np.cov(X.T) + self.min_covar * np.eye(X.shape[1])
             if not cv.shape:
                 cv = cv.reshape(1, 1)
-            self.covars_ = \
+            self.covars_ = (
                 _utils.distribute_covar_matrix_to_match_covariance_type(
-                    cv, self.covariance_type, self.n_components).copy()
+                    cv, self.covariance_type, self.n_components
+                ).copy()
+            )
 
     def _check(self):
         super()._check()
@@ -512,7 +570,8 @@ class GaussianHMM(_emissions.BaseGaussianHMM, BaseHMM):
 
         if self.covariance_type not in COVARIANCE_TYPES:
             raise ValueError(
-                f"covariance_type must be one of {COVARIANCE_TYPES}")
+                f"covariance_type must be one of {COVARIANCE_TYPES}"
+            )
         _covars_floor_value(self.covars_floor)
         # Finiteness only, read where the M-step stores it: the setter's
         # positive-definiteness tests are not applied to a fitted value.
@@ -536,10 +595,10 @@ class GaussianHMM(_emissions.BaseGaussianHMM, BaseHMM):
             return super()._get_n_features()
 
     def _needs_sufficient_statistics_for_mean(self):
-        return 'm' in self.params
+        return "m" in self.params
 
     def _needs_sufficient_statistics_for_covars(self):
-        return 'c' in self.params
+        return "c" in self.params
 
     def _do_mstep(self, stats):
         super()._do_mstep(stats)
@@ -551,52 +610,61 @@ class GaussianHMM(_emissions.BaseGaussianHMM, BaseHMM):
         #       covariance models.
         # Based on Huang, Acero, Hon, "Spoken Language Processing",
         # p. 443 - 445
-        denom = stats['post'][:, None]
-        if 'm' in self.params:
-            self.means_ = ((means_weight * means_prior + stats['obs'])
-                           / (means_weight + denom))
+        denom = stats["post"][:, None]
+        if "m" in self.params:
+            self.means_ = (means_weight * means_prior + stats["obs"]) / (
+                means_weight + denom
+            )
 
-        if 'c' in self.params:
+        if "c" in self.params:
             covars_prior = self.covars_prior
             covars_weight = self.covars_weight
             meandiff = self.means_ - means_prior
 
-            if self.covariance_type in ('spherical', 'diag'):
-                c_n = (means_weight * meandiff**2
-                       + stats['obs**2']
-                       - 2 * self.means_ * stats['obs']
-                       + self.means_**2 * denom)
+            if self.covariance_type in ("spherical", "diag"):
+                c_n = (
+                    means_weight * meandiff**2
+                    + stats["obs**2"]
+                    - 2 * self.means_ * stats["obs"]
+                    + self.means_**2 * denom
+                )
                 c_d = max(covars_weight - 1, 0) + denom
                 self._covars_ = (covars_prior + c_n) / np.maximum(c_d, 1e-5)
-                if self.covariance_type == 'spherical':
+                if self.covariance_type == "spherical":
                     # One variance per state, shape (n_components,), as
                     # documented for ``covars_``.
                     self._covars_ = self._covars_.mean(1)
-            elif self.covariance_type in ('tied', 'full'):
-                c_n = np.empty((self.n_components, self.n_features,
-                                self.n_features))
+            elif self.covariance_type in ("tied", "full"):
+                c_n = np.empty(
+                    (self.n_components, self.n_features, self.n_features)
+                )
                 for c in range(self.n_components):
-                    obsmean = np.outer(stats['obs'][c], self.means_[c])
-                    c_n[c] = (means_weight * np.outer(meandiff[c],
-                                                      meandiff[c])
-                              + stats['obs*obs.T'][c]
-                              - obsmean - obsmean.T
-                              + np.outer(self.means_[c], self.means_[c])
-                              * stats['post'][c])
+                    obsmean = np.outer(stats["obs"][c], self.means_[c])
+                    c_n[c] = (
+                        means_weight * np.outer(meandiff[c], meandiff[c])
+                        + stats["obs*obs.T"][c]
+                        - obsmean
+                        - obsmean.T
+                        + np.outer(self.means_[c], self.means_[c])
+                        * stats["post"][c]
+                    )
                 cvweight = max(covars_weight - self.n_features, 0)
-                if self.covariance_type == 'tied':
-                    self._covars_ = ((covars_prior + c_n.sum(axis=0)) /
-                                     (cvweight + stats['post'].sum()))
-                elif self.covariance_type == 'full':
-                    self._covars_ = ((covars_prior + c_n) /
-                                     (cvweight + stats['post'][:, None, None]))
+                if self.covariance_type == "tied":
+                    self._covars_ = (covars_prior + c_n.sum(axis=0)) / (
+                        cvweight + stats["post"].sum()
+                    )
+                elif self.covariance_type == "full":
+                    self._covars_ = (covars_prior + c_n) / (
+                        cvweight + stats["post"][:, None, None]
+                    )
 
             # A state that captures exactly repeated values would otherwise
             # shrink its variance towards zero.
             floor = _covars_floor_value(self.covars_floor)
             if floor is not None:
                 self._covars_ = _floor_covars(
-                    self._covars_, self.covariance_type, floor)
+                    self._covars_, self.covariance_type, floor
+                )
 
 
 @_block_estep
@@ -636,15 +704,29 @@ class GMMHMM(_emissions.BaseGMMHMM):
         * (n_components, n_features, n_features)         if "tied".
     """
 
-    def __init__(self, n_components=1, n_mix=1,
-                 min_covar=1e-3, startprob_prior=1.0, transmat_prior=1.0,
-                 weights_prior=1.0, means_prior=0.0, means_weight=0.0,
-                 covars_prior=None, covars_weight=None,
-                 algorithm="viterbi", covariance_type="diag",
-                 random_state=None, n_iter=10, tol=1e-2,
-                 verbose=False, params="stmcw",
-                 init_params="stmcw",
-                 implementation="log", n_threads=1):
+    def __init__(
+        self,
+        n_components=1,
+        n_mix=1,
+        min_covar=1e-3,
+        startprob_prior=1.0,
+        transmat_prior=1.0,
+        weights_prior=1.0,
+        means_prior=0.0,
+        means_weight=0.0,
+        covars_prior=None,
+        covars_weight=None,
+        algorithm="viterbi",
+        covariance_type="diag",
+        random_state=None,
+        n_iter=10,
+        tol=1e-2,
+        verbose=False,
+        params="stmcw",
+        init_params="stmcw",
+        implementation="log",
+        n_threads=1,
+    ):
         """
         Parameters
         ----------
@@ -794,14 +876,21 @@ class GMMHMM(_emissions.BaseGMMHMM):
             of at least 1 (a boolean is not one) raises ValueError in
             :meth:`fit`.
         """
-        BaseHMM.__init__(self, n_components,
-                         startprob_prior=startprob_prior,
-                         transmat_prior=transmat_prior,
-                         algorithm=algorithm, random_state=random_state,
-                         n_iter=n_iter, tol=tol, verbose=verbose,
-                         params=params, init_params=init_params,
-                         implementation=implementation,
-                         n_threads=n_threads)
+        BaseHMM.__init__(
+            self,
+            n_components,
+            startprob_prior=startprob_prior,
+            transmat_prior=transmat_prior,
+            algorithm=algorithm,
+            random_state=random_state,
+            n_iter=n_iter,
+            tol=tol,
+            verbose=verbose,
+            params=params,
+            init_params=init_params,
+            implementation=implementation,
+            n_threads=n_threads,
+        )
         self.covariance_type = covariance_type
         self.min_covar = min_covar
         self.n_mix = n_mix
@@ -828,9 +917,9 @@ class GMMHMM(_emissions.BaseGMMHMM):
         self._init_covar_priors()
         self._fix_priors_shape()
 
-        main_kmeans = cluster.KMeans(n_clusters=nc,
-                                     random_state=self.random_state,
-                                     n_init=10)  # sklearn >=1.2 compat.
+        main_kmeans = cluster.KMeans(
+            n_clusters=nc, random_state=self.random_state, n_init=10
+        )  # sklearn >=1.2 compat.
         cv = None  # covariance matrix
         # One thread, as in GaussianHMM._init. One block for all the k-means
         # calls of the start, since each entry into the limit has a cost.
@@ -839,9 +928,9 @@ class GMMHMM(_emissions.BaseGMMHMM):
             main_centroid = np.mean(main_kmeans.cluster_centers_, axis=0)
             means = []
             for label in range(nc):
-                kmeans = cluster.KMeans(n_clusters=nm,
-                                        random_state=self.random_state,
-                                        n_init=10)  # sklearn >=1.2 compat.
+                kmeans = cluster.KMeans(
+                    n_clusters=nm, random_state=self.random_state, n_init=10
+                )  # sklearn >=1.2 compat.
                 X_cluster = X[np.where(labels == label)]
                 if X_cluster.shape[0] >= nm:
                     kmeans.fit(X_cluster)
@@ -849,9 +938,9 @@ class GMMHMM(_emissions.BaseGMMHMM):
                 else:
                     if cv is None:
                         cv = compute_cv()
-                    m_cluster = np.random.multivariate_normal(main_centroid,
-                                                              cov=cv,
-                                                              size=nm)
+                    m_cluster = np.random.multivariate_normal(
+                        main_centroid, cov=cv, size=nm
+                    )
                     means.append(m_cluster)
 
         if self._needs_init("w", "weights_"):
@@ -865,16 +954,16 @@ class GMMHMM(_emissions.BaseGMMHMM):
                 cv = compute_cv()
             if not cv.shape:
                 cv = cv.reshape(1, 1)
-            if self.covariance_type == 'tied':
+            if self.covariance_type == "tied":
                 self.covars_ = np.zeros((nc, nf, nf))
                 self.covars_[:] = cv
-            elif self.covariance_type == 'full':
+            elif self.covariance_type == "full":
                 self.covars_ = np.zeros((nc, nm, nf, nf))
                 self.covars_[:] = cv
-            elif self.covariance_type == 'diag':
+            elif self.covariance_type == "diag":
                 self.covars_ = np.zeros((nc, nm, nf))
                 self.covars_[:] = np.diag(cv)
-            elif self.covariance_type == 'spherical':
+            elif self.covariance_type == "spherical":
                 self.covars_ = np.zeros((nc, nm))
                 self.covars_[:] = cv.mean()
 
@@ -902,8 +991,14 @@ class GMMHMM(_emissions.BaseGMMHMM):
 
     # The priors fit broadcasts to the width of X (_prior_shapes): keep the
     # two lists in step.
-    _derived_from_X = ("n_features", "weights_prior", "means_prior",
-                       "means_weight", "covars_prior", "covars_weight")
+    _derived_from_X = (
+        "n_features",
+        "weights_prior",
+        "means_prior",
+        "means_weight",
+        "covars_prior",
+        "covars_weight",
+    )
 
     def _prior_shapes(self, nf):
         """
@@ -912,9 +1007,11 @@ class GMMHMM(_emissions.BaseGMMHMM):
         """
         nc = self.n_components
         nm = self.n_mix
-        shapes = [("weights_prior", (nc, nm)),
-                  ("means_prior", (nc, nm, nf)),
-                  ("means_weight", (nc, nm))]
+        shapes = [
+            ("weights_prior", (nc, nm)),
+            ("means_prior", (nc, nm, nf)),
+            ("means_weight", (nc, nm)),
+        ]
         covars = {
             "full": ((nc, nm, nf, nf), (nc, nm)),
             "tied": ((nc, nf, nf), nc),
@@ -922,25 +1019,32 @@ class GMMHMM(_emissions.BaseGMMHMM):
             "spherical": ((nc, nm), (nc, nm)),
         }.get(self.covariance_type)
         if covars is not None:
-            shapes += [("covars_prior", covars[0]),
-                       ("covars_weight", covars[1])]
+            shapes += [
+                ("covars_prior", covars[0]),
+                ("covars_weight", covars[1]),
+            ]
         return shapes
 
     def _fix_priors_shape(self):
         # If priors are numbers, this function will make them into a
         # matrix of proper shape
         for name, shape in self._prior_shapes(self.n_features):
-            setattr(self, name,
-                    np.broadcast_to(getattr(self, name), shape).copy())
+            setattr(
+                self, name, np.broadcast_to(getattr(self, name), shape).copy()
+            )
 
     def _value_after_refused_fit(self, name, before, current):
         # _init_covar_priors fills a None covariance prior with a number;
         # the prior keeps that number, without the width of the refused X,
         # so a later fit reads the value it read before. A prior broadcast
         # to an empty shape (n_mix=0) holds no number and goes back to None.
-        if (name in ("covars_prior", "covars_weight") and before is None
-                and current is not None and current is not _ABSENT
-                and np.size(current) > 0):
+        if (
+            name in ("covars_prior", "covars_weight")
+            and before is None
+            and current is not None
+            and current is not _ABSENT
+            and np.size(current) > 0
+        ):
             return float(np.asarray(current).flat[0])
         return super()._value_after_refused_fit(name, before, current)
 
@@ -958,13 +1062,15 @@ class GMMHMM(_emissions.BaseGMMHMM):
         # Checking covariance type
         if self.covariance_type not in COVARIANCE_TYPES:
             raise ValueError(
-                f"covariance_type must be one of {COVARIANCE_TYPES}")
+                f"covariance_type must be one of {COVARIANCE_TYPES}"
+            )
 
         # Checking mixture weights' shape
         if self.weights_.shape != (nc, nm):
             raise ValueError(
                 f"weights_ must have shape (n_components, n_mix), "
-                f"actual shape: {self.weights_.shape}")
+                f"actual shape: {self.weights_.shape}"
+            )
 
         # Checking mixture weights' mathematical correctness
         self._check_sum_1("weights_")
@@ -973,7 +1079,8 @@ class GMMHMM(_emissions.BaseGMMHMM):
         if self.means_.shape != (nc, nm, nf):
             raise ValueError(
                 f"means_ must have shape (n_components, n_mix, n_features), "
-                f"actual shape: {self.means_.shape}")
+                f"actual shape: {self.means_.shape}"
+            )
         self._check_finite("means_", self.means_)
 
         # Checking covariances' shape
@@ -988,15 +1095,20 @@ class GMMHMM(_emissions.BaseGMMHMM):
         if covars_shape != needed_shape:
             raise ValueError(
                 f"{self.covariance_type!r} mixture covars must have shape "
-                f"{needed_shape}, actual shape: {covars_shape}")
+                f"{needed_shape}, actual shape: {covars_shape}"
+            )
         self._check_finite("covars_", self.covars_)
 
         # Checking covariances' mathematical correctness
-        if (self.covariance_type == "spherical" or
-                self.covariance_type == "diag"):
+        if (
+            self.covariance_type == "spherical"
+            or self.covariance_type == "diag"
+        ):
             if np.any(self.covars_ < 0):
-                raise ValueError(f"{self.covariance_type!r} mixture covars "
-                                 f"must be non-negative")
+                raise ValueError(
+                    f"{self.covariance_type!r} mixture covars "
+                    f"must be non-negative"
+                )
             if np.any(self.covars_ == 0):
                 _log.warning("Degenerate mixture covariance")
         elif _covars_pass_on_stack(self.covars_):
@@ -1005,29 +1117,38 @@ class GMMHMM(_emissions.BaseGMMHMM):
             for i, covar in enumerate(self.covars_):
                 if not np.allclose(covar, covar.T):
                     raise ValueError(
-                        f"Covariance of state #{i} is not symmetric")
+                        f"Covariance of state #{i} is not symmetric"
+                    )
                 min_eigvalsh = linalg.eigvalsh(covar).min()
                 if min_eigvalsh < 0:
                     raise ValueError(
-                        f"Covariance of state #{i} is not positive definite")
+                        f"Covariance of state #{i} is not positive definite"
+                    )
                 if min_eigvalsh == 0:
-                    _log.warning("Covariance of state #%d has a null "
-                                 "eigenvalue.", i)
+                    _log.warning(
+                        "Covariance of state #%d has a null eigenvalue.", i
+                    )
         elif self.covariance_type == "full":
             for i, mix_covars in enumerate(self.covars_):
                 for j, covar in enumerate(mix_covars):
                     if not np.allclose(covar, covar.T):
                         raise ValueError(
                             f"Covariance of state #{i}, mixture #{j} is not "
-                            f"symmetric")
+                            f"symmetric"
+                        )
                     min_eigvalsh = linalg.eigvalsh(covar).min()
                     if min_eigvalsh < 0:
                         raise ValueError(
                             f"Covariance of state #{i}, mixture #{j} is not "
-                            f"positive definite")
+                            f"positive definite"
+                        )
                     if min_eigvalsh == 0:
-                        _log.warning("Covariance of state #%d, mixture #%d "
-                                     "has a null eigenvalue.", i, j)
+                        _log.warning(
+                            "Covariance of state #%d, mixture #%d "
+                            "has a null eigenvalue.",
+                            i,
+                            j,
+                        )
 
     def _do_mstep(self, stats):
         super()._do_mstep(stats)
@@ -1035,16 +1156,16 @@ class GMMHMM(_emissions.BaseGMMHMM):
         nm = self.n_mix
 
         # Maximizing weights
-        if 'w' in self.params:
+        if "w" in self.params:
             alphas_minus_one = self.weights_prior - 1
-            w_n = stats['post_mix_sum'] + alphas_minus_one
-            w_d = (stats['post_sum'] + alphas_minus_one.sum(axis=1))[:, None]
+            w_n = stats["post_mix_sum"] + alphas_minus_one
+            w_d = (stats["post_sum"] + alphas_minus_one.sum(axis=1))[:, None]
             self.weights_ = w_n / w_d
 
         # Maximizing means
-        if 'm' in self.params:
-            m_n = stats['m_n']
-            m_d = stats['post_mix_sum'] + self.means_weight
+        if "m" in self.params:
+            m_n = stats["m_n"]
+            m_d = stats["post_mix_sum"] + self.means_weight
             # If a componenent has zero weight, then replace nan (0/0?) means
             # by 0 (0/1).  The actual value is irrelevant as the component will
             # be unused.  This needs to be done before maximizing covariances
@@ -1054,55 +1175,58 @@ class GMMHMM(_emissions.BaseGMMHMM):
             self.means_ = m_n / m_d[:, :, None]
 
         # Maximizing covariances
-        if 'c' in self.params:
+        if "c" in self.params:
             lambdas, mus = self.means_weight, self.means_prior
             centered_means = self.means_ - mus
 
             def outer_f(x):  # Outer product over features.
                 return x[..., :, None] * x[..., None, :]
 
-            if self.covariance_type == 'full':
+            if self.covariance_type == "full":
                 centered_means_dots = outer_f(centered_means)
 
                 psis_t = np.transpose(self.covars_prior, axes=(0, 1, 3, 2))
                 nus = self.covars_weight
 
                 c_n = psis_t + lambdas[:, :, None, None] * centered_means_dots
-                c_n += stats['c_n']
-                c_d = (
-                    stats['post_mix_sum'] + 1 + nus + nf + 1
-                )[:, :, None, None]
+                c_n += stats["c_n"]
+                c_d = (stats["post_mix_sum"] + 1 + nus + nf + 1)[
+                    :, :, None, None
+                ]
 
-            elif self.covariance_type == 'diag':
+            elif self.covariance_type == "diag":
                 alphas = self.covars_prior
                 betas = self.covars_weight
-                centered_means2 = centered_means ** 2
+                centered_means2 = centered_means**2
 
                 c_n = lambdas[:, :, None] * centered_means2 + 2 * betas
-                c_n += stats['c_n']
-                c_d = stats['post_mix_sum'][:, :, None] + 1 + 2 * (alphas + 1)
+                c_n += stats["c_n"]
+                c_d = stats["post_mix_sum"][:, :, None] + 1 + 2 * (alphas + 1)
 
-            elif self.covariance_type == 'spherical':
+            elif self.covariance_type == "spherical":
                 centered_means_norm2 = np.einsum(  # Faster than (x**2).sum(-1)
-                    '...i,...i', centered_means, centered_means)
+                    "...i,...i", centered_means, centered_means
+                )
 
                 alphas = self.covars_prior
                 betas = self.covars_weight
 
                 c_n = lambdas * centered_means_norm2 + 2 * betas
-                c_n += stats['c_n']
-                c_d = nf * (stats['post_mix_sum'] + 1) + 2 * (alphas + 1)
+                c_n += stats["c_n"]
+                c_d = nf * (stats["post_mix_sum"] + 1) + 2 * (alphas + 1)
 
-            elif self.covariance_type == 'tied':
+            elif self.covariance_type == "tied":
                 centered_means_dots = outer_f(centered_means)
 
                 psis_t = np.transpose(self.covars_prior, axes=(0, 2, 1))
                 nus = self.covars_weight
 
-                c_n = np.einsum('ij,ijkl->ikl',
-                                lambdas, centered_means_dots) + psis_t
-                c_n += stats['c_n']
-                c_d = (stats['post_sum'] + nm + nus + nf + 1)[:, None, None]
+                c_n = (
+                    np.einsum("ij,ijkl->ikl", lambdas, centered_means_dots)
+                    + psis_t
+                )
+                c_n += stats["c_n"]
+                c_d = (stats["post_sum"] + nm + nus + nf + 1)[:, None, None]
 
             self.covars_ = c_n / c_d
 
@@ -1141,12 +1265,22 @@ class MultinomialHMM(_emissions.BaseMultinomialHMM):
     >>> from hmmcraft.hmm import MultinomialHMM
     """
 
-    def __init__(self, n_components=1, n_trials=None,
-                 startprob_prior=1.0, transmat_prior=1.0,
-                 algorithm="viterbi", random_state=None,
-                 n_iter=10, tol=1e-2, verbose=False,
-                 params="ste", init_params="ste",
-                 implementation="log", n_threads=1):
+    def __init__(
+        self,
+        n_components=1,
+        n_trials=None,
+        startprob_prior=1.0,
+        transmat_prior=1.0,
+        algorithm="viterbi",
+        random_state=None,
+        n_iter=10,
+        tol=1e-2,
+        verbose=False,
+        params="ste",
+        init_params="ste",
+        implementation="log",
+        n_threads=1,
+    ):
         """
         Parameters
         ----------
@@ -1216,15 +1350,21 @@ class MultinomialHMM(_emissions.BaseMultinomialHMM):
             of at least 1 (a boolean is not one) raises ValueError in
             :meth:`fit`.
         """
-        BaseHMM.__init__(self, n_components,
-                         startprob_prior=startprob_prior,
-                         transmat_prior=transmat_prior,
-                         algorithm=algorithm,
-                         random_state=random_state,
-                         n_iter=n_iter, tol=tol, verbose=verbose,
-                         params=params, init_params=init_params,
-                         implementation=implementation,
-                         n_threads=n_threads)
+        BaseHMM.__init__(
+            self,
+            n_components,
+            startprob_prior=startprob_prior,
+            transmat_prior=transmat_prior,
+            algorithm=algorithm,
+            random_state=random_state,
+            n_iter=n_iter,
+            tol=tol,
+            verbose=verbose,
+            params=params,
+            init_params=init_params,
+            implementation=implementation,
+            n_threads=n_threads,
+        )
         self.n_trials = n_trials
 
     emissionprob_ = _ConvertedAttribute(np.atleast_2d)
@@ -1233,8 +1373,9 @@ class MultinomialHMM(_emissions.BaseMultinomialHMM):
         super()._init(X, lengths=None)
         self.random_state = check_random_state(self.random_state)
         if self._needs_init("e", "emissionprob_"):
-            self.emissionprob_ = self.random_state \
-                .rand(self.n_components, self.n_features)
+            self.emissionprob_ = self.random_state.rand(
+                self.n_components, self.n_features
+            )
             normalize(self.emissionprob_, axis=1)
 
     def _check(self):
@@ -1242,19 +1383,22 @@ class MultinomialHMM(_emissions.BaseMultinomialHMM):
         n_features = self._get_n_features()
         if self.emissionprob_.shape != (self.n_components, n_features):
             raise ValueError(
-                "emissionprob_ must have shape (n_components, n_features)")
+                "emissionprob_ must have shape (n_components, n_features)"
+            )
         # A float copy, not stored: an object array of numbers is tested by
         # its values, as the emission density reads it.
         self._check_sum_1(
-            "emissionprob_", np.asarray(self.emissionprob_, dtype=float))
+            "emissionprob_", np.asarray(self.emissionprob_, dtype=float)
+        )
         if self.n_trials is None:
             raise ValueError("n_trials must be set")
 
     def _do_mstep(self, stats):
         super()._do_mstep(stats)
-        if 'e' in self.params:
-            self.emissionprob_ = (
-                stats['obs'] / stats['obs'].sum(axis=1, keepdims=True))
+        if "e" in self.params:
+            self.emissionprob_ = stats["obs"] / stats["obs"].sum(
+                axis=1, keepdims=True
+            )
 
 
 @_block_estep
@@ -1285,13 +1429,23 @@ class PoissonHMM(_emissions.BasePoissonHMM):
         feature in a given state.
     """
 
-    def __init__(self, n_components=1, startprob_prior=1.0,
-                 transmat_prior=1.0, lambdas_prior=0.0,
-                 lambdas_weight=0.0,
-                 algorithm="viterbi", random_state=None,
-                 n_iter=10, tol=1e-2, verbose=False,
-                 params="stl", init_params="stl",
-                 implementation="log", n_threads=1):
+    def __init__(
+        self,
+        n_components=1,
+        startprob_prior=1.0,
+        transmat_prior=1.0,
+        lambdas_prior=0.0,
+        lambdas_weight=0.0,
+        algorithm="viterbi",
+        random_state=None,
+        n_iter=10,
+        tol=1e-2,
+        verbose=False,
+        params="stl",
+        init_params="stl",
+        implementation="log",
+        n_threads=1,
+    ):
         """
         Parameters
         ----------
@@ -1362,15 +1516,21 @@ class PoissonHMM(_emissions.BasePoissonHMM):
             of at least 1 (a boolean is not one) raises ValueError in
             :meth:`fit`.
         """
-        BaseHMM.__init__(self, n_components,
-                         startprob_prior=startprob_prior,
-                         transmat_prior=transmat_prior,
-                         algorithm=algorithm,
-                         random_state=random_state,
-                         n_iter=n_iter, tol=tol, verbose=verbose,
-                         params=params, init_params=init_params,
-                         implementation=implementation,
-                         n_threads=n_threads)
+        BaseHMM.__init__(
+            self,
+            n_components,
+            startprob_prior=startprob_prior,
+            transmat_prior=transmat_prior,
+            algorithm=algorithm,
+            random_state=random_state,
+            n_iter=n_iter,
+            tol=tol,
+            verbose=verbose,
+            params=params,
+            init_params=init_params,
+            implementation=implementation,
+            n_threads=n_threads,
+        )
         self.lambdas_prior = lambdas_prior
         self.lambdas_weight = lambdas_weight
 
@@ -1388,7 +1548,8 @@ class PoissonHMM(_emissions.BasePoissonHMM):
             self.lambdas_ = self.random_state.gamma(
                 shape=mean_X**2 / var_X,
                 scale=var_X / mean_X,  # numpy uses theta = 1 / beta
-                size=(self.n_components, self.n_features))
+                size=(self.n_components, self.n_features),
+            )
 
     def _check(self):
         super()._check()
@@ -1396,20 +1557,21 @@ class PoissonHMM(_emissions.BasePoissonHMM):
         n_features = self._get_n_features()
         if self.lambdas_.shape != (self.n_components, n_features):
             raise ValueError(
-                "lambdas_ must have shape (n_components, n_features)")
+                "lambdas_ must have shape (n_components, n_features)"
+            )
         self._check_finite("lambdas_", self.lambdas_)
         self._check_nonnegative("lambdas_", self.lambdas_)
 
     def _do_mstep(self, stats):
         super()._do_mstep(stats)
 
-        if 'l' in self.params:
+        if "l" in self.params:
             # Based on: Hyvönen & Tolonen, "Bayesian Inference 2019"
             # section 3.2
             # https://vioshyvo.github.io/Bayesian_inference
             alphas, betas = self.lambdas_prior, self.lambdas_weight
-            n = stats['post'].sum()
-            y_bar = stats['obs'] / stats['post'][:, None]
+            n = stats["post"].sum()
+            y_bar = stats["obs"] / stats["post"][:, None]
             # the same as kappa notation (more intuitive) but avoids divide by
             # 0, where:
             # kappas = betas / (betas + n)

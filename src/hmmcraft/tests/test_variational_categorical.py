@@ -12,7 +12,6 @@ from . import (
 
 
 class TestVariationalCategorical:
-
     @pytest.fixture(autouse=True)
     def setup(self):
         # We fix the random state here to demonstrate that the model will
@@ -26,18 +25,14 @@ class TestVariationalCategorical:
     def get_beal_models():
         m1 = hmm.CategoricalHMM(3, init_params="")
         m1.n_features = 3
-        m1.startprob_ = np.array([1/3., 1/3., 1/3.])
+        m1.startprob_ = np.array([1 / 3.0, 1 / 3.0, 1 / 3.0])
         m1.transmat_ = np.array([[0, 1, 0], [0, 0, 1], [1, 0, 0]])
-        m1.emissionprob_ = np.array([[1, 0, 0],
-                                     [0, 1, 0],
-                                     [0, 0, 1]])
+        m1.emissionprob_ = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
         m2 = hmm.CategoricalHMM(3)
         m2.n_features = 3
-        m2.startprob_ = np.array([1/3., 1/3., 1/3.])
+        m2.startprob_ = np.array([1 / 3.0, 1 / 3.0, 1 / 3.0])
         m2.transmat_ = np.array([[0, 0, 1], [1, 0, 0], [0, 1, 0]])
-        m2.emissionprob_ = np.array([[1, 0, 0],
-                                     [0, 1, 0],
-                                     [0, 0, 1]])
+        m2.emissionprob_ = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
         m3 = hmm.CategoricalHMM(1)
         m3.n_features = 3
         m3.startprob_ = np.array([1])
@@ -53,7 +48,8 @@ class TestVariationalCategorical:
         lengths = []
         for i in range(N):
             sequences.append(
-                model.sample(length, random_state=check_random_state(rs))[0])
+                model.sample(length, random_state=check_random_state(rs))[0]
+            )
             lengths.append(len(sequences[-1]))
         sequences = np.concatenate(sequences)
         return sequences, lengths
@@ -62,17 +58,25 @@ class TestVariationalCategorical:
     def test_init_priors(self, implementation):
         sequences, lengths = self.get_from_one_beal(7, 100, None)
         model = vhmm.VariationalCategoricalHMM(
-            4, n_iter=500, random_state=1984, init_params="",
-            implementation=implementation)
-        model.pi_prior_ = np.full((4,), .25)
-        model.pi_posterior_ = np.full((4,), 7/4)
-        model.transmat_prior_ = np.full((4, 4), .25)
-        model.transmat_posterior_ = np.full((4, 4), 7/4)
-        model.emissionprob_prior_ = np.full((4, 3), 1/3)
-        model.emissionprob_posterior_ = np.asarray([[.3, .4, .3],
-                                                    [.8, .1, .1],
-                                                    [.2, .2, .6],
-                                                    [.2, .6, .2]])
+            4,
+            n_iter=500,
+            random_state=1984,
+            init_params="",
+            implementation=implementation,
+        )
+        model.pi_prior_ = np.full((4,), 0.25)
+        model.pi_posterior_ = np.full((4,), 7 / 4)
+        model.transmat_prior_ = np.full((4, 4), 0.25)
+        model.transmat_posterior_ = np.full((4, 4), 7 / 4)
+        model.emissionprob_prior_ = np.full((4, 3), 1 / 3)
+        model.emissionprob_posterior_ = np.asarray(
+            [
+                [0.3, 0.4, 0.3],
+                [0.8, 0.1, 0.1],
+                [0.2, 0.2, 0.6],
+                [0.2, 0.6, 0.2],
+            ]
+        )
         assert_log_likelihood_increasing(model, sequences, lengths, 10)
 
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
@@ -81,12 +85,14 @@ class TestVariationalCategorical:
         sequences, lengths = self.get_from_one_beal(7, 100, None)
         # Learn n_Features
         model = vhmm.VariationalCategoricalHMM(
-            4, implementation=implementation)
+            4, implementation=implementation
+        )
         assert_log_likelihood_increasing(model, sequences, lengths, 10)
         assert model.n_features == 3
         # Respect n_features
         model = vhmm.VariationalCategoricalHMM(
-            4, implementation=implementation, n_features=5)
+            4, implementation=implementation, n_features=5
+        )
 
         assert_log_likelihood_increasing(model, sequences, lengths, 10)
         assert model.n_features == 5
@@ -94,24 +100,24 @@ class TestVariationalCategorical:
         # Too few features
         with pytest.raises(ValueError):
             model = vhmm.VariationalCategoricalHMM(
-                4, n_iter=500, random_state=1984,
-                implementation=implementation)
+                4, n_iter=500, random_state=1984, implementation=implementation
+            )
             model.n_features = 2
             assert_log_likelihood_increasing(model, sequences, lengths, 10)
 
         # No Negative Values
         with pytest.raises(ValueError):
             model = vhmm.VariationalCategoricalHMM(
-                4, n_iter=500, random_state=1984,
-                implementation=implementation)
+                4, n_iter=500, random_state=1984, implementation=implementation
+            )
             sequences[0] = -1
             assert_log_likelihood_increasing(model, sequences, lengths, 10)
 
         # Must be integers
         with pytest.raises(ValueError):
             model = vhmm.VariationalCategoricalHMM(
-                4, n_iter=500, random_state=1984,
-                implementation=implementation)
+                4, n_iter=500, random_state=1984, implementation=implementation
+            )
             sequences = sequences.astype(float)
             assert_log_likelihood_increasing(model, sequences, lengths, 10)
 
@@ -154,14 +160,16 @@ class TestVariationalCategorical:
         and ``init_params`` left at their defaults.
         """
         model = vhmm.VariationalCategoricalHMM(
-            2, n_iter=5, random_state=0, implementation=implementation)
+            2, n_iter=5, random_state=0, implementation=implementation
+        )
         model.startprob_prior_ = np.full(2, 0.5)
         model.startprob_posterior_ = np.array([6.0, 4.0])
         model.transmat_prior_ = np.full((2, 2), 0.5)
         model.transmat_posterior_ = np.array([[7.0, 3.0], [4.0, 6.0]])
         model.emissionprob_prior_ = np.full((2, 3), 1 / 3)
-        model.emissionprob_posterior_ = np.array([[2.0, 3.0, 5.0],
-                                                  [5.0, 3.0, 2.0]])
+        model.emissionprob_posterior_ = np.array(
+            [[2.0, 3.0, 5.0], [5.0, 3.0, 2.0]]
+        )
         model.startprob_ = np.array([0.6, 0.4])
         model.transmat_ = np.array([[0.7, 0.3], [0.4, 0.6]])
         model.emissionprob_ = np.array([[0.2, 0.3, 0.5], [0.5, 0.3, 0.2]])
@@ -195,75 +203,113 @@ class TestVariationalCategorical:
         # Test startprob shape
         with pytest.raises(ValueError):
             model = vhmm.VariationalCategoricalHMM(
-                4, n_iter=500, random_state=1984, init_params="te",
-                implementation=implementation)
-            model.startprob_prior_ = np.full((3,), .25)
-            model.startprob_posterior_ = np.full((4,), 7/4)
+                4,
+                n_iter=500,
+                random_state=1984,
+                init_params="te",
+                implementation=implementation,
+            )
+            model.startprob_prior_ = np.full((3,), 0.25)
+            model.startprob_posterior_ = np.full((4,), 7 / 4)
             assert_log_likelihood_increasing(model, sequences, lengths, 10)
 
         with pytest.raises(ValueError):
             model = vhmm.VariationalCategoricalHMM(
-                4, n_iter=500, random_state=1984, init_params="te",
-                implementation=implementation)
-            model.startprob_prior_ = np.full((4,), .25)
-            model.startprob_posterior_ = np.full((3,), 7/4)
+                4,
+                n_iter=500,
+                random_state=1984,
+                init_params="te",
+                implementation=implementation,
+            )
+            model.startprob_prior_ = np.full((4,), 0.25)
+            model.startprob_posterior_ = np.full((3,), 7 / 4)
             assert_log_likelihood_increasing(model, sequences, lengths, 10)
 
         # Test transmat shape
         with pytest.raises(ValueError):
             model = vhmm.VariationalCategoricalHMM(
-                4, n_iter=500, random_state=1984, init_params="se",
-                implementation=implementation)
-            model.transmat_prior_ = np.full((3, 3), .25)
-            model.transmat_posterior_ = np.full((4, 4), .25)
+                4,
+                n_iter=500,
+                random_state=1984,
+                init_params="se",
+                implementation=implementation,
+            )
+            model.transmat_prior_ = np.full((3, 3), 0.25)
+            model.transmat_posterior_ = np.full((4, 4), 0.25)
             assert_log_likelihood_increasing(model, sequences, lengths, 10)
 
         with pytest.raises(ValueError):
             model = vhmm.VariationalCategoricalHMM(
-                4, n_iter=500, random_state=1984, init_params="se",
-                implementation=implementation)
-            model.transmat_prior_ = np.full((4, 4), .25)
-            model.transmat_posterior_ = np.full((3, 3), 7/4)
+                4,
+                n_iter=500,
+                random_state=1984,
+                init_params="se",
+                implementation=implementation,
+            )
+            model.transmat_prior_ = np.full((4, 4), 0.25)
+            model.transmat_posterior_ = np.full((3, 3), 7 / 4)
             assert_log_likelihood_increasing(model, sequences, lengths, 10)
 
         # Test emission shape
         with pytest.raises(ValueError):
             model = vhmm.VariationalCategoricalHMM(
-                4, n_iter=500, random_state=1984, init_params="st",
-                implementation=implementation)
-            model.emissionprob_prior_ = np.full((3, 3), 1/3)
-            model.emissionprob_posterior_ = np.asarray([[.3, .4, .3],
-                                                        [.8, .1, .1],
-                                                        [.2, .2, .6],
-                                                        [.2, .6, .2]])
+                4,
+                n_iter=500,
+                random_state=1984,
+                init_params="st",
+                implementation=implementation,
+            )
+            model.emissionprob_prior_ = np.full((3, 3), 1 / 3)
+            model.emissionprob_posterior_ = np.asarray(
+                [
+                    [0.3, 0.4, 0.3],
+                    [0.8, 0.1, 0.1],
+                    [0.2, 0.2, 0.6],
+                    [0.2, 0.6, 0.2],
+                ]
+            )
             assert_log_likelihood_increasing(model, sequences, lengths, 10)
 
         # Test too many n_features
         with pytest.raises(ValueError):
             model = vhmm.VariationalCategoricalHMM(
-                4, n_iter=500, random_state=1984, init_params="se",
-                implementation=implementation)
-            model.emissionprob_prior_ = np.full((4, 4), 7/4)
-            model.emissionprob_posterior_ = np.full((4, 4), .25)
+                4,
+                n_iter=500,
+                random_state=1984,
+                init_params="se",
+                implementation=implementation,
+            )
+            model.emissionprob_prior_ = np.full((4, 4), 7 / 4)
+            model.emissionprob_posterior_ = np.full((4, 4), 0.25)
             model.n_features = 10
             assert_log_likelihood_increasing(model, sequences, lengths, 10)
 
         # Too small n_features
         with pytest.raises(ValueError):
             model = vhmm.VariationalCategoricalHMM(
-                4, n_iter=500, random_state=1984, init_params="se",
-                implementation=implementation)
-            model.emissionprob_prior_ = np.full((4, 4), 7/4)
-            model.emissionprob_posterior_ = np.full((4, 4), .25)
+                4,
+                n_iter=500,
+                random_state=1984,
+                init_params="se",
+                implementation=implementation,
+            )
+            model.emissionprob_prior_ = np.full((4, 4), 7 / 4)
+            model.emissionprob_posterior_ = np.full((4, 4), 0.25)
 
             model.n_features = 1
             assert_log_likelihood_increasing(model, sequences, lengths, 10)
 
         # Test that setting the desired prior value works
         model = vhmm.VariationalCategoricalHMM(
-            4, n_iter=500, random_state=1984, init_params="ste",
+            4,
+            n_iter=500,
+            random_state=1984,
+            init_params="ste",
             implementation=implementation,
-            startprob_prior=1, transmat_prior=2, emissionprob_prior=3)
+            startprob_prior=1,
+            transmat_prior=2,
+            emissionprob_prior=3,
+        )
         assert_log_likelihood_increasing(model, sequences, lengths, 10)
         assert np.all(model.startprob_prior_ == 1)
         assert np.all(model.transmat_prior_ == 2)
@@ -280,11 +326,14 @@ class TestVariationalCategorical:
                 sequences.append(m.sample(39, random_state=rs)[0])
                 lengths.append(len(sequences[-1]))
         sequences = np.concatenate(sequences)
-        model = vhmm.VariationalCategoricalHMM(12, n_iter=500,
-                                               implementation=implementation,
-                                               tol=1e-6,
-                                               random_state=rs,
-                                               verbose=False)
+        model = vhmm.VariationalCategoricalHMM(
+            12,
+            n_iter=500,
+            implementation=implementation,
+            tol=1e-6,
+            random_state=rs,
+            verbose=False,
+        )
 
         assert_log_likelihood_increasing(model, sequences, lengths, 100)
 
@@ -294,17 +343,20 @@ class TestVariationalCategorical:
         # model states will become "unused"
         sequences, lengths = self.get_from_one_beal(7, 100, 1984)
         model = vhmm.VariationalCategoricalHMM(
-            4, n_iter=500, random_state=1984,
+            4,
+            n_iter=500,
+            random_state=1984,
             init_params="e",
-            implementation=implementation)
+            implementation=implementation,
+        )
         vi_uniform_startprob_and_transmat(model, lengths)
         model.fit(sequences, lengths)
 
         # The 1st hidden state will be "unused"
-        assert (model.transmat_posterior_[1, :]
-                == pytest.approx(.25, rel=1e-3))
-        assert (model.emissionprob_posterior_[1, :]
-                == pytest.approx(.3333, rel=1e-3))
+        assert model.transmat_posterior_[1, :] == pytest.approx(0.25, rel=1e-3)
+        assert model.emissionprob_posterior_[1, :] == pytest.approx(
+            0.3333, rel=1e-3
+        )
 
         # An EM Model should behave the same behavior as a Variational Model,
         # When initialized with the normalized probabilities of the mode of the
@@ -321,7 +373,8 @@ class TestVariationalCategorical:
         """A model fitted on 30 symbols drawn from ``range(n_features)``."""
         X = np.random.RandomState(10).randint(0, n_features, (30, 1))
         model = vhmm.VariationalCategoricalHMM(
-            2, n_iter=5, random_state=0, implementation=implementation)
+            2, n_iter=5, random_state=0, implementation=implementation
+        )
         model.fit(X)
         assert model.n_features == n_features
         return model
@@ -330,7 +383,8 @@ class TestVariationalCategorical:
     @pytest.mark.parametrize("method", ["score", "predict"])
     @pytest.mark.parametrize("symbol", [-1, 3])
     def test_prediction_refuses_symbols_outside_range(
-            self, symbol, method, implementation):
+        self, symbol, method, implementation
+    ):
         """
         A fitted model refuses a negative symbol and the symbol
         ``n_features``, naming ``X``.
@@ -341,12 +395,17 @@ class TestVariationalCategorical:
 
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
     @pytest.mark.parametrize("method", ["score", "predict", "decode"])
-    @pytest.mark.parametrize("n_features, X", [
-        (2, [[True], [False]]),
-        (3, [[True], [False], [True]]),
-    ], ids=["2-symbols-TF", "3-symbols-TFT"])
+    @pytest.mark.parametrize(
+        "n_features, X",
+        [
+            (2, [[True], [False]]),
+            (3, [[True], [False], [True]]),
+        ],
+        ids=["2-symbols-TF", "3-symbols-TFT"],
+    )
     def test_prediction_refuses_boolean_X(
-            self, n_features, X, method, implementation):
+        self, n_features, X, method, implementation
+    ):
         """
         A boolean ``X`` is refused, naming ``X``, as ``fit`` refuses it:
         NumPy reads a boolean array as a mask over the symbols.
@@ -365,6 +424,6 @@ class TestVariationalCategorical:
         lengths = np.concatenate([lengths1, lengths2])
 
         model = vhmm.VariationalCategoricalHMM(
-            4, n_iter=500, random_state=1984,
-            implementation=implementation)
+            4, n_iter=500, random_state=1984, implementation=implementation
+        )
         assert_log_likelihood_increasing(model, sequences, lengths, 10)

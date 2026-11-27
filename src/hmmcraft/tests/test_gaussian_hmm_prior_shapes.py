@@ -8,8 +8,12 @@ from . import make_covar_matrix, normalized
 # n_components != n_features, as in test_gmm_hmm.py, so that an array of
 # length n_components cannot broadcast along the features.
 NC, NF = 3, 2
-COVARS_SHAPES = {"spherical": (NC,), "diag": (NC, NF),
-                 "full": (NC, NF, NF), "tied": (NF, NF)}
+COVARS_SHAPES = {
+    "spherical": (NC,),
+    "diag": (NC, NF),
+    "full": (NC, NF, NF),
+    "tied": (NF, NF),
+}
 
 
 def _start(covariance_type):
@@ -26,8 +30,9 @@ def _start(covariance_type):
 def _fit(covariance_type, **priors):
     """One EM iteration from a fixed start on a seeded sample."""
     prng, startprob, transmat, means, covars = _start(covariance_type)
-    h = hmm.GaussianHMM(NC, covariance_type, init_params="", n_iter=1,
-                        **priors)
+    h = hmm.GaussianHMM(
+        NC, covariance_type, init_params="", n_iter=1, **priors
+    )
     h.startprob_, h.transmat_ = startprob, transmat
     h.means_, h.covars_ = means, covars
     X, _ = h.sample(200, random_state=prng)
@@ -36,12 +41,17 @@ def _fit(covariance_type, **priors):
 
 # (covariance_type, prior, shape of an array filled with one number)
 FILLED = [
-    *[(ct, "means_prior", shape)
-      for ct in COVARS_SHAPES for shape in [(NC, NF), (NC, 1), (NF,)]],
-    *[(ct, name, shape)
-      for ct in ["spherical", "diag"]
-      for name in ["means_weight", "covars_prior"]
-      for shape in [(NC, NF), (NC, 1), (NF,)]],
+    *[
+        (ct, "means_prior", shape)
+        for ct in COVARS_SHAPES
+        for shape in [(NC, NF), (NC, 1), (NF,)]
+    ],
+    *[
+        (ct, name, shape)
+        for ct in ["spherical", "diag"]
+        for name in ["means_weight", "covars_prior"]
+        for shape in [(NC, NF), (NC, 1), (NF,)]
+    ],
     ("full", "covars_prior", (NF, NF)),
     ("full", "covars_prior", (NC, NF, NF)),
     ("tied", "covars_prior", (NF, NF)),
@@ -51,10 +61,14 @@ FILLED = [
 NUMBERS = {"means_prior": 1.0, "means_weight": 2.0, "covars_prior": 1e-2}
 
 
-@pytest.mark.parametrize("covariance_type, prior, shape", FILLED,
-                         ids=lambda v: str(v).replace(" ", ""))
+@pytest.mark.parametrize(
+    "covariance_type, prior, shape",
+    FILLED,
+    ids=lambda v: str(v).replace(" ", ""),
+)
 def test_documented_prior_array_fits_like_its_number(
-        covariance_type, prior, shape):
+    covariance_type, prior, shape
+):
     """
     Each documented array form of a prior fits, and an array filled with
     one number gives the fit of that number, so a number for "full" or
@@ -70,12 +84,18 @@ def test_documented_prior_array_fits_like_its_number(
     assert_array_equal(h._covars_, ref._covars_)
 
 
-@pytest.mark.parametrize("covariance_type, prior", [
-    *[(ct, name) for ct in ["spherical", "diag"]
-      for name in ["means_prior", "means_weight", "covars_prior"]],
-    ("full", "means_prior"),
-    ("tied", "means_prior"),
-])
+@pytest.mark.parametrize(
+    "covariance_type, prior",
+    [
+        *[
+            (ct, name)
+            for ct in ["spherical", "diag"]
+            for name in ["means_prior", "means_weight", "covars_prior"]
+        ],
+        ("full", "means_prior"),
+        ("tied", "means_prior"),
+    ],
+)
 def test_prior_column_gives_one_value_per_state(covariance_type, prior):
     """
     A column of shape (n_components, 1) applies its row k to state k: after
@@ -83,11 +103,12 @@ def test_prior_column_gives_one_value_per_state(covariance_type, prior):
     the fit with the number in row k.
     """
     others = {"means_weight": 2.0} if prior == "means_prior" else {}
-    column = {"means_prior": [0.0, 1.0, 2.0],
-              "means_weight": [0.0, 2.0, 4.0],
-              "covars_prior": [1e-2, 1.0, 2.0]}[prior]
-    h = _fit(covariance_type, **others,
-             **{prior: np.array(column)[:, None]})
+    column = {
+        "means_prior": [0.0, 1.0, 2.0],
+        "means_weight": [0.0, 2.0, 4.0],
+        "covars_prior": [1e-2, 1.0, 2.0],
+    }[prior]
+    h = _fit(covariance_type, **others, **{prior: np.array(column)[:, None]})
     for k, number in enumerate(column):
         ref = _fit(covariance_type, **others, **{prior: number})
         assert_array_equal(h.means_[k], ref.means_[k])
@@ -97,20 +118,33 @@ def test_prior_column_gives_one_value_per_state(covariance_type, prior):
 
 # (covariance_type, prior, value) that raise ValueError
 RAISES = [
-    *[(ct, name, np.full(NC, NUMBERS.get(name, 2.0)))
-      for ct in COVARS_SHAPES
-      for name in ["means_prior", "means_weight", "covars_prior",
-                   "covars_weight"]],
-    *[(ct, "means_weight", np.full(shape, 2.0))
-      for ct in ["full", "tied"] for shape in [(NC, NF), (NC, 1)]],
+    *[
+        (ct, name, np.full(NC, NUMBERS.get(name, 2.0)))
+        for ct in COVARS_SHAPES
+        for name in [
+            "means_prior",
+            "means_weight",
+            "covars_prior",
+            "covars_weight",
+        ]
+    ],
+    *[
+        (ct, "means_weight", np.full(shape, 2.0))
+        for ct in ["full", "tied"]
+        for shape in [(NC, NF), (NC, 1)]
+    ],
     *[(ct, "covars_weight", np.full((NC, 1), 2.0)) for ct in COVARS_SHAPES],
 ]
 
 
 @pytest.mark.parametrize(
-    "covariance_type, prior, value", RAISES,
-    ids=[f"{ct}-{name}-{value.shape}".replace(" ", "")
-         for ct, name, value in RAISES])
+    "covariance_type, prior, value",
+    RAISES,
+    ids=[
+        f"{ct}-{name}-{value.shape}".replace(" ", "")
+        for ct, name, value in RAISES
+    ],
+)
 def test_undocumented_prior_shape_raises(covariance_type, prior, value):
     """
     An array of shape (n_components,) is not one value per state: with

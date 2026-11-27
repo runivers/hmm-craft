@@ -28,8 +28,11 @@ def _make_inputs(covariance_type, n_features, n_samples=10):
 
 def _same_memory(a, b):
     """True if two arrays cover exactly the same bytes in the same order."""
-    return (a.ctypes.data == b.ctypes.data and a.shape == b.shape
-            and a.strides == b.strides)
+    return (
+        a.ctypes.data == b.ctypes.data
+        and a.shape == b.shape
+        and a.strides == b.strides
+    )
 
 
 @pytest.fixture
@@ -54,7 +57,8 @@ def array_logs_seen_by_stats(monkeypatch):
 @pytest.mark.parametrize("n_features", [1, 3])
 @pytest.mark.parametrize("covariance_type", ["full", "tied"])
 def test_full_and_tied_log_density_take_log_in_place_on_contiguous_arrays(
-        array_logs_seen_by_stats, covariance_type, n_features):
+    array_logs_seen_by_stats, covariance_type, n_features
+):
     """The full and tied log-densities take numpy's ``log`` of an array only
     in place, on a contiguous array.
 
@@ -67,9 +71,10 @@ def test_full_and_tied_log_density_take_log_in_place_on_contiguous_arrays(
     X, means, covars = _make_inputs(covariance_type, n_features)
     stats.log_multivariate_normal_density(X, means, covars, covariance_type)
     assert array_logs_seen_by_stats, "no np.log of an array was recorded"
-    assert all(contiguous and in_place
-               for contiguous, in_place in array_logs_seen_by_stats), \
-        array_logs_seen_by_stats
+    assert all(
+        contiguous and in_place
+        for contiguous, in_place in array_logs_seen_by_stats
+    ), array_logs_seen_by_stats
 
 
 @pytest.mark.parametrize("n_features", [1, 3])
@@ -79,12 +84,16 @@ def test_full_and_tied_log_density_match_scipy(covariance_type, n_features):
     log-pdf, component by component."""
     X, means, covars = _make_inputs(covariance_type, n_features)
     got = stats.log_multivariate_normal_density(
-        X, means, covars, covariance_type)
+        X, means, covars, covariance_type
+    )
     if covariance_type == "tied":
         covars = np.broadcast_to(covars, (N_COMPONENTS,) + covars.shape)
-    expected = np.column_stack([
-        multivariate_normal(mean=mu, cov=cv).logpdf(X)
-        for mu, cv in zip(means, covars)])
+    expected = np.column_stack(
+        [
+            multivariate_normal(mean=mu, cov=cv).logpdf(X)
+            for mu, cv in zip(means, covars)
+        ]
+    )
     assert got.shape == (len(X), N_COMPONENTS)
     assert_allclose(got, expected, rtol=1e-12)
 
@@ -99,7 +108,7 @@ def _tied_as_written(X, means, covars):
     return _full_as_written(X, means, cv)
 
 
-def _full_as_written(X, means, covars, min_covar=1.e-7):
+def _full_as_written(X, means, covars, min_covar=1.0e-7):
     """The full log-density as the package wrote it before it could hold
     factors; with ``_tied_as_written``, the reference the held factors must
     reproduce as bytes, with their warnings and errors. It is not edited
@@ -114,27 +123,32 @@ def _full_as_written(X, means, covars, min_covar=1.e-7):
             # The model is most probably stuck in a component with too
             # few observations, we need to reinitialize this components
             try:
-                cv_chol = linalg.cholesky(cv + min_covar * np.eye(nf),
-                                          lower=True)
+                cv_chol = linalg.cholesky(
+                    cv + min_covar * np.eye(nf), lower=True
+                )
             except linalg.LinAlgError:
-                raise ValueError("'covars' must be symmetric, "
-                                 "positive-definite")
+                raise ValueError(
+                    "'covars' must be symmetric, positive-definite"
+                )
 
         # In place on a copy: numpy < 2.0.2 with AVX-512 picks its log loop by
         # where the output lies near the input, unless the two coincide.
         cv_diag = np.diagonal(cv_chol).copy()
         cv_log_det = 2 * np.sum(np.log(cv_diag, out=cv_diag))
         cv_sol = linalg.solve_triangular(cv_chol, (X - mu).T, lower=True).T
-        log_prob.append(-.5 * (nf * np.log(2 * np.pi)
-                               + (cv_sol ** 2).sum(axis=1)
-                               + cv_log_det))
+        log_prob.append(
+            -0.5
+            * (nf * np.log(2 * np.pi) + (cv_sol**2).sum(axis=1) + cv_log_det)
+        )
 
     return np.transpose(log_prob)
 
 
 _AS_WRITTEN = {"full": _full_as_written, "tied": _tied_as_written}
-_HELD = {"full": stats._log_multivariate_normal_density_full,
-         "tied": stats._log_multivariate_normal_density_tied}
+_HELD = {
+    "full": stats._log_multivariate_normal_density_full,
+    "tied": stats._log_multivariate_normal_density_tied,
+}
 
 
 def _with_held_factors(covariance_type):
@@ -155,8 +169,9 @@ def _factor_layout(monkeypatch, layout):
     """Make ``linalg.cholesky`` return its factor in ``layout``."""
     if layout == "as scipy gives it":
         return
-    order = {"C order": np.ascontiguousarray,
-             "F order": np.asfortranarray}[layout]
+    order = {"C order": np.ascontiguousarray, "F order": np.asfortranarray}[
+        layout
+    ]
     real = linalg.cholesky
 
     def cholesky(*args, **kwargs):
@@ -166,24 +181,41 @@ def _factor_layout(monkeypatch, layout):
 
 
 # numpy's default error state; this test package sets every report to "warn".
-_DEFAULT_STATE = {"divide": "warn", "over": "warn", "under": "ignore",
-                  "invalid": "warn"}
-FACTOR_STATES = [_DEFAULT_STATE, {"all": "warn"}, {"all": "raise"},
-                 {"all": "ignore"}, {"all": "call"}]
-FACTOR_STATE_IDS = ["default", "all=warn", "all=raise", "all=ignore",
-                    "all=call"]
+_DEFAULT_STATE = {
+    "divide": "warn",
+    "over": "warn",
+    "under": "ignore",
+    "invalid": "warn",
+}
+FACTOR_STATES = [
+    _DEFAULT_STATE,
+    {"all": "warn"},
+    {"all": "raise"},
+    {"all": "ignore"},
+    {"all": "call"},
+]
+FACTOR_STATE_IDS = [
+    "default",
+    "all=warn",
+    "all=raise",
+    "all=ignore",
+    "all=call",
+]
 
 
 def _spd(n_samples, n_features, scale=1.0):
     """Seeded SPD inputs; X times ``scale``."""
+
     def build(t):
         X, means, covars = _make_inputs(t, n_features, n_samples)
         return X * scale, means, covars
+
     return build
 
 
 def _covar(value):
     """State 1's covariance (tied: the covariance) set to ``value``."""
+
     def change(t):
         X, means, covars = _make_inputs(t, 2)
         covars = covars.copy()
@@ -192,11 +224,13 @@ def _covar(value):
         else:
             covars[1] = value
         return X, means, covars
+
     return change
 
 
 def _x_row(value, mean=None):
     """Row 3 of X set to ``value``, and the means to ``mean`` if given."""
+
     def change(t):
         X, means, covars = _make_inputs(t, 2)
         X = X.copy()
@@ -204,6 +238,7 @@ def _x_row(value, mean=None):
         if mean is not None:
             means = np.full_like(means, mean)
         return X, means, covars
+
     return change
 
 
@@ -224,6 +259,7 @@ def _screened(change):
     def build(t):
         X, means, covars = _make_inputs(t, 2)
         return change(t, X, means, covars)
+
     return build
 
 
@@ -259,7 +295,10 @@ FACTOR_CASES = {
     "covariance of ones": (_covar(1.0), True, ("full", "tied")),
     "covariance of zeros": (_covar(0.0), True, ("full", "tied")),
     "not positive definite": (
-        _covar([[1.0, 2.0], [2.0, 1.0]]), False, ("full", "tied")),
+        _covar([[1.0, 2.0], [2.0, 1.0]]),
+        False,
+        ("full", "tied"),
+    ),
     "NaN covariance": (_covar(np.nan), False, ("full", "tied")),
     "inf covariance": (_covar(np.inf), False, ("full", "tied")),
     "inf row in X": (_x_row(np.inf), True, ("full", "tied")),
@@ -268,29 +307,50 @@ FACTOR_CASES = {
     "row of 1e200": (_x_row(1e200), True, ("full", "tied")),
     "residual of 1e-200": (_residual_1e_200, True, ("full", "tied")),
     "state 0 reports, state 1 raises": (
-        _reports_then_raises, False, ("full",)),
+        _reports_then_raises,
+        False,
+        ("full",),
+    ),
     "F-ordered covars": (
-        _screened(lambda t, X, m, c: (X, m, np.asfortranarray(c))), False,
-        ("full", "tied")),
+        _screened(lambda t, X, m, c: (X, m, np.asfortranarray(c))),
+        False,
+        ("full", "tied"),
+    ),
     "non-contiguous covars": (
-        _screened(_non_contiguous), False, ("full", "tied")),
+        _screened(_non_contiguous),
+        False,
+        ("full", "tied"),
+    ),
     "float32 covars": (
-        _screened(lambda t, X, m, c: (X, m, c.astype(np.float32))), False,
-        ("full", "tied")),
+        _screened(lambda t, X, m, c: (X, m, c.astype(np.float32))),
+        False,
+        ("full", "tied"),
+    ),
     "longdouble covars": (
         _screened(lambda t, X, m, c: (X, m, c.astype(np.longdouble))),
-        False, ("full", "tied")),
+        False,
+        ("full", "tied"),
+    ),
     "integer covars": (
         _screened(lambda t, X, m, c: (X, m, np.rint(c).astype(np.int64))),
-        False, ("full", "tied")),
+        False,
+        ("full", "tied"),
+    ),
     "one state fewer than the means": (
-        _screened(_one_state_fewer), False, ("full",)),
+        _screened(_one_state_fewer),
+        False,
+        ("full",),
+    ),
     "tied covariance of shape (1, nf, nf)": (
-        _screened(_tied_as_3d), False, ("tied",)),
+        _screened(_tied_as_3d),
+        False,
+        ("tied",),
+    ),
     "integer means": (_screened(_integer_means), True, ("full", "tied")),
 }
-FACTOR_CASE_ROWS = [(name, t) for name, (_, _, types) in FACTOR_CASES.items()
-                    for t in types]
+FACTOR_CASE_ROWS = [
+    (name, t) for name, (_, _, types) in FACTOR_CASES.items() for t in types
+]
 FACTOR_CASE_IDS = [f"{t}-{name}" for name, t in FACTOR_CASE_ROWS]
 
 
@@ -312,36 +372,43 @@ def _outcome_in_state(state, function, *args):
 
 @pytest.mark.parametrize("state", FACTOR_STATES, ids=FACTOR_STATE_IDS)
 @pytest.mark.parametrize("layout", FACTOR_LAYOUTS)
-@pytest.mark.parametrize("name, covariance_type", FACTOR_CASE_ROWS,
-                         ids=FACTOR_CASE_IDS)
+@pytest.mark.parametrize(
+    "name, covariance_type", FACTOR_CASE_ROWS, ids=FACTOR_CASE_IDS
+)
 def test_densities_with_held_factors_equal_the_lines_as_written(
-        monkeypatch, name, covariance_type, layout, state):
+    monkeypatch, name, covariance_type, layout, state
+):
     """The full and tied log-densities, given the factors ``_covar_factors``
     holds, give the values, the error and its text, the warnings and the
     error handler's calls of the lines they replace, in every error state
     and whatever the memory order of the factor scipy returns."""
     _factor_layout(monkeypatch, layout)
     X, means, covars, _ = _factor_inputs(name, covariance_type)
-    got = _outcome_in_state(state, _with_held_factors(covariance_type),
-                            X, means, covars)
-    want = _outcome_in_state(state, _AS_WRITTEN[covariance_type],
-                             X, means, covars)
+    got = _outcome_in_state(
+        state, _with_held_factors(covariance_type), X, means, covars
+    )
+    want = _outcome_in_state(
+        state, _AS_WRITTEN[covariance_type], X, means, covars
+    )
     assert got == want
 
 
 @pytest.mark.parametrize("state", FACTOR_STATES, ids=FACTOR_STATE_IDS)
-@pytest.mark.parametrize("name, covariance_type", FACTOR_CASE_ROWS,
-                         ids=FACTOR_CASE_IDS)
+@pytest.mark.parametrize(
+    "name, covariance_type", FACTOR_CASE_ROWS, ids=FACTOR_CASE_IDS
+)
 def test_factors_are_held_only_for_plain_covariances_that_factor(
-        name, covariance_type, state):
+    name, covariance_type, state
+):
     """``_covar_factors`` gives one pair per state for plain C-ordered
     float64 covariances that factor, with or without ``min_covar``, and
     None for the others; it warns, raises and reports nothing."""
     _X, means, covars, held = _factor_inputs(name, covariance_type)
     handled = []
-    with (warnings.catch_warnings(record=True) as caught,
-          np.errstate(call=lambda kind, flag: handled.append(kind),
-                      **state)):
+    with (
+        warnings.catch_warnings(record=True) as caught,
+        np.errstate(call=lambda kind, flag: handled.append(kind), **state),
+    ):
         warnings.simplefilter("always")
         factors = stats._covar_factors(means, covars, covariance_type)
     assert caught == [] and handled == []
@@ -376,7 +443,8 @@ def _factor_calls(monkeypatch):
 @pytest.mark.parametrize("n_features", [1, 3, 8])
 @pytest.mark.parametrize("covariance_type", ["full", "tied"])
 def test_a_held_factor_is_the_array_cholesky_returned(
-        monkeypatch, covariance_type, n_features, layout):
+    monkeypatch, covariance_type, n_features, layout
+):
     """Each solve with held factors is given the very array
     ``linalg.cholesky`` returned for its state (tied: the one array), whose
     memory order picks ``solve_triangular``'s LAPACK call, and the solves
@@ -390,8 +458,10 @@ def test_a_held_factor_is_the_array_cholesky_returned(
     for _ in range(2):
         _HELD[covariance_type](X, means, covars, factors=factors)
     assert len(returned) == n_factored
-    expected = [returned[0 if covariance_type == "tied" else c][0]
-                for c in range(N_COMPONENTS)] * 2
+    expected = [
+        returned[0 if covariance_type == "tied" else c][0]
+        for c in range(N_COMPONENTS)
+    ] * 2
     assert len(solved) == len(expected)
     assert all(a is b for a, b in zip(solved, expected))
     assert all(factor.tobytes() == before for factor, before in returned)
@@ -407,9 +477,11 @@ def _numpy_diag(X, means, covars):
     # Avoid 0 log 0 = nan in degenerate covariance case.
     covars = np.maximum(covars, np.finfo(float).tiny)
     with np.errstate(over="ignore"):
-        return -0.5 * (nf * np.log(2 * np.pi)
-                       + np.log(covars).sum(axis=-1)
-                       + ((X[:, None, :] - means) ** 2 / covars).sum(axis=-1))
+        return -0.5 * (
+            nf * np.log(2 * np.pi)
+            + np.log(covars).sum(axis=-1)
+            + ((X[:, None, :] - means) ** 2 / covars).sum(axis=-1)
+        )
 
 
 def _numpy_spherical(X, means, covars):
@@ -438,8 +510,7 @@ def _value_bytes(a):
     does not define, so two equal results can differ there.
     """
     width = a.dtype.itemsize
-    if (a.dtype.kind == "f" and np.finfo(a.dtype).nmant == 63
-            and width > 10):
+    if a.dtype.kind == "f" and np.finfo(a.dtype).nmant == 63 and width > 10:
         elements = np.ascontiguousarray(a).view(np.uint8).reshape(-1, width)
         return elements[:, :10].tobytes()
     return a.tobytes()
@@ -471,14 +542,26 @@ def _outcome(function, *args):
         warnings.simplefilter("always")
         try:
             result = function(*args)
-        except (ValueError, TypeError, AttributeError, IndexError,
-                FloatingPointError) as error:
+        except (
+            ValueError,
+            TypeError,
+            AttributeError,
+            IndexError,
+            FloatingPointError,
+        ) as error:
             outcome = ("error", type(error).__name__, str(error))
         else:
-            outcome = ("array", type(result).__name__, result.dtype.str,
-                       result.shape, result.flags.c_contiguous,
-                       result.flags.owndata, result.flags.writeable,
-                       result.flags.aligned, _value_bytes(result))
+            outcome = (
+                "array",
+                type(result).__name__,
+                result.dtype.str,
+                result.shape,
+                result.flags.c_contiguous,
+                result.flags.owndata,
+                result.flags.writeable,
+                result.flags.aligned,
+                _value_bytes(result),
+            )
     return outcome, [(w.category.__name__, str(w.message)) for w in caught]
 
 
@@ -499,61 +582,78 @@ def loop_results(monkeypatch):
         return log_prob
 
     monkeypatch.setattr(_emissionsc, "log_density_diag", recording)
-    with np.errstate(divide="warn", over="warn", under="ignore",
-                     invalid="warn"):
+    with np.errstate(
+        divide="warn", over="warn", under="ignore", invalid="warn"
+    ):
         yield results
 
 
 def _assert_numpy_outcome(X, means, covars, covariance_type="diag"):
-    got = _outcome(stats.log_multivariate_normal_density,
-                   X, means, covars, covariance_type)
+    got = _outcome(
+        stats.log_multivariate_normal_density,
+        X,
+        means,
+        covars,
+        covariance_type,
+    )
     want = _outcome(_numpy_log_density, X, means, covars, covariance_type)
     assert got == want
 
 
-def _random_inputs(n_samples, n_components, n_features, covariance_type,
-                   seed=0):
+def _random_inputs(
+    n_samples, n_components, n_features, covariance_type, seed=0
+):
     rs = np.random.RandomState(seed)
     X = rs.standard_normal((n_samples, n_features))
     means = rs.standard_normal((n_components, n_features))
-    shape = ((n_components,) if covariance_type == "spherical"
-             else (n_components, n_features))
+    shape = (
+        (n_components,)
+        if covariance_type == "spherical"
+        else (n_components, n_features)
+    )
     covars = rs.uniform(0.5, 2.0, shape)
     return X, means, covars
 
 
 @pytest.mark.parametrize("covariance_type", ["diag", "spherical"])
-@pytest.mark.parametrize("n_samples, n_components",
-                         [(1, 1), (2, 3), (9, 2), (40, 5)])
-@pytest.mark.parametrize("n_features",
-                         [1, 2, 3, 4, 5, 6, 7, 8, 9, 16, 128, 129, 300])
+@pytest.mark.parametrize(
+    "n_samples, n_components", [(1, 1), (2, 3), (9, 2), (40, 5)]
+)
+@pytest.mark.parametrize(
+    "n_features", [1, 2, 3, 4, 5, 6, 7, 8, 9, 16, 128, 129, 300]
+)
 def test_diag_and_spherical_log_density_equal_the_numpy_expression_as_bytes(
-        loop_results, n_features, n_samples, n_components, covariance_type):
+    loop_results, n_features, n_samples, n_components, covariance_type
+):
     """The C++ loop gives the bytes of numpy's expression.
 
     The widths cross numpy's three ways of adding a contiguous row: in order
     below 8 terms, in eight running sums up to 128, by halves above.
     """
     _assert_numpy_outcome(
-        *_random_inputs(n_samples, n_components, n_features,
-                        covariance_type),
-        covariance_type)
+        *_random_inputs(n_samples, n_components, n_features, covariance_type),
+        covariance_type,
+    )
     assert loop_results == ["kept"]
 
 
 @pytest.mark.parametrize("n_features", [1, 9, 129])
-@pytest.mark.parametrize("scale_x, scale_v, negative", [
-    (1e-160, 1.0, False),    # subnormal squares
-    (1.0, 1e300, False),     # subnormal quotients
-    (1e-300, 1e-300, False),
-    (1e-155, 1e-5, False),
-    (1e150, 1.0, False),     # sums near the largest float
-    (1e3, 0.0, False),       # zero variances, clamped
-    (1.0, 5e-324, False),    # the smallest variance: quotients overflow
-    (1e-160, 1.0, True),     # negative variances, clamped
-])
+@pytest.mark.parametrize(
+    "scale_x, scale_v, negative",
+    [
+        (1e-160, 1.0, False),  # subnormal squares
+        (1.0, 1e300, False),  # subnormal quotients
+        (1e-300, 1e-300, False),
+        (1e-155, 1e-5, False),
+        (1e150, 1.0, False),  # sums near the largest float
+        (1e3, 0.0, False),  # zero variances, clamped
+        (1.0, 5e-324, False),  # the smallest variance: quotients overflow
+        (1e-160, 1.0, True),  # negative variances, clamped
+    ],
+)
 def test_log_density_keeps_numpy_bytes_across_magnitudes(
-        loop_results, n_features, scale_x, scale_v, negative):
+    loop_results, n_features, scale_x, scale_v, negative
+):
     """Values far from 1 give numpy's bytes, whichever path computes them."""
     X, means, covars = _random_inputs(4, 3, n_features, "diag")
     with np.errstate(all="ignore"):
@@ -574,12 +674,14 @@ def _spherical_covars(shape, covars):
 
 @pytest.mark.parametrize("shape", ["1-D", "column", "broadcast view"])
 def test_spherical_covars_reach_the_loop_in_every_shape_they_come_in(
-        loop_results, shape):
+    loop_results, shape
+):
     """The clamp makes a new C-ordered float64 array of any spherical
     covariances; the loop computes it."""
     X, means, covars = _random_inputs(6, 3, 9, "spherical")
-    _assert_numpy_outcome(X, means, _spherical_covars(shape, covars),
-                          "spherical")
+    _assert_numpy_outcome(
+        X, means, _spherical_covars(shape, covars), "spherical"
+    )
     assert loop_results == ["kept"]
 
 
@@ -598,11 +700,16 @@ def _read_only(a):
 TAKEN = {
     "read-only X": lambda X, m, c: (_read_only(X), m, c),
     "row slice of a longer X": lambda X, m, c: (np.vstack([X, X])[2:8], m, c),
-    "one-row X created in F order":
-        lambda X, m, c: (_in_fortran_order(X[:1]), m, c),
-    "one-state means and covars created in F order":
-        lambda X, m, c: (X, _in_fortran_order(m[:1]),
-                         _in_fortran_order(c[:1])),
+    "one-row X created in F order": lambda X, m, c: (
+        _in_fortran_order(X[:1]),
+        m,
+        c,
+    ),
+    "one-state means and covars created in F order": lambda X, m, c: (
+        X,
+        _in_fortran_order(m[:1]),
+        _in_fortran_order(c[:1]),
+    ),
     "integer covars": lambda X, m, c: (X, m, np.ones(c.shape, dtype=int)),
     "list covars": lambda X, m, c: (X, m, c.tolist()),
 }
@@ -622,8 +729,9 @@ class _Subclass(np.ndarray):
 
 
 def _unaligned(a):
-    raw = np.frombuffer(bytearray(8 * a.size + 1), dtype=np.float64,
-                        offset=1).reshape(a.shape)
+    raw = np.frombuffer(
+        bytearray(8 * a.size + 1), dtype=np.float64, offset=1
+    ).reshape(a.shape)
     raw[...] = a
     assert not raw.flags.aligned
     return raw
@@ -672,7 +780,8 @@ REFUSED = {
 
 @pytest.mark.parametrize("name", list(REFUSED))
 def test_inputs_the_loop_is_not_proven_for_take_the_numpy_expression(
-        loop_results, name):
+    loop_results, name
+):
     """Another type, dtype, layout or shape never reaches the loop: numpy's
     expression gives its values, exception or warnings."""
     X, means, covars = REFUSED[name](*_random_inputs(6, 3, 9, "diag"))
@@ -685,6 +794,7 @@ def _put(which, index, value):
         arrays = {"X": X.copy(), "m": m.copy(), "c": c.copy()}
         arrays[which][index] = value
         return arrays["X"], arrays["m"], arrays["c"]
+
     return change
 
 
@@ -704,29 +814,36 @@ NOT_FINITE = {
     "overflow in the square": lambda X, m, c: (X * 1e200, m, c),
     "overflow in the quotient": lambda X, m, c: (X * 1e100, m, c * 1e-250),
     "overflow in the sum": lambda X, m, c: (
-        np.full((1, 300), 1.3e154), np.zeros((1, 300)), np.ones((1, 300))),
+        np.full((1, 300), 1.3e154),
+        np.zeros((1, 300)),
+        np.ones((1, 300)),
+    ),
 }
 
 
-@pytest.mark.parametrize("error_state", [
-    {}, {"invalid": "raise"}, {"over": "raise"}, {"divide": "raise"}],
-    ids=["default", "invalid=raise", "over=raise", "divide=raise"])
+@pytest.mark.parametrize(
+    "error_state",
+    [{}, {"invalid": "raise"}, {"over": "raise"}, {"divide": "raise"}],
+    ids=["default", "invalid=raise", "over=raise", "divide=raise"],
+)
 @pytest.mark.parametrize("name", list(NOT_FINITE))
 def test_a_result_that_is_not_finite_is_recomputed_by_numpy(
-        loop_results, name, error_state):
+    loop_results, name, error_state
+):
     """When the loop gives an inf or NaN, numpy's expression runs: its
     values, warnings and FloatingPointError are the caller's."""
     with np.errstate(all="ignore"):
-        X, means, covars = NOT_FINITE[name](
-            *_random_inputs(6, 3, 9, "diag"))
+        X, means, covars = NOT_FINITE[name](*_random_inputs(6, 3, 9, "diag"))
     with np.errstate(**error_state):
         _assert_numpy_outcome(X, means, covars)
     assert loop_results == ["none"]
 
 
-@pytest.mark.parametrize("error_state", [
-    {"under": "warn"}, {"under": "raise"}, {"all": "raise"}, {"all": "warn"}],
-    ids=["under=warn", "under=raise", "all=raise", "all=warn"])
+@pytest.mark.parametrize(
+    "error_state",
+    [{"under": "warn"}, {"under": "raise"}, {"all": "raise"}, {"all": "warn"}],
+    ids=["under=warn", "under=raise", "all=raise", "all=warn"],
+)
 def test_an_underflow_report_is_left_to_numpy(loop_results, error_state):
     """With underflow reported, numpy computes: the loop reports none."""
     X, means, covars = _random_inputs(6, 3, 9, "diag")
@@ -738,10 +855,12 @@ def test_an_underflow_report_is_left_to_numpy(loop_results, error_state):
     assert loop_results == ["kept"]
 
 
-@pytest.mark.parametrize("n_features, route", [
-    (16, ["kept"]), (17, []), (35, [])])
+@pytest.mark.parametrize(
+    "n_features, route", [(16, ["kept"]), (17, []), (35, [])]
+)
 def test_a_row_longer_than_numpys_buffer_is_left_to_numpy(
-        loop_results, n_features, route):
+    loop_results, n_features, route
+):
     """numpy can add a row longer than its buffer in pieces of the buffer's
     size; such rows are computed by numpy."""
     X, means, covars = _random_inputs(5, 3, n_features, "diag")
@@ -760,17 +879,22 @@ def _model(model_class, covariance_type, implementation, X):
     rs = np.random.RandomState(0)
     n_components, n_mix = 3, 2
     kwargs = {"n_mix": n_mix} if model_class is GMMHMM else {}
-    model = model_class(n_components, covariance_type=covariance_type,
-                        implementation=implementation, init_params="",
-                        n_iter=5, tol=0.0, random_state=0, **kwargs)
+    model = model_class(
+        n_components,
+        covariance_type=covariance_type,
+        implementation=implementation,
+        init_params="",
+        n_iter=5,
+        tol=0.0,
+        random_state=0,
+        **kwargs,
+    )
     model.startprob_ = np.full(n_components, 1 / n_components)
-    model.transmat_ = np.full((n_components, n_components),
-                              1 / n_components)
+    model.transmat_ = np.full((n_components, n_components), 1 / n_components)
     mix = (n_mix,) if model_class is GMMHMM else ()
     model.means_ = X[rs.randint(len(X), size=(n_components,) + mix)]
     per_feature = () if covariance_type == "spherical" else (X.shape[1],)
-    model.covars_ = rs.uniform(0.5, 2.0, (n_components,) + mix
-                               + per_feature)
+    model.covars_ = rs.uniform(0.5, 2.0, (n_components,) + mix + per_feature)
     if model_class is GMMHMM:
         model.weights_ = np.full((n_components, n_mix), 1 / n_mix)
     return model
@@ -780,10 +904,17 @@ def _fit_outcome(model, X, lengths):
     """Every fitted array, the score and history, both decodes and the
     state probabilities, as bytes."""
     model.fit(X, lengths)
-    out = {name: np.asarray(getattr(model, name)).tobytes()
-           for name in ("startprob_", "transmat_", "means_", "covars_",
-                        "weights_")
-           if hasattr(model, name)}
+    out = {
+        name: np.asarray(getattr(model, name)).tobytes()
+        for name in (
+            "startprob_",
+            "transmat_",
+            "means_",
+            "covars_",
+            "weights_",
+        )
+        if hasattr(model, name)
+    }
     out["score"] = np.float64(model.score(X, lengths)).tobytes()
     out["history"] = np.asarray(model.monitor_.history).tobytes()
     for algorithm in ("viterbi", "map"):
@@ -797,20 +928,22 @@ def _fit_outcome(model, X, lengths):
 @pytest.mark.parametrize("covariance_type", ["diag", "spherical"])
 @pytest.mark.parametrize("model_class", [GaussianHMM, GMMHMM])
 def test_fits_are_the_same_with_and_without_the_loop(
-        loop_results, monkeypatch, model_class, covariance_type,
-        implementation):
+    loop_results, monkeypatch, model_class, covariance_type, implementation
+):
     """A fit, its score, decodes and state probabilities have the same bytes
     whether the C++ loop or numpy's expression computes the densities."""
     rs = np.random.RandomState(0)
-    X = np.concatenate([rs.standard_normal((40, 3)) + shift
-                        for shift in (-3, 0, 3)])
+    X = np.concatenate(
+        [rs.standard_normal((40, 3)) + shift for shift in (-3, 0, 3)]
+    )
     rs.shuffle(X)
     lengths = [70, 50]
     with_loop = _fit_outcome(
-        _model(model_class, covariance_type, implementation, X), X, lengths)
+        _model(model_class, covariance_type, implementation, X), X, lengths
+    )
     assert "kept" in loop_results and "none" not in loop_results
-    monkeypatch.setattr(_emissionsc, "log_density_diag",
-                        lambda *args: None)
+    monkeypatch.setattr(_emissionsc, "log_density_diag", lambda *args: None)
     without_loop = _fit_outcome(
-        _model(model_class, covariance_type, implementation, X), X, lengths)
+        _model(model_class, covariance_type, implementation, X), X, lengths
+    )
     assert with_loop == without_loop

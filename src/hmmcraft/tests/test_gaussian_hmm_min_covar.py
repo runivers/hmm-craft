@@ -38,15 +38,23 @@ def _smallest(covars, covariance_type):
     """Smallest variance (spherical, diag) or eigenvalue (full, tied)."""
     if covariance_type in ("spherical", "diag"):
         return covars.min()
-    return min(np.linalg.eigvalsh(cv).min()
-               for cv in covars.reshape(-1, *covars.shape[-2:]))
+    return min(
+        np.linalg.eigvalsh(cv).min()
+        for cv in covars.reshape(-1, *covars.shape[-2:])
+    )
 
 
 @pytest.mark.parametrize("covariance_type", COVARIANCE_TYPES)
 def test_covars_floor_holds_after_every_m_step(covariance_type):
     X, lengths = _duplicated_features()
-    h = RecordingGaussianHMM(2, covariance_type, covars_floor=1e-3,
-                             n_iter=30, tol=-np.inf, random_state=0)
+    h = RecordingGaussianHMM(
+        2,
+        covariance_type,
+        covars_floor=1e-3,
+        n_iter=30,
+        tol=-np.inf,
+        random_state=0,
+    )
     h.fit(X, lengths)
     smallest = [_smallest(cv, covariance_type) for cv in h.recorded]
     assert len(smallest) == 30
@@ -58,16 +66,19 @@ def test_covars_floor_holds_after_every_m_step(covariance_type):
 def _fixed_start(covariance_type, variances=(0.1, 1.0), **kwargs):
     """A model with explicit starting parameters, so a fit does not depend
     on the k-means start."""
-    h = hmm.GaussianHMM(2, covariance_type, init_params="", random_state=0,
-                        **kwargs)
+    h = hmm.GaussianHMM(
+        2, covariance_type, init_params="", random_state=0, **kwargs
+    )
     h.startprob_ = np.array([0.5, 0.5])
     h.transmat_ = np.array([[0.9, 0.1], [0.1, 0.9]])
     h.means_ = np.array([[0.0], [1.5]])
     variances = np.array(variances)
-    h.covars_ = {"spherical": variances,
-                 "diag": variances[:, None],
-                 "full": variances[:, None, None],
-                 "tied": variances[:1, None]}[covariance_type]
+    h.covars_ = {
+        "spherical": variances,
+        "diag": variances[:, None],
+        "full": variances[:, None, None],
+        "tied": variances[:1, None],
+    }[covariance_type]
     return h
 
 
@@ -76,25 +87,30 @@ def test_covars_floor_off_by_default(covariance_type):
     X, lengths = _rounded_sequences()
     kwargs = {"n_iter": 100, "tol": 1e-4}
     default = _fixed_start(covariance_type, **kwargs).fit(X, lengths)
-    explicit = _fixed_start(
-        covariance_type, covars_floor=None, **kwargs).fit(X, lengths)
+    explicit = _fixed_start(covariance_type, covars_floor=None, **kwargs).fit(
+        X, lengths
+    )
     # Without a floor the variance of the "zeros" state ends far below
     # min_covar.
     assert default._covars_.min() < 1e-3
     assert default.covars_floor is None
     for name in ("_covars_", "means_", "transmat_", "startprob_"):
         assert getattr(default, name).tobytes() == (
-            getattr(explicit, name).tobytes())
+            getattr(explicit, name).tobytes()
+        )
 
 
 @pytest.mark.parametrize("covariance_type", COVARIANCE_TYPES)
-def test_covars_floor_leaves_an_explicit_start_below_it_alone(
-        covariance_type):
+def test_covars_floor_leaves_an_explicit_start_below_it_alone(covariance_type):
     X, lengths = _rounded_sequences()
     starts = []
     for floor in (None, 1e-3):
-        h = _fixed_start(covariance_type, variances=(1e-5, 2e-5),
-                         covars_floor=floor, n_iter=0)
+        h = _fixed_start(
+            covariance_type,
+            variances=(1e-5, 2e-5),
+            covars_floor=floor,
+            n_iter=0,
+        )
         starts.append(h.fit(X, lengths)._covars_)
     assert starts[0].tobytes() == starts[1].tobytes()
     assert starts[1].max() < 1e-3
@@ -107,9 +123,15 @@ def test_covars_floor_leaves_a_computed_start_below_it_alone(covariance_type):
     X = np.random.RandomState(3).normal(0, 1e-3, (200, 2))
     starts = []
     for floor in (None, 1e-3):
-        h = hmm.GaussianHMM(2, covariance_type, covars_floor=floor,
-                            min_covar=1e-9, init_params="c", n_iter=0,
-                            random_state=0)
+        h = hmm.GaussianHMM(
+            2,
+            covariance_type,
+            covars_floor=floor,
+            min_covar=1e-9,
+            init_params="c",
+            n_iter=0,
+            random_state=0,
+        )
         h.startprob_ = np.array([0.5, 0.5])
         h.transmat_ = np.array([[0.9, 0.1], [0.1, 0.9]])
         h.means_ = np.zeros((2, 2))
@@ -123,14 +145,21 @@ def test_inactive_covars_floor_changes_nothing(covariance_type):
     # From the same starting point, a floor that never binds gives exactly
     # the fit without a floor.
     rng = np.random.RandomState(2)
-    X = np.concatenate([rng.normal(0, 1, (500, 2)),
-                        rng.normal(4, 2, (500, 2))])
+    X = np.concatenate(
+        [rng.normal(0, 1, (500, 2)), rng.normal(4, 2, (500, 2))]
+    )
     start = hmm.GaussianHMM(2, covariance_type, random_state=0)
     start._init(X)
     fits = []
     for floor in (1e-3, None):
-        h = hmm.GaussianHMM(2, covariance_type, covars_floor=floor,
-                            n_iter=20, init_params="", random_state=0)
+        h = hmm.GaussianHMM(
+            2,
+            covariance_type,
+            covars_floor=floor,
+            n_iter=20,
+            init_params="",
+            random_state=0,
+        )
         h.startprob_ = start.startprob_
         h.transmat_ = start.transmat_
         h.means_ = start.means_
@@ -146,18 +175,35 @@ def test_monotone_em_with_covars_floor(covariance_type):
     # The floored update is the exact M-step under the constraint, so the
     # log-likelihood still never decreases.
     X, lengths = _rounded_sequences()
-    h = hmm.GaussianHMM(2, covariance_type, covars_floor=1e-2, n_iter=30,
-                        tol=-np.inf, random_state=0)
+    h = hmm.GaussianHMM(
+        2,
+        covariance_type,
+        covars_floor=1e-2,
+        n_iter=30,
+        tol=-np.inf,
+        random_state=0,
+    )
     h.fit(X, lengths)
     history = np.asarray(h.monitor_.history)
     assert (np.diff(history) >= -1e-8 * np.abs(history[1:])).all()
 
 
 @pytest.mark.parametrize(
-    "floor", [0, -1, np.nan, np.inf, True, False, np.True_, "1e-3", [1e-3],
-              10 ** 400],
-    ids=["zero", "negative", "nan", "inf", "True", "False", "np.True_",
-         "string", "list", "int_beyond_float"])
+    "floor",
+    [0, -1, np.nan, np.inf, True, False, np.True_, "1e-3", [1e-3], 10**400],
+    ids=[
+        "zero",
+        "negative",
+        "nan",
+        "inf",
+        "True",
+        "False",
+        "np.True_",
+        "string",
+        "list",
+        "int_beyond_float",
+    ],
+)
 def test_covars_floor_rejects_non_positive_and_non_numeric(floor):
     X, lengths = _rounded_sequences()
     h = hmm.GaussianHMM(2, covars_floor=floor, random_state=0)
@@ -168,8 +214,10 @@ def test_covars_floor_rejects_non_positive_and_non_numeric(floor):
 def test_covars_floor_accepts_any_real_number_as_its_float_value():
     # A Fraction is a real number: it floors exactly as its float does.
     X, lengths = _rounded_sequences()
-    fits = [_fixed_start("diag", covars_floor=floor, n_iter=10).fit(X, lengths)
-            for floor in (Fraction(1, 1000), 1e-3)]
+    fits = [
+        _fixed_start("diag", covars_floor=floor, n_iter=10).fit(X, lengths)
+        for floor in (Fraction(1, 1000), 1e-3)
+    ]
     assert fits[0]._covars_.min() >= 1e-3
     assert fits[0]._covars_.tobytes() == fits[1]._covars_.tobytes()
 

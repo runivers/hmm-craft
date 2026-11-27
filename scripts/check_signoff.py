@@ -21,9 +21,12 @@ import sys
 
 # (author name, author address, committer name, committer address)
 EXEMPT_IDENTITIES = {
-    ("dependabot[bot]",
-     "49699333+dependabot[bot]@users.noreply.github.com",
-     "GitHub", "noreply@github.com"),
+    (
+        "dependabot[bot]",
+        "49699333+dependabot[bot]@users.noreply.github.com",
+        "GitHub",
+        "noreply@github.com",
+    ),
 }
 SIGNOFF = re.compile(r"^Signed-off-by: .+ <([^<>\s]+)>\s*$")
 # The fields of one commit, separated by NUL; the message comes last, so a
@@ -33,8 +36,12 @@ FORMAT = "%H%x00%an%x00%ae%x00%cn%x00%ce%x00%B"
 
 def _git(*args):
     return subprocess.run(
-        ["git", *args], check=True, capture_output=True,
-        encoding="utf-8", errors="replace").stdout
+        ["git", *args],
+        check=True,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+    ).stdout
 
 
 def commits(base, head):
@@ -42,9 +49,10 @@ def commits(base, head):
     committer address, message)`` for each non-merge commit of
     ``base..head``."""
     shas = _git("rev-list", "--no-merges", f"{base}..{head}").split()
-    return [tuple(_git("show", "-s", "--format=" + FORMAT, sha)
-                  .split("\x00", 5))
-            for sha in shas]
+    return [
+        tuple(_git("show", "-s", "--format=" + FORMAT, sha).split("\x00", 5))
+        for sha in shas
+    ]
 
 
 def signed_off(message, addresses):
@@ -76,13 +84,19 @@ def main(argv):
             print(f"ok       {sha[:12]} {subject}")
         else:
             failed += 1
-            print(f"missing  {sha[:12]} {subject}: no Signed-off-by line"
-                  f" for {author} or {committer}")
-    print(f"{len(found)} commit(s) checked; {failed} of {len(found)} without"
-          " a sign-off.")
+            print(
+                f"missing  {sha[:12]} {subject}: no Signed-off-by line"
+                f" for {author} or {committer}"
+            )
+    print(
+        f"{len(found)} commit(s) checked; {failed} of {len(found)} without"
+        " a sign-off."
+    )
     if failed:
-        print("Add one with: git commit --amend -s, or git rebase --signoff"
-              " for several commits, then push again.")
+        print(
+            "Add one with: git commit --amend -s, or git rebase --signoff"
+            " for several commits, then push again."
+        )
     return 1 if failed else 0
 
 

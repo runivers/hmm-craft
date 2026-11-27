@@ -14,6 +14,7 @@ of components for a model.
    We also see that using the log-likelihood of the training data is not
    suitable for model selection, as it is always increasing.
 """
+
 import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.utils import check_random_state
@@ -25,12 +26,16 @@ rs = check_random_state(546)
 # Our model to generate sample data from:
 model = GaussianHMM(4, init_params="")
 model.n_features = 4
-model.startprob_ = np.array([1/4., 1/4., 1/4., 1/4.])
-model.transmat_ = np.array([[0.3, 0.4, 0.2, 0.1],
-                            [0.1, 0.2, 0.3, 0.4],
-                            [0.5, 0.2, 0.1, 0.2],
-                            [0.25, 0.25, 0.25, 0.25]])
-model.means_ = np.array([[-2.5], [0], [2.5], [5.]])
+model.startprob_ = np.array([1 / 4.0, 1 / 4.0, 1 / 4.0, 1 / 4.0])
+model.transmat_ = np.array(
+    [
+        [0.3, 0.4, 0.2, 0.1],
+        [0.1, 0.2, 0.3, 0.4],
+        [0.5, 0.2, 0.1, 0.2],
+        [0.25, 0.25, 0.25, 0.25],
+    ]
+)
+model.means_ = np.array([[-2.5], [0], [2.5], [5.0]])
 model.covars_ = np.sqrt([[0.25], [0.25], [0.25], [0.25]])
 
 X, _ = model.sample(1000, random_state=rs)

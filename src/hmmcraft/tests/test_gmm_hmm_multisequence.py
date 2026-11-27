@@ -209,8 +209,9 @@ class StrictMonitor(ConvergenceMonitor):
         if len(self.history) < 2:
             return False
 
-        assert self.history[-1] >= self.history[-2] - self.tol, \
+        assert self.history[-1] >= self.history[-2] - self.tol, (
             "log_prob must be non-decreasing"
+        )
 
         return self.history[-1] - self.history[-2] < self.tol
 
@@ -220,11 +221,12 @@ def make_permutations(items):
     return [list(p) for p in itertools.permutations(sequence_indices)]
 
 
-@pytest.mark.parametrize("covariance_type",
-                         ["diag", "spherical", "tied", "full"])
+@pytest.mark.parametrize(
+    "covariance_type", ["diag", "spherical", "tied", "full"]
+)
 @pytest.mark.parametrize("implementation", ["scaling", "log"])
 def test_gmmhmm_multi_sequence_fit_invariant_to_sequence_ordering(
-    covariance_type, implementation, init_params='mcw', verbose=False
+    covariance_type, implementation, init_params="mcw", verbose=False
 ):
     """
     Sanity check GMM-HMM fit behaviour when run on multiple sequences
@@ -261,14 +263,15 @@ def test_gmmhmm_multi_sequence_fit_invariant_to_sequence_ordering(
             verbose=verbose,
             init_params=init_params,
             random_state=1234,
-            implementation=implementation
+            implementation=implementation,
         )
 
         # don't use random parameters for testing
-        init = 1. / model.n_components
+        init = 1.0 / model.n_components
         model.startprob_ = np.full(model.n_components, init)
-        model.transmat_ = \
-            np.full((model.n_components, model.n_components), init)
+        model.transmat_ = np.full(
+            (model.n_components, model.n_components), init
+        )
 
         model.monitor_ = StrictMonitor(
             model.monitor_.tol,
