@@ -87,7 +87,7 @@ def test_full_and_tied_log_density_match_scipy(covariance_type, n_features):
         X, means, covars, covariance_type
     )
     if covariance_type == "tied":
-        covars = np.broadcast_to(covars, (N_COMPONENTS,) + covars.shape)
+        covars = np.broadcast_to(covars, (N_COMPONENTS, *covars.shape))
     expected = np.column_stack(
         [
             multivariate_normal(mean=mu, cov=cv).logpdf(X)
@@ -476,7 +476,7 @@ def test_a_covariance_that_does_not_factor_raises_from_the_cholesky_error(
     LinAlgError."""
     X, means, covars = _covar([[1.0, 2.0], [2.0, 1.0]])(covariance_type)
     with pytest.raises(
-        ValueError, match="^'covars' must be symmetric, positive-definite$"
+        ValueError, match=r"^'covars' must be symmetric, positive-definite$"
     ) as raised:
         stats.log_multivariate_normal_density(
             X, means, covars, covariance_type
@@ -910,9 +910,9 @@ def _model(model_class, covariance_type, implementation, X):
     model.startprob_ = np.full(n_components, 1 / n_components)
     model.transmat_ = np.full((n_components, n_components), 1 / n_components)
     mix = (n_mix,) if model_class is GMMHMM else ()
-    model.means_ = X[rs.randint(len(X), size=(n_components,) + mix)]
+    model.means_ = X[rs.randint(len(X), size=(n_components, *mix))]
     per_feature = () if covariance_type == "spherical" else (X.shape[1],)
-    model.covars_ = rs.uniform(0.5, 2.0, (n_components,) + mix + per_feature)
+    model.covars_ = rs.uniform(0.5, 2.0, (n_components, *mix, *per_feature))
     if model_class is GMMHMM:
         model.weights_ = np.full((n_components, n_mix), 1 / n_mix)
     return model

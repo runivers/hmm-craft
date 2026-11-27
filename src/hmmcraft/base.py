@@ -1269,12 +1269,11 @@ class _AbstractHMM(BaseEstimator):
             An array where the (i, j)-th element corresponds to the posterior
             probability of transitioning between the i-th to j-th states.
         """
-        stats = {
+        return {
             "nobs": 0,
             "start": np.zeros(self.n_components),
             "trans": np.zeros((self.n_components, self.n_components)),
         }
-        return stats
 
     # True only while _do_estep accumulates a sequence it computed with the
     # log functions under implementation="scaling"; never kept on an instance.
@@ -2182,8 +2181,7 @@ class VariationalBaseHMM(_AbstractHMM):
             != __class__._compute_subnorm_log_likelihood.__get__(self)
         ):
             return np.exp(self._compute_subnorm_log_likelihood(X))
-        else:
-            raise NotImplementedError("Must be overridden in subclass")
+        raise NotImplementedError("Must be overridden in subclass")
 
     def _compute_subnorm_log_likelihood(self, X):
         if (
@@ -2191,8 +2189,7 @@ class VariationalBaseHMM(_AbstractHMM):
             != __class__._compute_subnorm_likelihood.__get__(self)
         ):
             return np.log(self._compute_subnorm_likelihood(X))
-        else:
-            raise NotImplementedError("Must be overridden in subclass")
+        raise NotImplementedError("Must be overridden in subclass")
 
     def _accumulate_sufficient_statistics_scaling(
         self, stats, X, lattice, posteriors, fwdlattice, bwdlattice

@@ -151,7 +151,8 @@ class TestMultinomialHMM:
         h = self.new_hmm(implementation)
         h.n_trials = [1, 2, 3]
         with pytest.raises(
-            ValueError, match="^For sampling, a single n_trials must be given$"
+            ValueError,
+            match=r"^For sampling, a single n_trials must be given$",
         ) as raised:
             h.sample(1000)
         assert isinstance(raised.value.__cause__, ValueError)

@@ -1783,8 +1783,9 @@ class _Case:
                     )
                     ok = False
             if ok:
-                for key in ("errors:" + name,) + tuple(
-                    "scaling:" + k for k in keys
+                for key in (
+                    "errors:" + name,
+                    *("scaling:" + k for k in keys),
                 ):
                     if key in self.pending:
                         self.excuse("E7", key)

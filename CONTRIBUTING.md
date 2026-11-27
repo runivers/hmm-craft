@@ -45,10 +45,11 @@ Report a security problem as described in `SECURITY.md`, not in an issue.
 
 3. Keep every Python line under 80 characters, as upstream does. CI also runs
    `ruff check .` (pyflakes, syntax errors, a docstring on every public
-   module, class and function of the package, and ruff's bugbear, numpy and
-   performance rules), `ruff format --check .` (the
-   formatter's style) and a check that no other style finding is added to a
-   file. With the ruff version CI uses
+   module, class and function of the package, and ruff's bugbear, numpy,
+   performance, return, simplification, comprehension, pie, ruff and
+   pyupgrade rules), `ruff format --check .` (the formatter's style) and a
+   check that no other style finding is added to a file. With the ruff
+   version CI uses
    (`pip install --require-hashes -r ci/lint_requirements.txt`; another
    version can count or format differently):
 
@@ -62,7 +63,8 @@ Report a security problem as described in `SECURITY.md`, not in an issue.
    the finding; the baseline does not rise. A finding kept on purpose is
    ignored for its file in `pyproject.toml`, with its reason in a comment
    above the entry: a `noqa` comment for a rule outside the last check's set
-   is itself a finding of that check (`RUF100`).
+   is itself a finding of that check (`RUF100`), and a `noqa` also needs its
+   code in `select`.
 
    The formatting commit is listed in `.git-blame-ignore-revs`; `git config
    blame.ignoreRevsFile .git-blame-ignore-revs` makes local `git blame` skip

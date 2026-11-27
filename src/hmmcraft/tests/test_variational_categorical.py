@@ -411,7 +411,7 @@ class TestVariationalCategorical:
         NumPy reads a boolean array as a mask over the symbols.
         """
         model = self._fitted(n_features, implementation)
-        with pytest.raises(ValueError, match="X must .*not booleans"):
+        with pytest.raises(ValueError, match=r"X must .*not booleans"):
             getattr(model, method)(np.array(X))
 
     @pytest.mark.parametrize("implementation", ["scaling", "log"])

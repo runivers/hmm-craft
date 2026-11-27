@@ -35,7 +35,7 @@ ENVIRONMENT = {
     "scikit_learn": "1.3.1",
     "threadpoolctl": "3.8.0",
     "machine": "Linux x86_64",
-    "thread_variables": {v: "1" for v in be.THREAD_VARIABLES},
+    "thread_variables": dict.fromkeys(be.THREAD_VARIABLES, "1"),
     "threadpool_info": [],
     "pickles_loaded": False,
 }
@@ -1017,7 +1017,7 @@ def test_set_params_cases_build_through_set_params(monkeypatch):
     calls = []
     monkeypatch.setattr(_ConstructorRecorder, "calls", calls)
     module = types.SimpleNamespace(
-        **{name: _ConstructorRecorder for name in be._CLASSES}
+        **dict.fromkeys(be._CLASSES, _ConstructorRecorder)
     )
     modules = {"hmm": module, "vhmm": module}
     data = _all_data()

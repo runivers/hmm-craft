@@ -388,7 +388,7 @@ def _stack(covariance_type, replace, n_features=3):
     """
     shape = {"tied": (2,), "full": (2, 2)}[covariance_type]
     covars = np.broadcast_to(
-        np.eye(n_features), shape + (n_features, n_features)
+        np.eye(n_features), (*shape, n_features, n_features)
     ).copy()
     flat = covars.reshape(-1, n_features, n_features)
     for position, matrix in replace.items():

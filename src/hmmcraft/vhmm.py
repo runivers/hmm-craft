@@ -895,8 +895,7 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
                 "cij,jk,cik,->ic", delta, W_k, delta, self.dof_posterior_
             )
         last_term = 0.5 * (dots + term3)
-        lll = term1 - term2 - last_term
-        return lll
+        return term1 - term2 - last_term
 
     def _do_mstep(self, stats):
         """

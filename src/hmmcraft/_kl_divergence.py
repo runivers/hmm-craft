@@ -99,7 +99,7 @@ def kl_wishart_distribution(dof_q, scale_q, dof_p, scale_p):
         Shihao Ji, B. Krishnapuram, and L. Carin,
         "Variational Bayes for continuous hidden Markov models and its
         application to active learning," IEEE Transactions on Pattern
-        Analysis and Machine Intelligence, vol. 28, no. 4, pp. 522–532,
+        Analysis and Machine Intelligence, vol. 28, no. 4, pp. 522-532,
         Apr. 2006, doi: 10.1109/TPAMI.2006.85.
     """
     scale_q = np.asarray(scale_q)

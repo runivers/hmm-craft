@@ -84,20 +84,27 @@ line-length = 79
 
 [tool.ruff.lint]
 # ruff's classic set (syntax errors and pyflakes), D1, which asks for a
-# docstring on every public module, class, function and method, and the
-# bugbear (B), numpy (NPY) and performance (PERF) rules. CI runs
-# `ruff check .` with it, and scripts/check_ruff_baseline.py counts the wider
-# findings.
-select = ["E4", "E7", "E9", "F", "D1", "B", "NPY", "PERF"]
-# numpydoc documents __init__ in the class docstring.
-ignore = ["D107"]
+# docstring on every public module, class, function and method, the
+# bugbear (B), numpy (NPY), performance (PERF), return (RET),
+# simplification (SIM), comprehension (C4), pie (PIE), ruff (RUF) and
+# pyupgrade (UP) rules, and BLE001 and TRY004, which
+# scripts/check_ruff_baseline.py also counts, so that their noqa comments
+# are used. CI runs `ruff check .` with it, and the baseline check counts
+# the wider findings.
+select = [
+    "E4", "E7", "E9", "F", "D1", "B", "NPY", "PERF",
+    "RET", "SIM", "C4", "PIE", "RUF", "UP", "BLE001", "TRY004",
+]
+# numpydoc documents __init__ in the class docstring. SIM300 reads X, the
+# data, as a constant because it is upper case.
+ignore = ["D107", "SIM300"]
 
 [tool.ruff.lint.per-file-ignores]
 # Test functions are named for what they check. The tests seed and read
 # numpy's global generator; another generator would draw other data.
 "src/hmmcraft/tests/**" = ["D1", "NPY002"]
 # GMMHMM's start draws from numpy's global generator, as hmmlearn 0.3.3's
-# does, so that its fits equal 0.3.3's, until the start uses a Generator.
+# does, until the start uses a Generator.
 "src/hmmcraft/hmm.py" = ["NPY002"]
 # Command-line tools, documented by their usage text, and their tests.
 "scripts/**" = ["D1"]
