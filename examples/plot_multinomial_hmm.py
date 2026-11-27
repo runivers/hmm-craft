@@ -29,7 +29,6 @@ __ https://en.wikipedia.org/wiki/Categorical_distribution
 __ https://en.wikipedia.org/wiki/Multinomial_distribution
 """
 
-
 import numpy as np
 
 from hmmcraft import hmm
@@ -47,8 +46,7 @@ start_probs = np.array([0.6, 0.4])
 vocabulary = ["tail", "fetch", "mouse", "food"]
 # if the topic is "cat", we are more likely to talk about "mouse"
 # if the topic is "dog", we are more likely to talk about "fetch"
-emission_probs = np.array([[0.25, 0.1, 0.4, 0.25],
-                           [0.2, 0.5, 0.1, 0.2]])
+emission_probs = np.array([[0.25, 0.1, 0.4, 0.25], [0.2, 0.5, 0.1, 0.2]])
 
 # Also assume it's more likely to stay in a state than transition to the other
 trans_mat = np.array([[0.8, 0.2], [0.2, 0.8]])
@@ -57,25 +55,30 @@ trans_mat = np.array([[0.8, 0.2], [0.2, 0.8]])
 # Pretend that every sentence we speak only has a total of 5 words,
 # i.e. we independently utter a word from the vocabulary 5 times per sentence
 # we observe the following bag of words (BoW) for 8 sentences:
-observations = [["tail", "mouse", "mouse", "food", "mouse"],
-        ["food", "mouse", "mouse", "food", "mouse"],
-        ["tail", "mouse", "mouse", "tail", "mouse"],
-        ["food", "mouse", "food", "food", "tail"],
-        ["tail", "fetch", "mouse", "food", "tail"],
-        ["tail", "fetch", "fetch", "food", "fetch"],
-        ["fetch", "fetch", "fetch", "food", "tail"],
-        ["food", "mouse", "food", "food", "tail"],
-        ["tail", "mouse", "mouse", "tail", "mouse"],
-        ["fetch", "fetch", "fetch", "fetch", "fetch"]]
+observations = [
+    ["tail", "mouse", "mouse", "food", "mouse"],
+    ["food", "mouse", "mouse", "food", "mouse"],
+    ["tail", "mouse", "mouse", "tail", "mouse"],
+    ["food", "mouse", "food", "food", "tail"],
+    ["tail", "fetch", "mouse", "food", "tail"],
+    ["tail", "fetch", "fetch", "food", "fetch"],
+    ["fetch", "fetch", "fetch", "food", "tail"],
+    ["food", "mouse", "food", "food", "tail"],
+    ["tail", "mouse", "mouse", "tail", "mouse"],
+    ["fetch", "fetch", "fetch", "fetch", "fetch"],
+]
 
 # Convert "sentences" to numbers:
 vocab2id = dict(zip(vocabulary, range(len(vocabulary))))
+
+
 def sentence2counts(sentence):
     ans = []
     for word in vocab2id:
         count = sentence.count(word)
         ans.append(count)
     return ans
+
 
 X = []
 for sentence in observations:
@@ -85,15 +88,17 @@ for sentence in observations:
 data = np.array(X, dtype=int)
 
 # pretend this is repeated, so we have more data to learn from:
-lengths = [len(X)]*5
-sequences = np.tile(data, (5,1))
+lengths = [len(X)] * 5
+sequences = np.tile(data, (5, 1))
 
 
 # Set up model:
-model = hmm.MultinomialHMM(n_components=len(states),
-        n_trials=len(observations[0]),
-        n_iter=50,
-        init_params='')
+model = hmm.MultinomialHMM(
+    n_components=len(states),
+    n_trials=len(observations[0]),
+    n_iter=50,
+    init_params="",
+)
 
 model.n_features = len(vocabulary)
 model.startprob_ = start_probs
@@ -112,9 +117,12 @@ print("Learned transition matrix:")
 print(model.transmat_)
 
 # Try to reset and refit:
-new_model = hmm.MultinomialHMM(n_components=len(states),
-        n_trials=len(observations[0]),
-        n_iter=50, init_params='ste')
+new_model = hmm.MultinomialHMM(
+    n_components=len(states),
+    n_trials=len(observations[0]),
+    n_iter=50,
+    init_params="ste",
+)
 
 new_model.fit(sequences, lengths)
 logprob, received = new_model.decode(sequences)

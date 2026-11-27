@@ -80,13 +80,23 @@ class VariationalCategoricalHMM(BaseCategoricalHMM, VariationalBaseHMM):
 
     _emissionprob_name = "emissionprob_posterior_"
 
-    def __init__(self, n_components=1,
-                 startprob_prior=None, transmat_prior=None,
-                 emissionprob_prior=None, n_features=None,
-                 algorithm="viterbi", random_state=None,
-                 n_iter=100, tol=1e-6, verbose=False,
-                 params="ste", init_params="ste",
-                 implementation="log", n_threads=1):
+    def __init__(
+        self,
+        n_components=1,
+        startprob_prior=None,
+        transmat_prior=None,
+        emissionprob_prior=None,
+        n_features=None,
+        algorithm="viterbi",
+        random_state=None,
+        n_iter=100,
+        tol=1e-6,
+        verbose=False,
+        params="ste",
+        init_params="ste",
+        implementation="log",
+        n_threads=1,
+    ):
         """
         Parameters
         ----------
@@ -162,12 +172,18 @@ class VariationalCategoricalHMM(BaseCategoricalHMM, VariationalBaseHMM):
             :meth:`fit`.
         """
         super().__init__(
-            n_components=n_components, startprob_prior=startprob_prior,
+            n_components=n_components,
+            startprob_prior=startprob_prior,
             transmat_prior=transmat_prior,
-            algorithm=algorithm, random_state=random_state,
-            n_iter=n_iter, tol=tol, verbose=verbose,
-            params=params, init_params=init_params,
-            implementation=implementation, n_threads=n_threads
+            algorithm=algorithm,
+            random_state=random_state,
+            n_iter=n_iter,
+            tol=tol,
+            verbose=verbose,
+            params=params,
+            init_params=init_params,
+            implementation=implementation,
+            n_threads=n_threads,
         )
         self.emissionprob_prior = emissionprob_prior
         self.n_features = n_features
@@ -195,20 +211,24 @@ class VariationalCategoricalHMM(BaseCategoricalHMM, VariationalBaseHMM):
             if self.emissionprob_prior is not None:
                 emissionprob_init = self.emissionprob_prior
             self.emissionprob_prior_ = np.full(
-                (self.n_components, self.n_features), emissionprob_init)
-            self.emissionprob_posterior_ = random_state.dirichlet(
-                alpha=[emissionprob_init] * self.n_features,
-                size=self.n_components
-            ) * sum(lengths) / self.n_components
+                (self.n_components, self.n_features), emissionprob_init
+            )
+            self.emissionprob_posterior_ = (
+                random_state.dirichlet(
+                    alpha=[emissionprob_init] * self.n_features,
+                    size=self.n_components,
+                )
+                * sum(lengths)
+                / self.n_components
+            )
 
     def _estep_begin(self):
         super()._estep_begin()
         # Stored / Computed for efficiency otherwise
         # it would be done in _compute_subnorm_log_likelihood
-        self.emissionprob_log_subnorm_ = (
-            special.digamma(self.emissionprob_posterior_)
-            - special.digamma(
-                self.emissionprob_posterior_.sum(axis=1)[:, None]))
+        self.emissionprob_log_subnorm_ = special.digamma(
+            self.emissionprob_posterior_
+        ) - special.digamma(self.emissionprob_posterior_.sum(axis=1)[:, None])
 
     def _check(self):
         """
@@ -225,17 +245,23 @@ class VariationalCategoricalHMM(BaseCategoricalHMM, VariationalBaseHMM):
         """
         super()._check()
 
-        if (self.emissionprob_prior_.shape
-                != self.emissionprob_posterior_.shape):
+        if (
+            self.emissionprob_prior_.shape
+            != self.emissionprob_posterior_.shape
+        ):
             raise ValueError(
                 "emissionprob_prior_ and emissionprob_posterior_ must "
-                "have shape (n_components, n_features)")
+                "have shape (n_components, n_features)"
+            )
         n_features = self._get_n_features()
-        if (self.emissionprob_posterior_.shape
-                != (self.n_components, n_features)):
+        if self.emissionprob_posterior_.shape != (
+            self.n_components,
+            n_features,
+        ):
             raise ValueError(
                 f"emissionprob_posterior_ must have shape "
-                f"({self.n_components}, {n_features})")
+                f"({self.n_components}, {n_features})"
+            )
 
     def _store_checked(self):
         super()._store_checked()
@@ -266,7 +292,8 @@ class VariationalCategoricalHMM(BaseCategoricalHMM, VariationalBaseHMM):
         # emissionprob
         if "e" in self.params:
             self.emissionprob_posterior_ = (
-                self.emissionprob_prior_ + stats['obs'])
+                self.emissionprob_prior_ + stats["obs"]
+            )
             # Provide the normalized probabilities at the posterior median
             div = self.emissionprob_posterior_.sum(axis=1)[:, None]
             self.emissionprob_ = self.emissionprob_posterior_ / div
@@ -281,7 +308,8 @@ class VariationalCategoricalHMM(BaseCategoricalHMM, VariationalBaseHMM):
         emissionprob_lower_bound = 0
         for i in range(self.n_components):
             emissionprob_lower_bound -= _kl.kl_dirichlet(
-                self.emissionprob_posterior_[i], self.emissionprob_prior_[i])
+                self.emissionprob_posterior_[i], self.emissionprob_prior_[i]
+            )
         return lower_bound + emissionprob_lower_bound
 
 
@@ -396,13 +424,26 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
 
     _means_name = "means_posterior_"
 
-    def __init__(self, n_components=1, covariance_type="full",
-                 startprob_prior=None, transmat_prior=None,
-                 means_prior=None, beta_prior=None, dof_prior=None,
-                 scale_prior=None, algorithm="viterbi",
-                 random_state=None, n_iter=100, tol=1e-6, verbose=False,
-                 params="stmc", init_params="stmc",
-                 implementation="log", n_threads=1):
+    def __init__(
+        self,
+        n_components=1,
+        covariance_type="full",
+        startprob_prior=None,
+        transmat_prior=None,
+        means_prior=None,
+        beta_prior=None,
+        dof_prior=None,
+        scale_prior=None,
+        algorithm="viterbi",
+        random_state=None,
+        n_iter=100,
+        tol=1e-6,
+        verbose=False,
+        params="stmc",
+        init_params="stmc",
+        implementation="log",
+        n_threads=1,
+    ):
         """
         Parameters
         ----------
@@ -499,12 +540,18 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
             :meth:`fit`.
         """
         super().__init__(
-            n_components=n_components, startprob_prior=startprob_prior,
+            n_components=n_components,
+            startprob_prior=startprob_prior,
             transmat_prior=transmat_prior,
-            algorithm=algorithm, random_state=random_state,
-            n_iter=n_iter, tol=tol, verbose=verbose,
-            params=params, init_params=init_params,
-            implementation=implementation, n_threads=n_threads
+            algorithm=algorithm,
+            random_state=random_state,
+            n_iter=n_iter,
+            tol=tol,
+            verbose=verbose,
+            params=params,
+            init_params=init_params,
+            implementation=implementation,
+            n_threads=n_threads,
         )
         self.covariance_type = covariance_type
         self.means_prior = means_prior
@@ -546,22 +593,27 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
         X_mean = X.mean(axis=0)
         # Kmeans will be used for initializing both the means
         # and the covariances
-        kmeans = cluster.KMeans(n_clusters=self.n_components,
-                                random_state=self.random_state,
-                                n_init=10)  # sklearn >=1.2 compat.
+        kmeans = cluster.KMeans(
+            n_clusters=self.n_components,
+            random_state=self.random_state,
+            n_init=10,
+        )  # sklearn >=1.2 compat.
         # One thread: scikit-learn's k-means adds per-thread partial sums,
         # so a seeded start would depend on the thread count.
         with threadpool_limits(limits=1):
             kmeans.fit(X)
             cluster_counts = np.bincount(kmeans.predict(X))
 
-        if (self._needs_init("m", "means_prior_")
-                or self._needs_init("m", "means_posterior_")
-                or self._needs_init("m", "beta_prior_")
-                or self._needs_init("m", "beta_posterior_")):
+        if (
+            self._needs_init("m", "means_prior_")
+            or self._needs_init("m", "means_posterior_")
+            or self._needs_init("m", "beta_prior_")
+            or self._needs_init("m", "beta_posterior_")
+        ):
             if self.means_prior is None:
                 self.means_prior_ = np.full(
-                    (self.n_components, self.n_features), X_mean)
+                    (self.n_components, self.n_features), X_mean
+                )
             else:
                 self.means_prior_ = self.means_prior
             # Initialize to the data means
@@ -575,14 +627,17 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
             # Count of items in each cluster
             self.beta_posterior_ = np.copy(cluster_counts)
 
-        if (self._needs_init("c", "dof_prior_")
-                or self._needs_init("c", "dof_posterior_")
-                or self._needs_init("c", "scale_prior_")
-                or self._needs_init("c", "scale_posterior_")):
+        if (
+            self._needs_init("c", "dof_prior_")
+            or self._needs_init("c", "dof_posterior_")
+            or self._needs_init("c", "scale_prior_")
+            or self._needs_init("c", "scale_posterior_")
+        ):
             if self.covariance_type in ("full", "diag", "spherical"):
                 if self.dof_prior is None:
                     self.dof_prior_ = np.full(
-                        (self.n_components,), self.n_features)
+                        (self.n_components,), self.n_features
+                    )
                 else:
                     self.dof_prior_ = self.dof_prior
                 self.dof_posterior_ = np.copy(cluster_counts)
@@ -597,22 +652,25 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
             # Covariance posterior comes from the estimate of the data
             # We store and update both W_k and scale_posterior_,
             # as they each are used in the EM-like algorithm
-            cv = np.cov(X.T) + 1E-3 * np.eye(X.shape[1])
-            self.covars_ = \
+            cv = np.cov(X.T) + 1e-3 * np.eye(X.shape[1])
+            self.covars_ = (
                 _utils.distribute_covar_matrix_to_match_covariance_type(
-                    cv, self.covariance_type, self.n_components).copy()
+                    cv, self.covariance_type, self.n_components
+                ).copy()
+            )
 
             if self.covariance_type == "full":
                 if self.scale_prior is None:
                     self.scale_prior_ = np.broadcast_to(
                         np.identity(self.n_features) * 1e-3,
-                        (self.n_components, self.n_features, self.n_features)
+                        (self.n_components, self.n_features, self.n_features),
                     )
                 else:
                     self.scale_prior_ = self.scale_prior
                 self.scale_posterior_ = (
                     self._covars_
-                    * np.asarray(self.dof_posterior_)[:, None, None])
+                    * np.asarray(self.dof_posterior_)[:, None, None]
+                )
 
             elif self.covariance_type == "tied":
                 if self.scale_prior is None:
@@ -624,24 +682,26 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
             elif self.covariance_type == "diag":
                 if self.scale_prior is None:
                     self.scale_prior_ = np.full(
-                        (self.n_components, self.n_features), 1e-3)
+                        (self.n_components, self.n_features), 1e-3
+                    )
                 else:
                     self.scale_prior_ = self.scale_prior
                 self.scale_posterior_ = np.einsum(
-                    "ij,i->ij",self._covars_, self.dof_posterior_)
+                    "ij,i->ij", self._covars_, self.dof_posterior_
+                )
 
             elif self.covariance_type == "spherical":
                 if self.scale_prior is None:
-                    self.scale_prior_ = np.full((self.n_components, ), 1e-3)
+                    self.scale_prior_ = np.full((self.n_components,), 1e-3)
                 else:
                     self.scale_prior_ = self.scale_prior
-                self.scale_posterior_ = (self._covars_.mean(axis=1)
-                                         * self.dof_posterior_)
+                self.scale_posterior_ = (
+                    self._covars_.mean(axis=1) * self.dof_posterior_
+                )
 
     def _get_n_fit_scalars_per_param(self):
         if self.covariance_type not in COVARIANCE_TYPES:
-            raise ValueError(
-                f"{self.covariance_type} is invalid")
+            raise ValueError(f"{self.covariance_type} is invalid")
         nc = self.n_components
         nf = self._get_n_features()
         return {
@@ -653,7 +713,6 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
                 "tied": 1 + nf * (nf + 1) // 2,
                 "diag": nc + nc * nf,
                 "spherical": nc + nc,
-
             }[self.covariance_type],
         }
 
@@ -678,35 +737,34 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
         # broadcasts fits and predicts.
 
         if self.covariance_type not in COVARIANCE_TYPES:
-            raise ValueError(
-                f"{self.covariance_type} is invalid")
+            raise ValueError(f"{self.covariance_type} is invalid")
 
         nf = self._get_n_features()
         means_shape = (self.n_components, nf)
 
         if self.means_prior_.shape != means_shape:
             raise ValueError(
-                "means_prior_ have shape (n_components, n_features)")
+                "means_prior_ have shape (n_components, n_features)"
+            )
         if self.means_posterior_.shape != means_shape:
             raise ValueError(
-                "means_posterior_ must have shape (n_components, n_features)")
+                "means_posterior_ must have shape (n_components, n_features)"
+            )
 
         if self.beta_prior_.shape != (self.n_components,):
-            raise ValueError(
-                "beta_prior_ have shape (n_components,)")
+            raise ValueError("beta_prior_ have shape (n_components,)")
 
         if self.beta_posterior_.shape != (self.n_components,):
-            raise ValueError(
-                "beta_posterior_ must have shape (n_components,)")
+            raise ValueError("beta_posterior_ must have shape (n_components,)")
 
         if self.covariance_type in ("full", "diag", "spherical"):
             if np.shape(self.dof_prior_) != (self.n_components,):
-                raise ValueError(
-                    "dof_prior_ have shape (n_components,)")
+                raise ValueError("dof_prior_ have shape (n_components,)")
 
             if np.shape(self.dof_posterior_) != (self.n_components,):
                 raise ValueError(
-                    "dof_posterior_ must have shape (n_components,)")
+                    "dof_posterior_ must have shape (n_components,)"
+                )
 
         elif self.covariance_type == "tied":
             if not isinstance(self.dof_prior_, numbers.Number):
@@ -722,15 +780,19 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
         elif self.covariance_type == "diag":
             expected = (self.n_components, nf)
         elif self.covariance_type == "spherical":
-            expected = (self.n_components, )
+            expected = (self.n_components,)
         # Now check the W's
         if self.scale_prior_.shape != expected:
-            raise ValueError(f"scale_prior_ must have shape {expected}, "
-                             f"found {self.scale_prior_.shape}")
+            raise ValueError(
+                f"scale_prior_ must have shape {expected}, "
+                f"found {self.scale_prior_.shape}"
+            )
 
         if self.scale_posterior_.shape != expected:
-            raise ValueError(f"scale_posterior_ must have shape {expected}, "
-                             f"found {self.scale_posterior_.shape}")
+            raise ValueError(
+                f"scale_posterior_ must have shape {expected}, "
+                f"found {self.scale_posterior_.shape}"
+            )
 
         # Both fit and a prediction read the means. An infinite mean is
         # refused by fit alone (_store_checked): on a prediction it is a
@@ -739,9 +801,15 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
 
     def _store_checked(self):
         super()._store_checked()
-        for name in ("means_prior_", "means_posterior_", "beta_prior_",
-                     "dof_prior_", "dof_posterior_", "scale_prior_",
-                     "scale_posterior_"):
+        for name in (
+            "means_prior_",
+            "means_posterior_",
+            "beta_prior_",
+            "dof_prior_",
+            "dof_posterior_",
+            "scale_prior_",
+            "scale_posterior_",
+        ):
             self._check_finite(name, getattr(self, name))
         # With "m" in params the first M-step replaces beta_posterior_,
         # and an infinite value gives a finite fit.
@@ -765,8 +833,11 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
         scale_posterior_ = self.scale_posterior_
         if self.covariance_type in ("diag", "spherical"):
             scale_posterior_ = fill_covars(
-                self.scale_posterior_, self.covariance_type,
-                self.n_components, self._get_n_features())
+                self.scale_posterior_,
+                self.covariance_type,
+                self.n_components,
+                self._get_n_features(),
+            )
         try:
             with np.errstate(all="ignore"):
                 W_k = np.linalg.inv(scale_posterior_)
@@ -787,16 +858,20 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
         nf = self._get_n_features()
 
         term1 = special.digamma(
-            .5 * (self.dof_posterior_ - np.arange(0, nf)[:, None])
+            0.5 * (self.dof_posterior_ - np.arange(0, nf)[:, None])
         ).sum(axis=0)
 
         scale_posterior_ = self.scale_posterior_
         if self.covariance_type in ("diag", "spherical"):
-            scale_posterior_ = fill_covars(self.scale_posterior_,
-                    self.covariance_type, self.n_components, nf)
+            scale_posterior_ = fill_covars(
+                self.scale_posterior_,
+                self.covariance_type,
+                self.n_components,
+                nf,
+            )
         W_k = np.linalg.inv(scale_posterior_)
         term1 += nf * np.log(2) + _utils.logdet(W_k)
-        term1 /= 2.
+        term1 /= 2.0
 
         # We ignore the constant that is typically excluded in the literature
         # term2 = self.n_features * log(2 * M_PI) / 2
@@ -804,18 +879,20 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
         term3 = nf / self.beta_posterior_
 
         # (X - Means) * W_k * (X-Means)^T * self.dof_posterior_
-        delta = (X - self.means_posterior_[:, None])
+        delta = X - self.means_posterior_[:, None]
         # c is the HMM Component
         # i is the length of the sequence X
         # j, k are the n_features
         # output shape is length * number of components
         if self.covariance_type in ("full", "diag", "spherical"):
-            dots = np.einsum("cij,cjk,cik,c->ic",
-                             delta, W_k, delta, self.dof_posterior_)
+            dots = np.einsum(
+                "cij,cjk,cik,c->ic", delta, W_k, delta, self.dof_posterior_
+            )
         elif self.covariance_type == "tied":
-            dots = np.einsum("cij,jk,cik,->ic",
-                             delta, W_k, delta, self.dof_posterior_)
-        last_term = .5 * (dots + term3)
+            dots = np.einsum(
+                "cij,jk,cik,->ic", delta, W_k, delta, self.dof_posterior_
+            )
+        last_term = 0.5 * (dots + term3)
         lll = term1 - term2 - last_term
         return lll
 
@@ -831,82 +908,103 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
         super()._do_mstep(stats)
 
         if "m" in self.params:
-            self.beta_posterior_ = self.beta_prior_ + stats['post']
-            self.means_posterior_ = np.einsum("i,ij->ij", self.beta_prior_,
-                                              self.means_prior_)
-            self.means_posterior_ += stats['obs']
+            self.beta_posterior_ = self.beta_prior_ + stats["post"]
+            self.means_posterior_ = np.einsum(
+                "i,ij->ij", self.beta_prior_, self.means_prior_
+            )
+            self.means_posterior_ += stats["obs"]
             self.means_posterior_ /= self.beta_posterior_[:, None]
 
         if "c" in self.params:
             if self.covariance_type == "full":
                 # Update DOF
-                self.dof_posterior_ = self.dof_prior_ + stats['post']
+                self.dof_posterior_ = self.dof_prior_ + stats["post"]
                 # Update scale
                 self.scale_posterior_ = (
                     self.scale_prior_
-                    + stats['obs*obs.T']
-                    + np.einsum("c,ci,cj->cij",
-                                self.beta_prior_,
-                                self.means_prior_,
-                                self.means_prior_)
-                    - np.einsum("c,ci,cj->cij",
-                                self.beta_posterior_,
-                                self.means_posterior_,
-                                self.means_posterior_))
-                self._covars_ = (self.scale_posterior_
-                                 / self.dof_posterior_[:, None, None])
+                    + stats["obs*obs.T"]
+                    + np.einsum(
+                        "c,ci,cj->cij",
+                        self.beta_prior_,
+                        self.means_prior_,
+                        self.means_prior_,
+                    )
+                    - np.einsum(
+                        "c,ci,cj->cij",
+                        self.beta_posterior_,
+                        self.means_posterior_,
+                        self.means_posterior_,
+                    )
+                )
+                self._covars_ = (
+                    self.scale_posterior_ / self.dof_posterior_[:, None, None]
+                )
             elif self.covariance_type == "tied":
                 # Update DOF
-                self.dof_posterior_ = self.dof_prior_ + stats['post'].sum()
+                self.dof_posterior_ = self.dof_prior_ + stats["post"].sum()
                 # Update scale
                 self.scale_posterior_ = (
                     self.scale_prior_
-                    + stats['obs*obs.T'].sum(axis=0)
-                    + np.einsum("c,ci,cj->ij",
-                                self.beta_prior_,
-                                self.means_prior_,
-                                self.means_prior_)
-                    - np.einsum("c,ci,cj->ij",
-                                self.beta_posterior_,
-                                self.means_posterior_,
-                                self.means_posterior_))
+                    + stats["obs*obs.T"].sum(axis=0)
+                    + np.einsum(
+                        "c,ci,cj->ij",
+                        self.beta_prior_,
+                        self.means_prior_,
+                        self.means_prior_,
+                    )
+                    - np.einsum(
+                        "c,ci,cj->ij",
+                        self.beta_posterior_,
+                        self.means_posterior_,
+                        self.means_posterior_,
+                    )
+                )
                 self._covars_ = self.scale_posterior_ / self.dof_posterior_
             elif self.covariance_type == "diag":
                 # Update DOF
-                self.dof_posterior_ = self.dof_prior_ + stats['post']
+                self.dof_posterior_ = self.dof_prior_ + stats["post"]
                 # Update scale
                 self.scale_posterior_ = (
                     self.scale_prior_
-                    + stats['obs**2']
-                    + np.einsum("c,ci,ci->ci",
-                                self.beta_prior_,
-                                self.means_prior_,
-                                self.means_prior_)
-                    - np.einsum("c,ci,ci->ci",
-                                self.beta_posterior_,
-                                self.means_posterior_,
-                                self.means_posterior_))
-                self._covars_ = (self.scale_posterior_
-                                 / self.dof_posterior_[:, None])
+                    + stats["obs**2"]
+                    + np.einsum(
+                        "c,ci,ci->ci",
+                        self.beta_prior_,
+                        self.means_prior_,
+                        self.means_prior_,
+                    )
+                    - np.einsum(
+                        "c,ci,ci->ci",
+                        self.beta_posterior_,
+                        self.means_posterior_,
+                        self.means_posterior_,
+                    )
+                )
+                self._covars_ = (
+                    self.scale_posterior_ / self.dof_posterior_[:, None]
+                )
             elif self.covariance_type == "spherical":
                 # Update DOF
-                self.dof_posterior_ = self.dof_prior_ + stats['post']
+                self.dof_posterior_ = self.dof_prior_ + stats["post"]
                 # Update scale
-                term2 = (stats['obs**2']
-                         + np.einsum("c,ci,ci->ci",
-                                     self.beta_prior_,
-                                     self.means_prior_,
-                                     self.means_prior_)
-                         - np.einsum("c,ci,ci->ci",
-                                     self.beta_posterior_,
-                                     self.means_posterior_,
-                                     self.means_posterior_))
-                self.scale_posterior_ = (
-                    self.scale_prior_
-                    + term2.mean(axis=1))
+                term2 = (
+                    stats["obs**2"]
+                    + np.einsum(
+                        "c,ci,ci->ci",
+                        self.beta_prior_,
+                        self.means_prior_,
+                        self.means_prior_,
+                    )
+                    - np.einsum(
+                        "c,ci,ci->ci",
+                        self.beta_posterior_,
+                        self.means_posterior_,
+                        self.means_posterior_,
+                    )
+                )
+                self.scale_posterior_ = self.scale_prior_ + term2.mean(axis=1)
                 self.scale_posterior_ = self.scale_posterior_
-                self._covars_ = (self.scale_posterior_
-                                 / self.dof_posterior_)
+                self._covars_ = self.scale_posterior_ / self.dof_posterior_
 
     def _compute_lower_bound(self, log_prob):
 
@@ -923,10 +1021,15 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
         scale_posterior_ = self.scale_posterior_
         scale_prior_ = self.scale_prior_
         if self.covariance_type != "full":
-            scale_posterior_ = fill_covars(self.scale_posterior_,
-                    self.covariance_type, self.n_components, nf)
-            scale_prior_ = fill_covars(self.scale_prior_,
-                    self.covariance_type, self.n_components, nf)
+            scale_posterior_ = fill_covars(
+                self.scale_posterior_,
+                self.covariance_type,
+                self.n_components,
+                nf,
+            )
+            scale_prior_ = fill_covars(
+                self.scale_prior_, self.covariance_type, self.n_components, nf
+            )
 
         W_k = np.linalg.inv(scale_posterior_)
 
@@ -941,22 +1044,30 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
             term1 = np.linalg.inv(self.beta_posterior_[i] * precision)
             term2 = np.linalg.inv(self.beta_prior_[i] * precision)
             kln = _kl.kl_multivariate_normal_distribution(
-                self.means_posterior_[i], term1,
-                self.means_prior_[i], term2,
+                self.means_posterior_[i],
+                term1,
+                self.means_prior_[i],
+                term2,
             )
             emissions_lower_bound -= kln
             # KL for the wishart distributions
-            klw = 0.
+            klw = 0.0
             if self.covariance_type in ("full", "diag", "spherical"):
                 klw = _kl.kl_wishart_distribution(
-                    self.dof_posterior_[i], scale_posterior_[i],
-                    self.dof_prior_[i], scale_prior_[i])
+                    self.dof_posterior_[i],
+                    scale_posterior_[i],
+                    self.dof_prior_[i],
+                    scale_prior_[i],
+                )
             elif self.covariance_type == "tied":
                 # Just compute it for the first component
                 if i == 0:
                     klw = _kl.kl_wishart_distribution(
-                       self.dof_posterior_, self.scale_posterior_,
-                       self.dof_prior_, self.scale_prior_)
+                        self.dof_posterior_,
+                        self.scale_posterior_,
+                        self.dof_prior_,
+                        self.scale_prior_,
+                    )
                 else:
                     klw = 0
 
@@ -964,7 +1075,7 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
         return lower_bound + emissions_lower_bound
 
     def _needs_sufficient_statistics_for_mean(self):
-        return 'm' in self.params or 'c' in self.params
+        return "m" in self.params or "c" in self.params
 
     def _needs_sufficient_statistics_for_covars(self):
-        return 'c' in self.params
+        return "c" in self.params

@@ -28,7 +28,7 @@ class Benchmark:
             cloned = sklearn.base.clone(model)
             cloned.fit(sequences, lengths)
             end = time.time()
-            elapsed.append(end-start)
+            elapsed.append(end - start)
             self.log_one_run(start, end, cloned, tag)
         return np.asarray(elapsed)
 
@@ -54,24 +54,25 @@ class Benchmark:
         with open(results_file, mode="w") as fd:
             fd.write("configuration,mean,std,n_iterations,repeat\n")
             for key, value in runtimes.items():
-                fd.write(f"{key},{value['mean']},{value['std']},"
-                         f"{self.n_iter},{self.repeat}\n")
+                fd.write(
+                    f"{key},{value['mean']},{value['std']},"
+                    f"{self.n_iter},{self.repeat}\n"
+                )
 
     def log_one_run(self, start, end, model, tag):
-        LOG.info(f"Training Took {end-start} seconds {tag}")
+        LOG.info(f"Training Took {end - start} seconds {tag}")
         LOG.info(f"startprob={model.startprob_}")
         LOG.info(f"transmat={model.transmat_}")
 
 
 class GaussianBenchmark(Benchmark):
-
     def new_model(self, implementation):
         return hmmcraft.hmm.GaussianHMM(
             n_components=4,
             n_iter=self.n_iter,
             covariance_type="full",
             implementation=implementation,
-            verbose=self.verbose
+            verbose=self.verbose,
         )
 
     def generate_training_sequences(self):
@@ -79,28 +80,24 @@ class GaussianBenchmark(Benchmark):
             n_components=4,
             covariance_type="full",
             init_params="",
-            verbose=self.verbose
+            verbose=self.verbose,
         )
 
         sampler.startprob_ = np.asarray([0, 0, 0, 1])
-        sampler.transmat_ = np.asarray([
-            [.2, .2, .3, .3],
-            [.3, .2, .2, .3],
-            [.2, .3, .3, .2],
-            [.3, .3, .2, .2],
-        ])
-        sampler.means_ = np.asarray([
-            -1.5,
-            0,
-            1.5,
-            3
-        ]).reshape(4, 1)
-        sampler.covars_ = np.asarray([
-            .5,
-            .5,
-            .5,
-            .5
-        ]).reshape(4, 1, 1,)
+        sampler.transmat_ = np.asarray(
+            [
+                [0.2, 0.2, 0.3, 0.3],
+                [0.3, 0.2, 0.2, 0.3],
+                [0.2, 0.3, 0.3, 0.2],
+                [0.3, 0.3, 0.2, 0.2],
+            ]
+        )
+        sampler.means_ = np.asarray([-1.5, 0, 1.5, 3]).reshape(4, 1)
+        sampler.covars_ = np.asarray([0.5, 0.5, 0.5, 0.5]).reshape(
+            4,
+            1,
+            1,
+        )
 
         sequences, _states = sampler.sample(50000)
         lengths = [len(sequences)]
@@ -113,28 +110,29 @@ class GaussianBenchmark(Benchmark):
 
 
 class CategoricalBenchmark(Benchmark):
-
     def new_model(self, implementation):
         return hmmcraft.hmm.CategoricalHMM(
-                n_components=3,
-                n_iter=self.n_iter,
-                verbose=self.verbose,
-                implementation=implementation
-            )
+            n_components=3,
+            n_iter=self.n_iter,
+            verbose=self.verbose,
+            implementation=implementation,
+        )
 
     def generate_training_sequences(self):
 
         sampler = hmmcraft.hmm.CategoricalHMM(n_components=3)
         sampler.startprob_ = np.array([0.6, 0.3, 0.1])
-        sampler.transmat_ = np.array([[0.6, 0.2, 0.2],
-                             [0.3, 0.5, 0.2],
-                             [0.4, 0.3, 0.3]])
+        sampler.transmat_ = np.array(
+            [[0.6, 0.2, 0.2], [0.3, 0.5, 0.2], [0.4, 0.3, 0.3]]
+        )
 
-        sampler.emissionprob_ = np.array([
-            [.1, .5, .1, .3],
-            [.1, .2, .4, .3],
-            [0, .5, .5, .0],
-        ])
+        sampler.emissionprob_ = np.array(
+            [
+                [0.1, 0.5, 0.1, 0.3],
+                [0.1, 0.2, 0.4, 0.3],
+                [0, 0.5, 0.5, 0.0],
+            ]
+        )
 
         sequences, _states = sampler.sample(50000)
         lengths = [len(sequences)]
@@ -148,35 +146,27 @@ class CategoricalBenchmark(Benchmark):
 class MultivariateGaussianBenchmark(GaussianBenchmark):
     def generate_training_sequences(self):
         sampler = hmmcraft.hmm.GaussianHMM(
-            n_components=4,
-            covariance_type="full",
-            init_params=""
+            n_components=4, covariance_type="full", init_params=""
         )
 
         sampler.startprob_ = np.asarray([0, 0, 0, 1])
-        sampler.transmat_ = np.asarray([
-            [.2, .2, .3, .3],
-            [.3, .2, .2, .3],
-            [.2, .3, .3, .2],
-            [.3, .3, .2, .2],
-        ])
-        sampler.means_ = np.asarray([
-            [-1.5, 0],
-            [0,  0],
-            [1.5, 0],
-            [3, 0]
-        ])
-        sampler.covars_ = np.asarray([
-            [[.5, 0],
-             [0, .5]],
-            [[.5, 0],
-             [0, 0.5]],
-
-            [[.5, 0],
-             [0, .5]],
-            [[0.5, 0],
-             [0, 0.5]],
-        ])
+        sampler.transmat_ = np.asarray(
+            [
+                [0.2, 0.2, 0.3, 0.3],
+                [0.3, 0.2, 0.2, 0.3],
+                [0.2, 0.3, 0.3, 0.2],
+                [0.3, 0.3, 0.2, 0.2],
+            ]
+        )
+        sampler.means_ = np.asarray([[-1.5, 0], [0, 0], [1.5, 0], [3, 0]])
+        sampler.covars_ = np.asarray(
+            [
+                [[0.5, 0], [0, 0.5]],
+                [[0.5, 0], [0, 0.5]],
+                [[0.5, 0], [0, 0.5]],
+                [[0.5, 0], [0, 0.5]],
+            ]
+        )
 
         observed, _hidden = sampler.sample(50000)
         lengths = [len(observed)]
@@ -186,38 +176,39 @@ class MultivariateGaussianBenchmark(GaussianBenchmark):
 class GMMBenchmark(GaussianBenchmark):
     def generate_training_sequences(self):
         sampler = hmmcraft.hmm.GMMHMM(
-            n_components=4,
-            n_mix=3,
-            covariance_type="full",
-            init_params=""
+            n_components=4, n_mix=3, covariance_type="full", init_params=""
         )
 
-        sampler.startprob_ = [.25, .25, .25, .25]
+        sampler.startprob_ = [0.25, 0.25, 0.25, 0.25]
         sampler.transmat_ = [
-            [.1, .3, .3, .3],
-            [.3, .1, .3, .3],
-            [.3, .3, .1, .3],
-            [.3, .3, .3, .1],
+            [0.1, 0.3, 0.3, 0.3],
+            [0.3, 0.1, 0.3, 0.3],
+            [0.3, 0.3, 0.1, 0.3],
+            [0.3, 0.3, 0.3, 0.1],
         ]
         sampler.weights_ = [
-            [.2, .2, .6],
-            [.6, .2, .2],
-            [.2, .6, .2],
-            [.1, .1, .8],
+            [0.2, 0.2, 0.6],
+            [0.6, 0.2, 0.2],
+            [0.2, 0.6, 0.2],
+            [0.1, 0.1, 0.8],
         ]
-        sampler.means_ = np.asarray([
-            [[-10], [-12], [-9]],
-            [[-5], [-4], [-3]],
-            [[-1.5], [0], [1.5]],
-            [[5], [7], [9]],
-        ])
+        sampler.means_ = np.asarray(
+            [
+                [[-10], [-12], [-9]],
+                [[-5], [-4], [-3]],
+                [[-1.5], [0], [1.5]],
+                [[5], [7], [9]],
+            ]
+        )
 
-        sampler.covars_ = np.asarray([
-            [[[.125]], [[.125]], [[.125]]],
-            [[[.125]], [[.125]], [[.125]]],
-            [[[.125]], [[.125]], [[.125]]],
-            [[[.125]], [[.125]], [[.125]]],
-        ])
+        sampler.covars_ = np.asarray(
+            [
+                [[[0.125]], [[0.125]], [[0.125]]],
+                [[[0.125]], [[0.125]], [[0.125]]],
+                [[[0.125]], [[0.125]], [[0.125]]],
+                [[[0.125]], [[0.125]], [[0.125]]],
+            ]
+        )
 
         n_sequences = 10
         length = 5_000
@@ -233,7 +224,7 @@ class GMMBenchmark(GaussianBenchmark):
             n_iter=self.n_iter,
             covariance_type="full",
             verbose=self.verbose,
-            implementation=implementation
+            implementation=implementation,
         )
 
     def log_one_run(self, start, end, model, tag):
@@ -291,7 +282,7 @@ def main():
 
 if __name__ == "__main__":
     logging.basicConfig(
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        level=logging.DEBUG
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        level=logging.DEBUG,
     )
     main()

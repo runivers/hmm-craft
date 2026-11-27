@@ -44,16 +44,24 @@ Report a security problem as described in `SECURITY.md`, not in an issue.
        python -m coverage report
 
 3. Keep every Python line under 80 characters, as upstream does. CI also runs
-   `ruff check .` (pyflakes and syntax errors) and a check that no other
-   style finding is added to a file. With the ruff version CI uses
+   `ruff check .` (pyflakes and syntax errors), `ruff format --check .` (the
+   formatter's style) and a check that no other style finding is added to a
+   file. With the ruff version CI uses
    (`pip install --require-hashes -r ci/lint_requirements.txt`; another
-   version can count differently):
+   version can count or format differently):
 
        ruff check .
+       ruff format --check .
        python3 -I scripts/check_ruff_baseline.py
 
-   Both must pass. `ci/ruff_baseline.json` is empty, so the second check fails
-   on any finding of its rules: fix the finding; the baseline does not rise.
+   All three must pass. `ruff format .` fixes a format failure. The format
+   check also covers Python code blocks in Markdown files. The last check
+   fails on any finding of its rules, as `ci/ruff_baseline.json` is empty: fix
+   the finding; the baseline does not rise.
+
+   The formatting commit is listed in `.git-blame-ignore-revs`; `git config
+   blame.ignoreRevsFile .git-blame-ignore-revs` makes local `git blame` skip
+   it.
 4. Sign off every commit with `git commit -s`. The line `Signed-off-by: Your
    Name <you@example.com>` certifies the
    [Developer Certificate of Origin](https://developercertificate.org/): you

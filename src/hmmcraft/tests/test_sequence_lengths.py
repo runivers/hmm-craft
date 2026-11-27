@@ -8,8 +8,13 @@ from hmmcraft.vhmm import VariationalCategoricalHMM, VariationalGaussianHMM
 
 
 def new_hmm(implementation):
-    h = CategoricalHMM(1, n_features=2, init_params="", n_iter=1,
-                       implementation=implementation)
+    h = CategoricalHMM(
+        1,
+        n_features=2,
+        init_params="",
+        n_iter=1,
+        implementation=implementation,
+    )
     h.startprob_ = np.ones(1)
     h.transmat_ = np.ones((1, 1))
     h.emissionprob_ = np.array([[0.5, 0.5]])
@@ -17,13 +22,32 @@ def new_hmm(implementation):
 
 
 @pytest.mark.parametrize("implementation", ["log", "scaling"])
-@pytest.mark.parametrize("method", [
-    "fit", "score", "score_samples", "decode", "predict", "predict_proba",
-])
-@pytest.mark.parametrize("lengths", [
-    [], [0, 2], [1, 0, 1], [2, 0], [-1, 3], [3, -1],
-    [0.5, 1.5], [1., 1.], [[1, 1]], [True, True],
-])
+@pytest.mark.parametrize(
+    "method",
+    [
+        "fit",
+        "score",
+        "score_samples",
+        "decode",
+        "predict",
+        "predict_proba",
+    ],
+)
+@pytest.mark.parametrize(
+    "lengths",
+    [
+        [],
+        [0, 2],
+        [1, 0, 1],
+        [2, 0],
+        [-1, 3],
+        [3, -1],
+        [0.5, 1.5],
+        [1.0, 1.0],
+        [[1, 1]],
+        [True, True],
+    ],
+)
 def test_invalid_sequence_lengths(implementation, method, lengths):
     h = new_hmm(implementation)
     with pytest.raises(ValueError, match="positive integers"):
@@ -31,9 +55,16 @@ def test_invalid_sequence_lengths(implementation, method, lengths):
 
 
 @pytest.mark.parametrize("implementation", ["log", "scaling"])
-@pytest.mark.parametrize("lengths", [
-    None, [2], [1, 1], (1, 1), np.array([1, 1], dtype=np.uint8),
-])
+@pytest.mark.parametrize(
+    "lengths",
+    [
+        None,
+        [2],
+        [1, 1],
+        (1, 1),
+        np.array([1, 1], dtype=np.uint8),
+    ],
+)
 def test_valid_sequence_lengths(implementation, lengths):
     h = new_hmm(implementation)
     X = np.array([[0], [1]])
@@ -52,23 +83,36 @@ def test_sequence_lengths_sum_mismatch():
         h.score(np.array([[0], [1]]), [1])
 
 
-@pytest.mark.parametrize("lengths", [
-    np.array([2**64 - 1, 3], dtype=np.uint64),
-    np.array([2**63 - 1, 2**63 - 1, 4], dtype=np.int64),
-    [2**63 - 1, 2**63 - 1, 4],
-])
+@pytest.mark.parametrize(
+    "lengths",
+    [
+        np.array([2**64 - 1, 3], dtype=np.uint64),
+        np.array([2**63 - 1, 2**63 - 1, 4], dtype=np.int64),
+        [2**63 - 1, 2**63 - 1, 4],
+    ],
+)
 def test_sequence_lengths_overflow(lengths):
     with pytest.raises(ValueError, match="doesn't sum to 2 samples"):
         _utils.split_X_lengths(np.array([[0], [1]]), lengths)
 
 
 @pytest.mark.parametrize("implementation", ["log", "scaling"])
-@pytest.mark.parametrize("method", [
-    "fit", "score", "score_samples", "decode", "predict", "predict_proba",
-    "aic", "bic",
-])
+@pytest.mark.parametrize(
+    "method",
+    [
+        "fit",
+        "score",
+        "score_samples",
+        "decode",
+        "predict",
+        "predict_proba",
+        "aic",
+        "bic",
+    ],
+)
 def test_overflow_lengths_rejected_before_inference(
-        monkeypatch, implementation, method):
+    monkeypatch, implementation, method
+):
     def unexpected_native_call(*args):
         pytest.fail("invalid lengths reached native inference")
 
@@ -80,15 +124,29 @@ def test_overflow_lengths_rejected_before_inference(
         getattr(h, method)(np.array([[0], [1]]), lengths)
 
 
-@pytest.mark.parametrize("model", [
-    lambda: CategoricalHMM(2, n_features=2, n_iter=0, random_state=0),
-    lambda: VariationalCategoricalHMM(2, n_features=2, random_state=0),
-    lambda: VariationalGaussianHMM(2, random_state=0),
-], ids=["categorical-n_iter-0", "variational-categorical",
-        "variational-gaussian"])
-@pytest.mark.parametrize("lengths", [
-    [0, 4], [5, -1], [2.0, 2.0], [[2, 2]], 4,
-])
+@pytest.mark.parametrize(
+    "model",
+    [
+        lambda: CategoricalHMM(2, n_features=2, n_iter=0, random_state=0),
+        lambda: VariationalCategoricalHMM(2, n_features=2, random_state=0),
+        lambda: VariationalGaussianHMM(2, random_state=0),
+    ],
+    ids=[
+        "categorical-n_iter-0",
+        "variational-categorical",
+        "variational-gaussian",
+    ],
+)
+@pytest.mark.parametrize(
+    "lengths",
+    [
+        [0, 4],
+        [5, -1],
+        [2.0, 2.0],
+        [[2, 2]],
+        4,
+    ],
+)
 def test_fit_refuses_invalid_lengths_before_its_start(model, lengths):
     """``fit`` checks ``lengths`` before it computes a start or iterates."""
     with pytest.raises(ValueError, match="positive integers"):

@@ -36,7 +36,7 @@ def _loop_platform(machine, maxsize):
     # gives those bytes where numpy's own loop is compiled to do the same;
     # the tests compare the two on 64-bit x86, so the loop is used there and
     # numpy.einsum everywhere else.
-    return machine in ("x86_64", "AMD64") and maxsize > 2 ** 32
+    return machine in ("x86_64", "AMD64") and maxsize > 2**32
 
 
 _STATISTIC_LOOP = _loop_platform(platform.machine(), sys.maxsize)
@@ -52,32 +52,40 @@ def _weighted_outer_sum(posteriors, X):
     # is left to numpy: with a single output entry it adds the samples in
     # pieces, another order. numpy's einsum reports no floating-point error
     # in any error state, and neither does the loop.
-    if (_STATISTIC_LOOP
-            and _read_as_is(posteriors, 2) and _read_as_is(X, 2)
-            and len(posteriors) == len(X)
-            and posteriors.shape[1] * X.shape[1] > 1):
+    if (
+        _STATISTIC_LOOP
+        and _read_as_is(posteriors, 2)
+        and _read_as_is(X, 2)
+        and len(posteriors) == len(X)
+        and posteriors.shape[1] * X.shape[1] > 1
+    ):
         stat = _emissionsc.weighted_outer_sum(posteriors, X)
         # None: an entry is not finite. numpy then gives its own values.
         if stat is not None:
             return stat
-    return np.einsum('ij,ik,il->jkl', posteriors, X, X)
+    return np.einsum("ij,ik,il->jkl", posteriors, X, X)
 
 
 _INT64 = np.dtype(np.int64)
 # The most entries of the (rows, n_components, n_features) arrays one
 # multinomial call makes: two arrays of 2 MiB.
-_MULTINOMIAL_ENTRIES = 2 ** 18
+_MULTINOMIAL_ENTRIES = 2**18
 # The mixture hooks whose values GMMHMM's statistics may read back from its
 # likelihood in an E-step: only while none of them is replaced.
-_GMM_HOOKS = ("_compute_log_weighted_gaussian_densities",
-              "_compute_log_likelihood", "_accumulate_sufficient_statistics")
+_GMM_HOOKS = (
+    "_compute_log_weighted_gaussian_densities",
+    "_compute_log_likelihood",
+    "_accumulate_sufficient_statistics",
+)
 
 
 def _special_reports_nothing():
     """Whether scipy.special is set to report no error of its functions."""
-    return all(action == "ignore"
-               for kind, action in special.geterr().items()
-               if kind != "memory")
+    return all(
+        action == "ignore"
+        for kind, action in special.geterr().items()
+        if kind != "memory"
+    )
 
 
 def _states_with_nan(values):
@@ -87,10 +95,12 @@ def _states_with_nan(values):
 
 def _poisson_direct(X, lambdas, n_components):
     """Whether xlogy and gammaln stand for scipy.stats.poisson here."""
-    return ((_read_as_is(X, 2, _INT64) or _read_as_is(X, 2))
-            and _read_as_is(lambdas, 2)
-            and lambdas.shape == (n_components, X.shape[1])
-            and _special_reports_nothing())
+    return (
+        (_read_as_is(X, 2, _INT64) or _read_as_is(X, 2))
+        and _read_as_is(lambdas, 2)
+        and lambdas.shape == (n_components, X.shape[1])
+        and _special_reports_nothing()
+    )
 
 
 def _are_counts(X):
@@ -102,10 +112,13 @@ def _are_counts(X):
 
 def _multinomial_together(X, emissionprob, n_components):
     """Whether one scipy.stats call scores X against every state here."""
-    return (_read_as_is(X, 2, _INT64) and _read_as_is(emissionprob, 2)
-            and emissionprob.shape == (n_components, X.shape[1])
-            and emissionprob.size <= _MULTINOMIAL_ENTRIES
-            and _special_reports_nothing())
+    return (
+        _read_as_is(X, 2, _INT64)
+        and _read_as_is(emissionprob, 2)
+        and emissionprob.shape == (n_components, X.shape[1])
+        and emissionprob.size <= _MULTINOMIAL_ENTRIES
+        and _special_reports_nothing()
+    )
 
 
 def _multinomial_logpmf(X, n_trials, emissionprob):
@@ -118,8 +131,10 @@ def _multinomial_logpmf(X, n_trials, emissionprob):
     for start in range(0, len(X), rows):
         stop = start + rows
         logprobs[start:stop] = multinomial.logpmf(
-            X[start:stop, None, :], n=n_trials[start:stop, None],
-            p=emissionprob[None, :, :])
+            X[start:stop, None, :],
+            n=n_trials[start:stop, None],
+            p=emissionprob[None, :, :],
+        )
     return logprobs
 
 
@@ -134,7 +149,8 @@ def _n_features_of(model, name):
     """
     if not hasattr(model, name):
         raise ValueError(
-            f"the number of features is unknown: set {name} or n_features")
+            f"the number of features is unknown: set {name} or n_features"
+        )
     return np.atleast_2d(getattr(model, name)).shape[1]
 
 
@@ -142,7 +158,8 @@ def _check_X_n_features(X, n_features):
     """Check that ``X`` has one column per feature."""
     if X.shape[1] != n_features:
         raise ValueError(
-            f"X must have n_features={n_features} columns, got {X.shape[1]}")
+            f"X must have n_features={n_features} columns, got {X.shape[1]}"
+        )
 
 
 def _check_X_counts(X):
@@ -154,7 +171,8 @@ def _check_X_counts(X):
     if invalid.any():
         raise ValueError(
             f"X must contain counts, non-negative whole numbers, "
-            f"got {X[invalid][0]}")
+            f"got {X[invalid][0]}"
+        )
 
 
 def _means_shape(model, name="means_"):
@@ -162,12 +180,12 @@ def _means_shape(model, name="means_"):
     means = getattr(model, name, None)
     if means is None:
         raise ValueError(
-            f"the number of features is unknown: set {name} or n_features")
+            f"the number of features is unknown: set {name} or n_features"
+        )
     return np.shape(means)
 
 
 class BaseCategoricalHMM(_AbstractHMM):
-
     # A refused fit puts nothing back: n_features is tested with <=, so a
     # later fit with fewer symbols succeeds with the count left.
     _derived_from_X = ()
@@ -176,13 +194,13 @@ class BaseCategoricalHMM(_AbstractHMM):
 
     def __init_subclass__(cls):
         for name in [
-                "decode",
-                "fit",
-                "predict",
-                "predict_proba",
-                "sample",
-                "score",
-                "score_samples",
+            "decode",
+            "fit",
+            "predict",
+            "predict_proba",
+            "sample",
+            "score",
+            "score_samples",
         ]:
             meth = getattr(cls, name)
             doc = inspect.getdoc(meth)
@@ -192,7 +210,8 @@ class BaseCategoricalHMM(_AbstractHMM):
                 wrapper = _make_wrapper(meth)
                 wrapper.__doc__ = (
                     doc.replace("(n_samples, n_features)", "(n_samples, 1)")
-                    + _CATEGORICALHMM_DOC_SUFFIX)
+                    + _CATEGORICALHMM_DOC_SUFFIX
+                )
             setattr(cls, name, wrapper)
 
     def _n_features_from_emissions(self):
@@ -219,13 +238,15 @@ class BaseCategoricalHMM(_AbstractHMM):
             # NumPy reads a boolean array as a mask over the symbols, not as
             # the symbols 0 and 1; fit refuses it too.
             raise ValueError(
-                "X must contain symbols as integers, not booleans")
+                "X must contain symbols as integers, not booleans"
+            )
         n_features = self._get_n_features()
         invalid = (X < 0) | (X >= n_features) | (X % 1 != 0)
         if invalid.any():
             raise ValueError(
                 f"X must contain symbols, whole numbers from 0 to "
-                f"{n_features - 1}, got {X[invalid][0]}")
+                f"{n_features - 1}, got {X[invalid][0]}"
+            )
 
     def _check_and_set_n_features(self, X):
         """
@@ -240,19 +261,22 @@ class BaseCategoricalHMM(_AbstractHMM):
             if self.n_features - 1 < X.max():
                 raise ValueError(
                     f"Largest symbol is {X.max()} but the model only emits "
-                    f"symbols up to {self.n_features - 1}")
+                    f"symbols up to {self.n_features - 1}"
+                )
         else:
             n_features = X.max() + 1
             kept = self._kept_n_features()
             if kept is not None and n_features > kept:
                 raise ValueError(
                     f"Largest symbol is {X.max()} but the model only emits "
-                    f"symbols up to {kept - 1}")
+                    f"symbols up to {kept - 1}"
+                )
             # A kept emission parameter gives the number of symbols, which X
             # may show fewer of; when they are equal the count of X is
             # stored, of its type.
-            self.n_features = (kept if kept is not None and kept > n_features
-                               else n_features)
+            self.n_features = (
+                kept if kept is not None and kept > n_features else n_features
+            )
 
     def _get_n_fit_scalars_per_param(self):
         nc = self.n_components
@@ -274,30 +298,39 @@ class BaseCategoricalHMM(_AbstractHMM):
 
     def _compute_likelihood(self, X):
         if X.shape[1] != 1:
-            warnings.warn("Inputs of shape other than (n_samples, 1) are "
-                          "deprecated.", DeprecationWarning)
+            warnings.warn(
+                "Inputs of shape other than (n_samples, 1) are deprecated.",
+                DeprecationWarning,
+            )
             X = np.concatenate(X)[:, None]
         return self.emissionprob_[:, X.squeeze(1)].T
 
     def _initialize_sufficient_statistics(self):
         stats = super()._initialize_sufficient_statistics()
-        stats['obs'] = np.zeros((self.n_components, self.n_features))
+        stats["obs"] = np.zeros((self.n_components, self.n_features))
         return stats
 
     def _accumulate_sufficient_statistics(
-            self, stats, X, lattice, posteriors, fwdlattice, bwdlattice):
-        super()._accumulate_sufficient_statistics(stats=stats, X=X,
-                                                  lattice=lattice,
-                                                  posteriors=posteriors,
-                                                  fwdlattice=fwdlattice,
-                                                  bwdlattice=bwdlattice)
+        self, stats, X, lattice, posteriors, fwdlattice, bwdlattice
+    ):
+        super()._accumulate_sufficient_statistics(
+            stats=stats,
+            X=X,
+            lattice=lattice,
+            posteriors=posteriors,
+            fwdlattice=fwdlattice,
+            bwdlattice=bwdlattice,
+        )
 
-        if 'e' in self.params:
+        if "e" in self.params:
             if X.shape[1] != 1:
-                warnings.warn("Inputs of shape other than (n_samples, 1) are "
-                              "deprecated.", DeprecationWarning)
+                warnings.warn(
+                    "Inputs of shape other than (n_samples, 1) are "
+                    "deprecated.",
+                    DeprecationWarning,
+                )
                 X = np.concatenate(X)[:, None]
-            np.add.at(stats['obs'].T, X.squeeze(1), posteriors)
+            np.add.at(stats["obs"].T, X.squeeze(1), posteriors)
 
     def _generate_sample_from_state(self, state, random_state=None):
         cdf = np.cumsum(self.emissionprob_[state, :])
@@ -306,7 +339,6 @@ class BaseCategoricalHMM(_AbstractHMM):
 
 
 class BaseGaussianHMM(_AbstractHMM):
-
     # The attribute a caller sets for the means, named in errors.
     _means_name = "means_"
 
@@ -317,16 +349,21 @@ class BaseGaussianHMM(_AbstractHMM):
         # tells whether covars_ is set.
         covars = self._covars_
         # Only the spherical layout needs the number of features.
-        n_features = (self._get_n_features()
-                      if self.covariance_type == "spherical" else None)
-        return fill_covars(covars, self.covariance_type, self.n_components,
-                           n_features)
+        n_features = (
+            self._get_n_features()
+            if self.covariance_type == "spherical"
+            else None
+        )
+        return fill_covars(
+            covars, self.covariance_type, self.n_components, n_features
+        )
 
     @covars_.setter
     def covars_(self, covars):
         covars = np.array(covars, copy=True)
-        _utils._validate_covars(covars, self.covariance_type,
-                                self.n_components)
+        _utils._validate_covars(
+            covars, self.covariance_type, self.n_components
+        )
         self._covars_ = covars
 
     def _n_features_from_emissions(self):
@@ -335,7 +372,8 @@ class BaseGaussianHMM(_AbstractHMM):
         if len(shape) != 2 or shape[0] != self.n_components:
             raise ValueError(
                 f"{name} must have shape (n_components, n_features) with "
-                f"n_components={self.n_components}, actual shape: {shape}")
+                f"n_components={self.n_components}, actual shape: {shape}"
+            )
         return shape[1]
 
     def _check_X(self, X):
@@ -363,12 +401,15 @@ class BaseGaussianHMM(_AbstractHMM):
         # used while _covars_ is the array they were computed from.
         held = self._estep_factors
         if held is not None and held[0] is self._covars_:
-            density = (_log_multivariate_normal_density_tied
-                       if self.covariance_type == "tied"
-                       else _log_multivariate_normal_density_full)
+            density = (
+                _log_multivariate_normal_density_tied
+                if self.covariance_type == "tied"
+                else _log_multivariate_normal_density_full
+            )
             return density(X, self.means_, held[0], factors=held[1])
         return log_multivariate_normal_density(
-            X, self.means_, self._covars_, self.covariance_type)
+            X, self.means_, self._covars_, self.covariance_type
+        )
 
     def _lattice_by_rows(self, X):
         # The C++ density loop and the numpy expression both compute row by
@@ -377,38 +418,48 @@ class BaseGaussianHMM(_AbstractHMM):
         if self.covariance_type not in ("spherical", "diag"):
             return False
         means, covars = self.means_, self._covars_
-        return (_read_as_is(X, 2) and _read_as_is(means, 2)
-                and _read_as_is(covars, np.ndim(covars))
-                and X.shape[1] == means.shape[1] <= np.getbufsize())
+        return (
+            _read_as_is(X, 2)
+            and _read_as_is(means, 2)
+            and _read_as_is(covars, np.ndim(covars))
+            and X.shape[1] == means.shape[1] <= np.getbufsize()
+        )
 
     def _initialize_sufficient_statistics(self):
         stats = super()._initialize_sufficient_statistics()
-        stats['post'] = np.zeros(self.n_components)
-        stats['obs'] = np.zeros((self.n_components, self.n_features))
-        stats['obs**2'] = np.zeros((self.n_components, self.n_features))
-        if self.covariance_type in ('tied', 'full'):
-            stats['obs*obs.T'] = np.zeros((self.n_components, self.n_features,
-                                           self.n_features))
+        stats["post"] = np.zeros(self.n_components)
+        stats["obs"] = np.zeros((self.n_components, self.n_features))
+        stats["obs**2"] = np.zeros((self.n_components, self.n_features))
+        if self.covariance_type in ("tied", "full"):
+            stats["obs*obs.T"] = np.zeros(
+                (self.n_components, self.n_features, self.n_features)
+            )
         return stats
 
     def _accumulate_sufficient_statistics(
-            self, stats, X, lattice, posteriors, fwdlattice, bwdlattice):
-        super()._accumulate_sufficient_statistics(stats=stats, X=X,
-                                                  lattice=lattice,
-                                                  posteriors=posteriors,
-                                                  fwdlattice=fwdlattice,
-                                                  bwdlattice=bwdlattice)
+        self, stats, X, lattice, posteriors, fwdlattice, bwdlattice
+    ):
+        super()._accumulate_sufficient_statistics(
+            stats=stats,
+            X=X,
+            lattice=lattice,
+            posteriors=posteriors,
+            fwdlattice=fwdlattice,
+            bwdlattice=bwdlattice,
+        )
 
-        if self._needs_sufficient_statistics_for_mean() or \
-           self._needs_sufficient_statistics_for_covars():
-            stats['post'] += posteriors.sum(axis=0)
-            stats['obs'] += posteriors.T @ X
+        if (
+            self._needs_sufficient_statistics_for_mean()
+            or self._needs_sufficient_statistics_for_covars()
+        ):
+            stats["post"] += posteriors.sum(axis=0)
+            stats["obs"] += posteriors.T @ X
 
         if self._needs_sufficient_statistics_for_covars():
-            if self.covariance_type in ('spherical', 'diag'):
-                stats['obs**2'] += posteriors.T @ X**2
-            elif self.covariance_type in ('tied', 'full'):
-                stats['obs*obs.T'] += _weighted_outer_sum(posteriors, X)
+            if self.covariance_type in ("spherical", "diag"):
+                stats["obs**2"] += posteriors.T @ X**2
+            elif self.covariance_type in ("tied", "full"):
+                stats["obs*obs.T"] += _weighted_outer_sum(posteriors, X)
 
     def _needs_sufficient_statistics_for_mean(self):
         """
@@ -431,13 +482,13 @@ class BaseGaussianHMM(_AbstractHMM):
 
 
 class BaseGMMHMM(BaseHMM):
-
     def _n_features_from_emissions(self):
         shape = _means_shape(self)
         if len(shape) != 3:
             raise ValueError(
                 f"means_ must have shape (n_components, n_mix, n_features), "
-                f"actual shape: {shape}")
+                f"actual shape: {shape}"
+            )
         return shape[2]
 
     def _check_X(self, X):
@@ -463,13 +514,16 @@ class BaseGMMHMM(BaseHMM):
     def _compute_log_weighted_gaussian_densities(self, X, i_comp):
         cur_means = self.means_[i_comp]
         cur_covs = self.covars_[i_comp]
-        if self.covariance_type == 'spherical':
+        if self.covariance_type == "spherical":
             cur_covs = cur_covs[:, None]
         log_cur_weights = np.log(self.weights_[i_comp])
 
-        return log_multivariate_normal_density(
-            X, cur_means, cur_covs, self.covariance_type
-        ) + log_cur_weights
+        return (
+            log_multivariate_normal_density(
+                X, cur_means, cur_covs, self.covariance_type
+            )
+            + log_cur_weights
+        )
 
     def _takes_blocks(self, X):
         # A zero weight reports at every call of the likelihood; such a
@@ -486,9 +540,10 @@ class BaseGMMHMM(BaseHMM):
 
     def _hooks_are_own(self):
         """Whether none of the three mixture hooks is replaced here."""
-        return all(getattr(self, name)
-                   == getattr(BaseGMMHMM, name).__get__(self)
-                   for name in _GMM_HOOKS)
+        return all(
+            getattr(self, name) == getattr(BaseGMMHMM, name).__get__(self)
+            for name in _GMM_HOOKS
+        )
 
     def _mixture_log_likelihoods(self, X, parts=None):
         """Each state's log-likelihood; with ``parts``, each state's
@@ -538,14 +593,14 @@ class BaseGMMHMM(BaseHMM):
 
     def _initialize_sufficient_statistics(self):
         stats = super()._initialize_sufficient_statistics()
-        stats['post_mix_sum'] = np.zeros((self.n_components, self.n_mix))
-        stats['post_sum'] = np.zeros(self.n_components)
+        stats["post_mix_sum"] = np.zeros((self.n_components, self.n_mix))
+        stats["post_sum"] = np.zeros(self.n_components)
 
-        if 'm' in self.params:
+        if "m" in self.params:
             lambdas, mus = self.means_weight, self.means_prior
-            stats['m_n'] = lambdas[:, :, None] * mus
-        if 'c' in self.params:
-            stats['c_n'] = np.zeros_like(self.covars_)
+            stats["m_n"] = lambdas[:, :, None] * mus
+        if "c" in self.params:
+            stats["c_n"] = np.zeros_like(self.covars_)
 
         # These statistics are stored in arrays and updated in-place.
         # We accumulate chunks of data for multiple sequences (aka
@@ -556,8 +611,9 @@ class BaseGMMHMM(BaseHMM):
         # accumulated and fed into _do_mstep.
         return stats
 
-    def _accumulate_sufficient_statistics(self, stats, X, lattice,
-                                          post_comp, fwdlattice, bwdlattice):
+    def _accumulate_sufficient_statistics(
+        self, stats, X, lattice, post_comp, fwdlattice, bwdlattice
+    ):
         super()._accumulate_sufficient_statistics(
             stats, X, lattice, post_comp, fwdlattice, bwdlattice
         )
@@ -570,8 +626,12 @@ class BaseGMMHMM(BaseHMM):
         # centered          (n_samples, n_components, n_mix, n_features)
 
         kept = self._estep_values
-        hit = (kept is not None and len(kept) == 2 and kept[0] is X
-               and kept[1][0] == _reports_as_errors())
+        hit = (
+            kept is not None
+            and len(kept) == 2
+            and kept[0] is X
+            and kept[1][0] == _reports_as_errors()
+        )
         if hit:
             # What _compute_log_likelihood kept for this sequence in this
             # error state, read once: computing it again would give the
@@ -590,7 +650,8 @@ class BaseGMMHMM(BaseHMM):
                 log_denses = log_denses - lse[:, None]
             else:
                 log_denses = self._compute_log_weighted_gaussian_densities(
-                    X, p)
+                    X, p
+                )
                 log_normalize(log_denses, axis=-1)
             with np.errstate(under="ignore"):
                 post_mix[:, p, :] = np.exp(log_denses)
@@ -601,53 +662,57 @@ class BaseGMMHMM(BaseHMM):
         with np.errstate(under="ignore"):
             post_comp_mix = post_comp[:, :, None] * post_mix
 
-        stats['post_mix_sum'] += post_comp_mix.sum(axis=0)
-        stats['post_sum'] += post_comp.sum(axis=0)
+        stats["post_mix_sum"] += post_comp_mix.sum(axis=0)
+        stats["post_sum"] += post_comp.sum(axis=0)
 
-        if 'm' in self.params:  # means stats
-            stats['m_n'] += np.einsum('ijk,il->jkl', post_comp_mix, X)
+        if "m" in self.params:  # means stats
+            stats["m_n"] += np.einsum("ijk,il->jkl", post_comp_mix, X)
 
-        if 'c' in self.params:  # covariance stats
+        if "c" in self.params:  # covariance stats
             centered = X[:, None, None, :] - self.means_
 
             def outer_f(x):  # Outer product over features.
                 return x[..., :, None] * x[..., None, :]
 
-            if self.covariance_type == 'full':
+            if self.covariance_type == "full":
                 centered_dots = outer_f(centered)
-                c_n = np.einsum('ijk,ijklm->jklm', post_comp_mix,
-                                centered_dots)
-            elif self.covariance_type == 'diag':
+                c_n = np.einsum(
+                    "ijk,ijklm->jklm", post_comp_mix, centered_dots
+                )
+            elif self.covariance_type == "diag":
                 centered2 = np.square(centered, out=centered)  # reuse
-                c_n = np.einsum('ijk,ijkl->jkl', post_comp_mix, centered2)
-            elif self.covariance_type == 'spherical':
+                c_n = np.einsum("ijk,ijkl->jkl", post_comp_mix, centered2)
+            elif self.covariance_type == "spherical":
                 # Faster than (x**2).sum(-1).
-                centered_norm2 = np.einsum('...i,...i', centered, centered)
-                c_n = np.einsum('ijk,ijk->jk', post_comp_mix, centered_norm2)
-            elif self.covariance_type == 'tied':
+                centered_norm2 = np.einsum("...i,...i", centered, centered)
+                c_n = np.einsum("ijk,ijk->jk", post_comp_mix, centered_norm2)
+            elif self.covariance_type == "tied":
                 centered_dots = outer_f(centered)
-                c_n = np.einsum('ijk,ijklm->jlm', post_comp_mix, centered_dots)
+                c_n = np.einsum("ijk,ijklm->jlm", post_comp_mix, centered_dots)
 
-            stats['c_n'] += c_n
+            stats["c_n"] += c_n
 
     def _generate_sample_from_state(self, state, random_state):
         cur_weights = self.weights_[state]
         i_gauss = random_state.choice(self.n_mix, p=cur_weights)
-        if self.covariance_type == 'tied':
+        if self.covariance_type == "tied":
             # self.covars_.shape == (n_components, n_features, n_features)
             # shouldn't that be (n_mix, ...)?
             covs = self.covars_
         else:
             covs = self.covars_[:, i_gauss]
-            covs = fill_covars(covs, self.covariance_type,
-                               self.n_components, self._get_n_features())
+            covs = fill_covars(
+                covs,
+                self.covariance_type,
+                self.n_components,
+                self._get_n_features(),
+            )
         return random_state.multivariate_normal(
             self.means_[state, i_gauss], covs[state]
         )
 
 
 class BaseMultinomialHMM(BaseHMM):
-
     def _n_features_from_emissions(self):
         return _n_features_of(self, "emissionprob_")
 
@@ -668,8 +733,10 @@ class BaseMultinomialHMM(BaseHMM):
         if self.n_trials is None:
             self.n_trials = X.sum(axis=1)
         elif not (X.sum(axis=1) == self.n_trials).all():
-            raise ValueError("Total count for each sample should add up to "
-                             "the number of trials")
+            raise ValueError(
+                "Total count for each sample should add up to "
+                "the number of trials"
+            )
 
     def _get_n_fit_scalars_per_param(self):
         nc = self.n_components
@@ -694,18 +761,21 @@ class BaseMultinomialHMM(BaseHMM):
             try:
                 with np.errstate(**_reports_as_errors()):
                     logprobs = _multinomial_logpmf(
-                        X, n_trials, self.emissionprob_)
+                        X, n_trials, self.emissionprob_
+                    )
                     for c in states:
                         # numpy's exp is given what scipy.stats gives it:
                         # one state's values, contiguous.
                         probs[:, c] = np.exp(
-                            np.ascontiguousarray(logprobs[:, c]))
+                            np.ascontiguousarray(logprobs[:, c])
+                        )
                     states = _states_with_nan(probs)
             except FloatingPointError:
                 pass
         for c in states:
             probs[:, c] = multinomial.pmf(
-                X, n=n_trials, p=self.emissionprob_[c, :])
+                X, n=n_trials, p=self.emissionprob_[c, :]
+            )
         return probs
 
     def _compute_log_likelihood(self, X):
@@ -718,38 +788,44 @@ class BaseMultinomialHMM(BaseHMM):
             try:
                 with np.errstate(**_reports_as_errors()):
                     logprobs = _multinomial_logpmf(
-                        X, n_trials, self.emissionprob_)
+                        X, n_trials, self.emissionprob_
+                    )
                     states = _states_with_nan(logprobs)
             except FloatingPointError:
                 pass
         for c in states:
             logprobs[:, c] = multinomial.logpmf(
-                X, n=n_trials, p=self.emissionprob_[c, :])
+                X, n=n_trials, p=self.emissionprob_[c, :]
+            )
         return logprobs
 
     def _initialize_sufficient_statistics(self):
         stats = super()._initialize_sufficient_statistics()
-        stats['obs'] = np.zeros((self.n_components, self.n_features))
+        stats["obs"] = np.zeros((self.n_components, self.n_features))
         return stats
 
-    def _accumulate_sufficient_statistics(self, stats, X, framelogprob,
-                                          posteriors, fwdlattice, bwdlattice):
+    def _accumulate_sufficient_statistics(
+        self, stats, X, framelogprob, posteriors, fwdlattice, bwdlattice
+    ):
         super()._accumulate_sufficient_statistics(
-            stats, X, framelogprob, posteriors, fwdlattice, bwdlattice)
-        if 'e' in self.params:
-            stats['obs'] += posteriors.T @ X
+            stats, X, framelogprob, posteriors, fwdlattice, bwdlattice
+        )
+        if "e" in self.params:
+            stats["obs"] += posteriors.T @ X
 
     def _generate_sample_from_state(self, state, random_state):
         try:
-            n_trials, = np.unique(self.n_trials)
+            (n_trials,) = np.unique(self.n_trials)
         except ValueError:
             raise ValueError("For sampling, a single n_trials must be given")
-        return multinomial.rvs(n=n_trials, p=self.emissionprob_[state, :],
-                               random_state=random_state)
+        return multinomial.rvs(
+            n=n_trials,
+            p=self.emissionprob_[state, :],
+            random_state=random_state,
+        )
 
 
 class BasePoissonHMM(BaseHMM):
-
     def _n_features_from_emissions(self):
         return _n_features_of(self, "lambdas_")
 
@@ -792,9 +868,15 @@ class BasePoissonHMM(BaseHMM):
                         log_factorial = special.gammaln(X + 1)
                         for c in states:
                             rates = self.lambdas_[c]
-                            probs[:, c] = np.clip(np.exp(
-                                special.xlogy(X, rates) - log_factorial
-                                - rates), 0, 1).prod(axis=1)
+                            probs[:, c] = np.clip(
+                                np.exp(
+                                    special.xlogy(X, rates)
+                                    - log_factorial
+                                    - rates
+                                ),
+                                0,
+                                1,
+                            ).prod(axis=1)
                         states = _states_with_nan(probs)
             except FloatingPointError:
                 pass
@@ -815,8 +897,8 @@ class BasePoissonHMM(BaseHMM):
                         for c in states:
                             rates = self.lambdas_[c]
                             logprobs[:, c] = (
-                                special.xlogy(X, rates) - log_factorial
-                                - rates).sum(axis=1)
+                                special.xlogy(X, rates) - log_factorial - rates
+                            ).sum(axis=1)
                         states = _states_with_nan(logprobs)
             except FloatingPointError:
                 pass
@@ -826,17 +908,19 @@ class BasePoissonHMM(BaseHMM):
 
     def _initialize_sufficient_statistics(self):
         stats = super()._initialize_sufficient_statistics()
-        stats['post'] = np.zeros(self.n_components)
-        stats['obs'] = np.zeros((self.n_components, self.n_features))
+        stats["post"] = np.zeros(self.n_components)
+        stats["obs"] = np.zeros((self.n_components, self.n_features))
         return stats
 
-    def _accumulate_sufficient_statistics(self, stats, obs, lattice,
-                                          posteriors, fwdlattice, bwdlattice):
+    def _accumulate_sufficient_statistics(
+        self, stats, obs, lattice, posteriors, fwdlattice, bwdlattice
+    ):
         super()._accumulate_sufficient_statistics(
-            stats, obs, lattice, posteriors, fwdlattice, bwdlattice)
-        if 'l' in self.params:
-            stats['post'] += posteriors.sum(axis=0)
-            stats['obs'] += posteriors.T @ obs
+            stats, obs, lattice, posteriors, fwdlattice, bwdlattice
+        )
+        if "l" in self.params:
+            stats["post"] += posteriors.sum(axis=0)
+            stats["obs"] += posteriors.T @ obs
 
     def _generate_sample_from_state(self, state, random_state):
         return random_state.poisson(self.lambdas_[state])

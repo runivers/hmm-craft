@@ -10,24 +10,31 @@ from hmmcraft.utils import normalize
 np.seterr(all="warn")
 
 
-def make_covar_matrix(covariance_type, n_components, n_features,
-                      random_state=None):
+def make_covar_matrix(
+    covariance_type, n_components, n_features, random_state=None
+):
     mincv = 0.1
     prng = check_random_state(random_state)
-    if covariance_type == 'spherical':
+    if covariance_type == "spherical":
         return (mincv + mincv * prng.random_sample((n_components,))) ** 2
-    elif covariance_type == 'tied':
-        return (make_spd_matrix(n_features, random_state=prng)
-                + mincv * np.eye(n_features))
-    elif covariance_type == 'diag':
-        return (mincv + mincv *
-                prng.random_sample((n_components, n_features))) ** 2
-    elif covariance_type == 'full':
-        return np.array([
-            (make_spd_matrix(n_features, random_state=prng)
-             + mincv * np.eye(n_features))
-            for x in range(n_components)
-        ])
+    elif covariance_type == "tied":
+        return make_spd_matrix(n_features, random_state=prng) + mincv * np.eye(
+            n_features
+        )
+    elif covariance_type == "diag":
+        return (
+            mincv + mincv * prng.random_sample((n_components, n_features))
+        ) ** 2
+    elif covariance_type == "full":
+        return np.array(
+            [
+                (
+                    make_spd_matrix(n_features, random_state=prng)
+                    + mincv * np.eye(n_features)
+                )
+                for x in range(n_components)
+            ]
+        )
 
 
 def normalized(X, axis=None):
@@ -37,8 +44,8 @@ def normalized(X, axis=None):
 
 
 def assert_log_likelihood_increasing(h, X, lengths, n_iter):
-    h.n_iter = 1        # make sure we do a single iteration at a time
-    h.init_params = ''  # and don't re-init params
+    h.n_iter = 1  # make sure we do a single iteration at a time
+    h.init_params = ""  # and don't re-init params
     log_likelihoods = np.empty(n_iter, dtype=float)
     lower_bounds = np.empty(n_iter, dtype=float)
     for i in range(n_iter):
@@ -63,12 +70,14 @@ def assert_log_likelihood_increasing(h, X, lengths, n_iter):
     # XXX the rounding is necessary because LL can oscillate in the
     #     fractional part, failing the tests.
     diff = np.diff(log_likelihoods)
-    value = np.finfo(float).eps ** (1/2)
-    assert diff.max() > value, f"Non-increasing log-likelihoods:\n" \
-                               f"lls={log_likelihoods}\n" \
-                               f"diff={diff}\n" \
-                               f"diff.max() < value={diff.min() < value}\n" \
-                               f"np.finfo(float).eps={value}\n"
+    value = np.finfo(float).eps ** (1 / 2)
+    assert diff.max() > value, (
+        f"Non-increasing log-likelihoods:\n"
+        f"lls={log_likelihoods}\n"
+        f"diff={diff}\n"
+        f"diff.max() < value={diff.min() < value}\n"
+        f"np.finfo(float).eps={value}\n"
+    )
 
 
 def compare_variational_and_em_models(variational, em, sequences, lengths):
@@ -80,10 +89,12 @@ def compare_variational_and_em_models(variational, em, sequences, lengths):
     assert np.all(em_scores == vi_scores)
 
     for decode_algo in DECODER_ALGORITHMS:
-        em_logprob, em_path = em.decode(sequences, lengths,
-                                        algorithm=decode_algo)
-        vi_logprob, vi_path = variational.decode(sequences, lengths,
-                                                 algorithm=decode_algo)
+        em_logprob, em_path = em.decode(
+            sequences, lengths, algorithm=decode_algo
+        )
+        vi_logprob, vi_path = variational.decode(
+            sequences, lengths, algorithm=decode_algo
+        )
         assert em_logprob == pytest.approx(vi_logprob), decode_algo
         assert np.all(em_path == vi_path), decode_algo
 
@@ -103,8 +114,8 @@ def compare_variational_and_em_models(variational, em, sequences, lengths):
 
 def vi_uniform_startprob_and_transmat(model, lengths):
     nc = model.n_components
-    model.startprob_prior_ = np.full(nc, 1/nc)
-    model.startprob_posterior_ = np.full(nc, 1/nc) * len(lengths)
-    model.transmat_prior_ = np.full((nc, nc), 1/nc)
-    model.transmat_posterior_ = np.full((nc, nc), 1/nc)*sum(lengths)
+    model.startprob_prior_ = np.full(nc, 1 / nc)
+    model.startprob_posterior_ = np.full(nc, 1 / nc) * len(lengths)
+    model.transmat_prior_ = np.full((nc, nc), 1 / nc)
+    model.transmat_posterior_ = np.full((nc, nc), 1 / nc) * sum(lengths)
     return model

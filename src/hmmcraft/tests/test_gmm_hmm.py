@@ -28,12 +28,18 @@ class GMMHMMTestMixin:
         self.n_features = 2
         self.startprob = normalized(self.prng.rand(self.n_components))
         self.transmat = normalized(
-            self.prng.rand(self.n_components, self.n_components), axis=1)
+            self.prng.rand(self.n_components, self.n_components), axis=1
+        )
         self.gmms = []
         for state in range(self.n_components):
-            self.gmms.append(create_random_gmm(
-                self.n_mix, self.n_features, self.covariance_type,
-                prng=self.prng))
+            self.gmms.append(
+                create_random_gmm(
+                    self.n_mix,
+                    self.n_features,
+                    self.covariance_type,
+                    prng=self.prng,
+                )
+            )
 
     def test_score_samples_and_decode(self):
         h = hmm.GMMHMM(self.n_components, covariance_type=self.covariance_type)
@@ -69,11 +75,15 @@ class GMMHMMTestMixin:
 
     @pytest.mark.parametrize("params", ["stmwc", "wt", "m"])
     def test_fit(self, params, n_iter=5):
-        h = hmm.GMMHMM(self.n_components, covariance_type=self.covariance_type,
-                       covars_prior=1.0)
+        h = hmm.GMMHMM(
+            self.n_components,
+            covariance_type=self.covariance_type,
+            covars_prior=1.0,
+        )
         h.startprob_ = self.startprob
         h.transmat_ = normalized(
-            self.transmat + np.diag(self.prng.rand(self.n_components)), 1)
+            self.transmat + np.diag(self.prng.rand(self.n_components)), 1
+        )
         h.gmms_ = self.gmms
 
         lengths = [10] * 10
@@ -82,8 +92,9 @@ class GMMHMMTestMixin:
         # Mess up the parameters and see if we can re-learn them.
         h.n_iter = 0
         h.fit(X, lengths=lengths)
-        h.transmat_ = normalized(self.prng.rand(self.n_components,
-                                                self.n_components), axis=1)
+        h.transmat_ = normalized(
+            self.prng.rand(self.n_components, self.n_components), axis=1
+        )
         h.startprob_ = normalized(self.prng.rand(self.n_components))
 
         assert_log_likelihood_increasing(h, X, lengths, n_iter)
@@ -99,14 +110,14 @@ class GMMHMMTestMixin:
 
 
 class TestGMMHMMWithDiagCovars(GMMHMMTestMixin):
-    covariance_type = 'diag'
+    covariance_type = "diag"
 
 
 @pytest.mark.xfail
 class TestGMMHMMWithTiedCovars(GMMHMMTestMixin):
-    covariance_type = 'tied'
+    covariance_type = "tied"
 
 
 @pytest.mark.xfail
 class TestGMMHMMWithFullCovars(GMMHMMTestMixin):
-    covariance_type = 'full'
+    covariance_type = "full"

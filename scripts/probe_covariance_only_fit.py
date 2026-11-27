@@ -51,15 +51,23 @@ def make_data():
 
 def make_model(hmm, covariance_type, n_iter, **kwargs):
     model = hmm.GaussianHMM(
-        2, covariance_type, params="c", init_params="", n_iter=n_iter,
-        tol=-np.inf, **kwargs)
+        2,
+        covariance_type,
+        params="c",
+        init_params="",
+        n_iter=n_iter,
+        tol=-np.inf,
+        **kwargs,
+    )
     model.startprob_ = np.array([0.5, 0.5])
     model.transmat_ = np.array([[0.9, 0.1], [0.1, 0.9]])
     model.means_ = START_MEANS.copy()
     model.covars_ = {
-        "diag": np.ones((2, N_FEATURES)), "spherical": np.ones(2),
+        "diag": np.ones((2, N_FEATURES)),
+        "spherical": np.ones(2),
         "full": np.tile(np.eye(N_FEATURES), (2, 1, 1)),
-        "tied": np.eye(N_FEATURES)}[covariance_type]
+        "tied": np.eye(N_FEATURES),
+    }[covariance_type]
     return model
 
 
@@ -73,7 +81,7 @@ def first_m_step(hmm, covariance_type, sequences, **kwargs):
     model = make_model(hmm, covariance_type, 1, **kwargs)
     weighted = 0
     for part in sequences:
-        weighted = weighted + model.predict_proba(part).T @ part ** 2
+        weighted = weighted + model.predict_proba(part).T @ part**2
     seen = {}
     do_mstep = model._do_mstep
 
@@ -116,73 +124,108 @@ def probe(hmm):
     print("1. defaults: (covars_prior + weighted sum of squares) / 1e-5")
     for covariance_type in spherical_diag:
         got, weighted, mass = first_m_step(hmm, covariance_type, sequences)
-        check(results, f"{covariance_type}: equal as bytes to the formula",
-              got.tobytes() == expected(
-                  covariance_type, weighted, 1e-5).tobytes())
-        check(results, f"{covariance_type}: the state mass given was zero",
-              not mass.any())
+        check(
+            results,
+            f"{covariance_type}: equal as bytes to the formula",
+            got.tobytes()
+            == expected(covariance_type, weighted, 1e-5).tobytes(),
+        )
+        check(
+            results,
+            f"{covariance_type}: the state mass given was zero",
+            not mass.any(),
+        )
 
     print("2. covars_weight above 1: the divisor is covars_weight - 1")
     for covariance_type in spherical_diag:
         for weight in (3.0, 10.0):
             got, weighted, _ = first_m_step(
-                hmm, covariance_type, sequences, covars_weight=weight)
-            check(results,
-                  f"{covariance_type}, covars_weight={weight}: formula with "
-                  "divisor covars_weight - 1; the 1e-5 formula does not hold",
-                  got.tobytes() == expected(
-                      covariance_type, weighted, weight - 1).tobytes()
-                  and got.tobytes() != expected(
-                      covariance_type, weighted, 1e-5).tobytes())
+                hmm, covariance_type, sequences, covars_weight=weight
+            )
+            check(
+                results,
+                f"{covariance_type}, covars_weight={weight}: formula with "
+                "divisor covars_weight - 1; the 1e-5 formula does not hold",
+                got.tobytes()
+                == expected(covariance_type, weighted, weight - 1).tobytes()
+                and got.tobytes()
+                != expected(covariance_type, weighted, 1e-5).tobytes(),
+            )
 
     print("3. means_weight not 0: the numerator adds a term")
     extra = 0.5 * (START_MEANS - 0.0) ** 2
     for covariance_type in spherical_diag:
         got, weighted, _ = first_m_step(
-            hmm, covariance_type, sequences, means_weight=0.5)
-        check(results,
-              f"{covariance_type}, means_weight=0.5: formula plus "
-              "means_weight * (means - means_prior)**2; without it it fails",
-              got.tobytes() == expected(
-                  covariance_type, weighted, 1e-5, extra).tobytes()
-              and got.tobytes() != expected(
-                  covariance_type, weighted, 1e-5).tobytes())
+            hmm, covariance_type, sequences, means_weight=0.5
+        )
+        check(
+            results,
+            f"{covariance_type}, means_weight=0.5: formula plus "
+            "means_weight * (means - means_prior)**2; without it it fails",
+            got.tobytes()
+            == expected(covariance_type, weighted, 1e-5, extra).tobytes()
+            and got.tobytes()
+            != expected(covariance_type, weighted, 1e-5).tobytes(),
+        )
 
     print("4. full and tied, defaults: infinite after one M-step, raise after")
     for covariance_type in ("full", "tied"):
         one = fit_outcome(hmm, covariance_type, sequences, 1)
-        check(results,
-              f"{covariance_type}, n_iter=1: no error, covariances infinite",
-              not isinstance(one, str) and np.isinf(one).any()
-              and not np.isnan(one).any())
+        check(
+            results,
+            f"{covariance_type}, n_iter=1: no error, covariances infinite",
+            not isinstance(one, str)
+            and np.isinf(one).any()
+            and not np.isnan(one).any(),
+        )
         for n_iter in (2, 5, 10):
-            check(results, f"{covariance_type}, n_iter={n_iter}: ValueError",
-                  isinstance(fit_outcome(hmm, covariance_type, sequences,
-                                         n_iter), str))
+            check(
+                results,
+                f"{covariance_type}, n_iter={n_iter}: ValueError",
+                isinstance(
+                    fit_outcome(hmm, covariance_type, sequences, n_iter), str
+                ),
+            )
 
     print("5. full and tied: raise when covars_weight <= n_features, else fit")
     for covariance_type in ("full", "tied"):
-        for weight, raises in ((1.0, True), (2.0, True), (3.0, False),
-                               (10.0, False)):
-            out = fit_outcome(hmm, covariance_type, sequences, 5,
-                              covars_weight=weight)
-            holds = (isinstance(out, str) if raises
-                     else not isinstance(out, str) and np.isfinite(out).all())
-            check(results,
-                  f"{covariance_type}, covars_weight={weight}: "
-                  f"{'ValueError' if raises else 'fits, finite'}", holds)
-        out = fit_outcome(hmm, covariance_type, sequences, 5,
-                          means_weight=0.5)
-        check(results, f"{covariance_type}, means_weight=0.5: ValueError",
-              isinstance(out, str))
+        for weight, raises in (
+            (1.0, True),
+            (2.0, True),
+            (3.0, False),
+            (10.0, False),
+        ):
+            out = fit_outcome(
+                hmm, covariance_type, sequences, 5, covars_weight=weight
+            )
+            holds = (
+                isinstance(out, str)
+                if raises
+                else not isinstance(out, str) and np.isfinite(out).all()
+            )
+            check(
+                results,
+                f"{covariance_type}, covars_weight={weight}: "
+                f"{'ValueError' if raises else 'fits, finite'}",
+                holds,
+            )
+        out = fit_outcome(hmm, covariance_type, sequences, 5, means_weight=0.5)
+        check(
+            results,
+            f"{covariance_type}, means_weight=0.5: ValueError",
+            isinstance(out, str),
+        )
     return all(results)
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[1])
-    parser.add_argument("--package", default="hmmlearn",
-                        choices=("hmmlearn", "hmmcraft"),
-                        help="the package to probe (default hmmlearn)")
+    parser.add_argument(
+        "--package",
+        default="hmmlearn",
+        choices=("hmmlearn", "hmmcraft"),
+        help="the package to probe (default hmmlearn)",
+    )
     args = parser.parse_args(argv)
     warnings.simplefilter("ignore")
     logging.disable(logging.CRITICAL)

@@ -16,12 +16,14 @@ from ..vhmm import VariationalGaussianHMM
 COVARIANCE_TYPES = ["spherical", "diag", "full", "tied"]
 MODELS = {
     "GaussianHMM": lambda covariance_type: GaussianHMM(
-        3, covariance_type, random_state=0, n_iter=0),
+        3, covariance_type, random_state=0, n_iter=0
+    ),
     "GMMHMM": lambda covariance_type: GMMHMM(
-        3, n_mix=2, covariance_type=covariance_type, random_state=0,
-        n_iter=0),
+        3, n_mix=2, covariance_type=covariance_type, random_state=0, n_iter=0
+    ),
     "VariationalGaussianHMM": lambda covariance_type: VariationalGaussianHMM(
-        3, covariance_type=covariance_type, random_state=0, n_iter=0),
+        3, covariance_type=covariance_type, random_state=0, n_iter=0
+    ),
 }
 
 
@@ -31,8 +33,9 @@ def _three_groups(n_samples=1200, seed=0):
     # threads or more the rows of every group are summed in parts.
     rng = np.random.RandomState(seed)
     centers = np.array([[0.0, 0.0], [4.0, 0.0], [0.0, 4.0]])
-    return (centers[rng.randint(3, size=n_samples)]
-            + rng.normal(size=(n_samples, 2)))
+    return centers[rng.randint(3, size=n_samples)] + rng.normal(
+        size=(n_samples, 2)
+    )
 
 
 def _start(model, covariance_type, threads):
@@ -40,15 +43,19 @@ def _start(model, covariance_type, threads):
     h = MODELS[model](covariance_type)
     with threadpool_limits(limits=threads):
         h.fit(_three_groups())
-    return {name: np.asarray(value) for name, value in vars(h).items()
-            if name.endswith("_") and name != "monitor_"}
+    return {
+        name: np.asarray(value)
+        for name, value in vars(h).items()
+        if name.endswith("_") and name != "monitor_"
+    }
 
 
 @pytest.mark.parametrize("threads", [2, 4])
 @pytest.mark.parametrize("covariance_type", COVARIANCE_TYPES)
 @pytest.mark.parametrize("model", list(MODELS))
 def test_seeded_kmeans_start_is_the_one_thread_start(
-        model, covariance_type, threads):
+    model, covariance_type, threads
+):
     """
     With ``random_state`` fixed, the start at two or four threads has the
     bytes of the start at one thread, in every array it sets. Unless

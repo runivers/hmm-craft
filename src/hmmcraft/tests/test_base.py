@@ -61,6 +61,7 @@ class TestMonitor:
 
 class StubHMM(BaseHMM):
     """An HMM with hardcoded observation probabilities."""
+
     def _compute_log_likelihood(self, X):
         return self.log_frameprob
 
@@ -68,11 +69,9 @@ class StubHMM(BaseHMM):
 class TestBaseAgainstWikipedia:
     def setup_method(self, method):
         # Example from http://en.wikipedia.org/wiki/Forward-backward_algorithm
-        self.frameprob = np.asarray([[0.9, 0.2],
-                                     [0.9, 0.2],
-                                     [0.1, 0.8],
-                                     [0.9, 0.2],
-                                     [0.9, 0.2]])
+        self.frameprob = np.asarray(
+            [[0.9, 0.2], [0.9, 0.2], [0.1, 0.8], [0.9, 0.2], [0.9, 0.2]]
+        )
         self.log_frameprob = np.log(self.frameprob)
         h = StubHMM(2)
         h.transmat_ = [[0.7, 0.3], [0.3, 0.7]]
@@ -83,39 +82,58 @@ class TestBaseAgainstWikipedia:
 
     def test_do_forward_scaling_pass(self):
         log_prob, fwdlattice, _scaling_factors = _hmmc.forward_scaling(
-            self.hmm.startprob_, self.hmm.transmat_, self.frameprob)
+            self.hmm.startprob_, self.hmm.transmat_, self.frameprob
+        )
         ref_log_prob = -3.3725
         assert round(log_prob, 4) == ref_log_prob
-        reffwdlattice = np.exp([[0.4500, 0.1000],
-                                [0.3105, 0.0410],
-                                [0.0230, 0.0975],
-                                [0.0408, 0.0150],
-                                [0.0298, 0.0046]])
+        reffwdlattice = np.exp(
+            [
+                [0.4500, 0.1000],
+                [0.3105, 0.0410],
+                [0.0230, 0.0975],
+                [0.0408, 0.0150],
+                [0.0298, 0.0046],
+            ]
+        )
         assert_allclose(np.exp(fwdlattice), reffwdlattice, 4)
 
     def test_do_forward_pass(self):
         log_prob, fwdlattice = _hmmc.forward_log(
-            self.hmm.startprob_, self.hmm.transmat_, self.log_frameprob)
+            self.hmm.startprob_, self.hmm.transmat_, self.log_frameprob
+        )
 
         ref_log_prob = -3.3725
         assert round(log_prob, 4) == ref_log_prob
-        reffwdlattice = np.array([[0.4500, 0.1000],
-                                  [0.3105, 0.0410],
-                                  [0.0230, 0.0975],
-                                  [0.0408, 0.0150],
-                                  [0.0298, 0.0046]])
+        reffwdlattice = np.array(
+            [
+                [0.4500, 0.1000],
+                [0.3105, 0.0410],
+                [0.0230, 0.0975],
+                [0.0408, 0.0150],
+                [0.0298, 0.0046],
+            ]
+        )
         assert_allclose(np.exp(fwdlattice), reffwdlattice, 4)
 
     def test_do_backward_scaling_pass(self):
         _log_prob, _fwdlattice, scaling_factors = _hmmc.forward_scaling(
-            self.hmm.startprob_, self.hmm.transmat_, self.frameprob)
-        bwdlattice = _hmmc.backward_scaling(self.hmm.startprob_,
-            self.hmm.transmat_, self.frameprob, scaling_factors)
-        refbwdlattice = np.array([[0.0661, 0.0455],
-                                  [0.0906, 0.1503],
-                                  [0.4593, 0.2437],
-                                  [0.6900, 0.4100],
-                                  [1.0000, 1.0000]])
+            self.hmm.startprob_, self.hmm.transmat_, self.frameprob
+        )
+        bwdlattice = _hmmc.backward_scaling(
+            self.hmm.startprob_,
+            self.hmm.transmat_,
+            self.frameprob,
+            scaling_factors,
+        )
+        refbwdlattice = np.array(
+            [
+                [0.0661, 0.0455],
+                [0.0906, 0.1503],
+                [0.4593, 0.2437],
+                [0.6900, 0.4100],
+                [1.0000, 1.0000],
+            ]
+        )
         scaling_factors = np.cumprod(scaling_factors[::-1])[::-1]
         bwdlattice_scaled = bwdlattice / scaling_factors[:, None]
         # Answer will be equivalent when the scaling factor is accounted for
@@ -123,17 +141,23 @@ class TestBaseAgainstWikipedia:
 
     def test_do_backward_log_pass(self):
         bwdlattice = _hmmc.backward_log(
-            self.hmm.startprob_, self.hmm.transmat_, self.log_frameprob)
-        refbwdlattice = np.array([[0.0661, 0.0455],
-                                  [0.0906, 0.1503],
-                                  [0.4593, 0.2437],
-                                  [0.6900, 0.4100],
-                                  [1.0000, 1.0000]])
+            self.hmm.startprob_, self.hmm.transmat_, self.log_frameprob
+        )
+        refbwdlattice = np.array(
+            [
+                [0.0661, 0.0455],
+                [0.0906, 0.1503],
+                [0.4593, 0.2437],
+                [0.6900, 0.4100],
+                [1.0000, 1.0000],
+            ]
+        )
         assert_allclose(np.exp(bwdlattice), refbwdlattice, 4)
 
     def test_do_viterbi_pass(self):
         log_prob, state_sequence = _hmmc.viterbi(
-            self.hmm.startprob_, self.hmm.transmat_, self.log_frameprob)
+            self.hmm.startprob_, self.hmm.transmat_, self.log_frameprob
+        )
         refstate_sequence = [0, 0, 1, 0, 0]
         assert_allclose(state_sequence, refstate_sequence)
         ref_log_prob = -4.4590
@@ -146,11 +170,15 @@ class TestBaseAgainstWikipedia:
         assert_allclose(posteriors.sum(axis=1), np.ones(len(posteriors)))
         ref_log_prob = -3.3725
         assert round(log_prob, 4) == ref_log_prob
-        refposteriors = np.array([[0.8673, 0.1327],
-                                  [0.8204, 0.1796],
-                                  [0.3075, 0.6925],
-                                  [0.8204, 0.1796],
-                                  [0.8673, 0.1327]])
+        refposteriors = np.array(
+            [
+                [0.8673, 0.1327],
+                [0.8204, 0.1796],
+                [0.3075, 0.6925],
+                [0.8204, 0.1796],
+                [0.8673, 0.1327],
+            ]
+        )
         assert_allclose(posteriors, refposteriors, atol=1e-4)
 
     def test_generate_samples(self):
@@ -158,8 +186,7 @@ class TestBaseAgainstWikipedia:
         _X, Z = self.hmm.sample(n_samples=10, currstate=Z0[-1])
         assert len(Z0) == len(Z) == 10 and Z[0] == Z0[-1]
 
-    @pytest.mark.parametrize(
-        "n_samples", [0, -1, np.array(0), 0.5, False])
+    @pytest.mark.parametrize("n_samples", [0, -1, np.array(0), 0.5, False])
     def test_sample_refuses_fewer_than_one(self, n_samples):
         """``sample`` draws at least one sample."""
         with pytest.raises(ValueError, match="n_samples must be at least 1"):
@@ -170,11 +197,19 @@ class TestBaseAgainstWikipedia:
         with pytest.raises(TypeError):
             self.hmm.sample(2.0)
 
-    @pytest.mark.parametrize("n_samples, length", [
-        (1, 1), (True, 1), (np.int64(1), 1), (np.array(1), 1),
-        (np.array(True), 1), (np.True_, 1),
-        (np.array(2, dtype=object), 2), (np.array(3), 3),
-    ])
+    @pytest.mark.parametrize(
+        "n_samples, length",
+        [
+            (1, 1),
+            (True, 1),
+            (np.int64(1), 1),
+            (np.array(1), 1),
+            (np.array(True), 1),
+            (np.True_, 1),
+            (np.array(2, dtype=object), 2),
+            (np.array(3), 3),
+        ],
+    )
     def test_sample_count_as_given(self, n_samples, length):
         """
         A count of at least 1 draws what the integer draws, whatever type
@@ -193,7 +228,8 @@ class TestBaseConsistentWithGMM:
         n_samples = 10
 
         self.log_frameprob = np.log(
-            np.random.random((n_samples, n_components)))
+            np.random.random((n_samples, n_components))
+        )
 
         h = StubHMM(n_components)
         h.log_frameprob = self.log_frameprob
@@ -214,8 +250,9 @@ class TestBaseConsistentWithGMM:
         assert_allclose(hmmposteriors.sum(axis=1), np.ones(n_samples))
 
         norm = special.logsumexp(self.log_frameprob, axis=1)[:, np.newaxis]
-        gmmposteriors = np.exp(self.log_frameprob
-                               - np.tile(norm, (1, n_components)))
+        gmmposteriors = np.exp(
+            self.log_frameprob - np.tile(norm, (1, n_components))
+        )
         assert_allclose(hmmposteriors, gmmposteriors)
 
     def test_decode(self):
@@ -223,8 +260,9 @@ class TestBaseConsistentWithGMM:
 
         _n_samples, n_components = self.log_frameprob.shape
         norm = special.logsumexp(self.log_frameprob, axis=1)[:, np.newaxis]
-        gmmposteriors = np.exp(self.log_frameprob
-                               - np.tile(norm, (1, n_components)))
+        gmmposteriors = np.exp(
+            self.log_frameprob - np.tile(norm, (1, n_components))
+        )
         gmmstate_sequence = gmmposteriors.argmax(axis=1)
         assert_allclose(state_sequence, gmmstate_sequence)
 
@@ -288,31 +326,49 @@ def _sum_check_models():
     counts = rs.poisson(4, (40, 3))
     multinomial = rs.multinomial(5, [0.2, 0.3, 0.5], size=40)
     cases = [
-        ("GaussianHMM",
-         lambda: hmm.GaussianHMM(2, n_iter=4, random_state=0), continuous),
-        ("CategoricalHMM",
-         lambda: hmm.CategoricalHMM(2, n_iter=4, random_state=0), symbols),
-        ("MultinomialHMM",
-         lambda: hmm.MultinomialHMM(2, 5, n_iter=4, random_state=0),
-         multinomial),
-        ("PoissonHMM",
-         lambda: hmm.PoissonHMM(2, n_iter=4, random_state=0), counts),
+        (
+            "GaussianHMM",
+            lambda: hmm.GaussianHMM(2, n_iter=4, random_state=0),
+            continuous,
+        ),
+        (
+            "CategoricalHMM",
+            lambda: hmm.CategoricalHMM(2, n_iter=4, random_state=0),
+            symbols,
+        ),
+        (
+            "MultinomialHMM",
+            lambda: hmm.MultinomialHMM(2, 5, n_iter=4, random_state=0),
+            multinomial,
+        ),
+        (
+            "PoissonHMM",
+            lambda: hmm.PoissonHMM(2, n_iter=4, random_state=0),
+            counts,
+        ),
     ]
-    cases += [(f"GMMHMM-{cov}",
-               lambda cov=cov: hmm.GMMHMM(
-                   2, 2, covariance_type=cov, n_iter=4, random_state=0),
-               continuous)
-              for cov in ("spherical", "diag", "full", "tied")]
+    cases += [
+        (
+            f"GMMHMM-{cov}",
+            lambda cov=cov: hmm.GMMHMM(
+                2, 2, covariance_type=cov, n_iter=4, random_state=0
+            ),
+            continuous,
+        )
+        for cov in ("spherical", "diag", "full", "tied")
+    ]
     return cases
 
 
 SUM_CHECK_MODELS = _sum_check_models()
 
 
-@pytest.mark.parametrize("factory, X", [c[1:] for c in SUM_CHECK_MODELS],
-                         ids=[c[0] for c in SUM_CHECK_MODELS])
-def test_check_of_float64_sums_does_not_call_allclose(monkeypatch, factory,
-                                                      X):
+@pytest.mark.parametrize(
+    "factory, X",
+    [c[1:] for c in SUM_CHECK_MODELS],
+    ids=[c[0] for c in SUM_CHECK_MODELS],
+)
+def test_check_of_float64_sums_does_not_call_allclose(monkeypatch, factory, X):
     """
     The check of a fitted model, whose distributions are float64, tests
     their sums without ``np.allclose``.
@@ -340,7 +396,8 @@ def _sum_sweep():
     edges = [1 - (1e-08 + 1e-05), 1 + (1e-08 + 1e-05)]
     return np.concatenate(
         [edge + k * np.spacing(edge) for edge in edges]
-        + [[np.nan, np.inf, -np.inf, 0.0, -0.0, 1.0, 2.0]])
+        + [[np.nan, np.inf, -np.inf, 0.0, -0.0, 1.0, 2.0]]
+    )
 
 
 def test_float64_sums_to_1_equals_allclose():
@@ -354,8 +411,7 @@ def test_float64_sums_to_1_equals_allclose():
     expected = np.isclose(values, 1)
     with np.errstate(all="raise"):
         scalars = [base._sums_to_1(value) for value in values]
-        rows = [base._sums_to_1(values[i:i + 1])
-                for i in range(values.size)]
+        rows = [base._sums_to_1(values[i : i + 1]) for i in range(values.size)]
     assert_array_equal(scalars, expected)
     assert_array_equal(rows, expected)
     rng = np.random.default_rng(0)
@@ -378,16 +434,27 @@ def _matrix(a):
         return np.matrix(a)
 
 
-@pytest.mark.parametrize("rows", [
-    np.array([[0.5, 0.5], [0.2, 0.8]], dtype=object),
-    np.array([[0.5, 0.5], [0.2, 0.7]], dtype=object),
-    np.array([[2**62, 2**62, 1]]),
-    np.array([[0.5, 0.5], [0.2, 0.8]], dtype=np.float32),
-    np.array([decimal.Decimal("0.5")] * 2, dtype=object),
-    _matrix([[0.5, 0.5], [0.2, 0.7]]),
-    np.ma.array([[0.5, 0.5], [0.2, 0.7]], mask=[[0, 0], [1, 1]]),
-], ids=["object", "object-not-1", "int64-wrapping", "float32", "Decimal",
-        "matrix", "masked"])
+@pytest.mark.parametrize(
+    "rows",
+    [
+        np.array([[0.5, 0.5], [0.2, 0.8]], dtype=object),
+        np.array([[0.5, 0.5], [0.2, 0.7]], dtype=object),
+        np.array([[2**62, 2**62, 1]]),
+        np.array([[0.5, 0.5], [0.2, 0.8]], dtype=np.float32),
+        np.array([decimal.Decimal("0.5")] * 2, dtype=object),
+        _matrix([[0.5, 0.5], [0.2, 0.7]]),
+        np.ma.array([[0.5, 0.5], [0.2, 0.7]], mask=[[0, 0], [1, 1]]),
+    ],
+    ids=[
+        "object",
+        "object-not-1",
+        "int64-wrapping",
+        "float32",
+        "Decimal",
+        "matrix",
+        "masked",
+    ],
+)
 def test_other_sums_to_1_are_allclose(rows):
     """
     A sum that is not a float64 scalar or array gets the answer, or the
@@ -405,9 +472,9 @@ def test_other_sums_to_1_are_allclose(rows):
 
 
 LEFT_RIGHT_START = np.array([1.0, 0.0, 0.0])
-LEFT_RIGHT_TRANSMAT = np.array([[0.5, 0.5, 0.0],
-                                [0.0, 0.5, 0.5],
-                                [0.0, 0.0, 1.0]])
+LEFT_RIGHT_TRANSMAT = np.array(
+    [[0.5, 0.5, 0.0], [0.0, 0.5, 0.5], [0.0, 0.0, 1.0]]
+)
 
 
 def _with(array, index, value):
@@ -417,13 +484,19 @@ def _with(array, index, value):
 
 
 @pytest.mark.parametrize("implementation", ["scaling", "log"])
-@pytest.mark.parametrize("startprob, transmat", [
-    (LEFT_RIGHT_START, LEFT_RIGHT_TRANSMAT),
-    (np.array([1.0, -0.0, -0.0]),
-     np.where(LEFT_RIGHT_TRANSMAT == 0, -0.0, LEFT_RIGHT_TRANSMAT)),
-    (LEFT_RIGHT_START, _with(LEFT_RIGHT_TRANSMAT, (0, 2), 5e-324)),
-    (np.array([1 + 1e-9, 0.0, 0.0]), LEFT_RIGHT_TRANSMAT),
-], ids=["zeros", "negative-zeros", "denormal", "start-above-1"])
+@pytest.mark.parametrize(
+    "startprob, transmat",
+    [
+        (LEFT_RIGHT_START, LEFT_RIGHT_TRANSMAT),
+        (
+            np.array([1.0, -0.0, -0.0]),
+            np.where(LEFT_RIGHT_TRANSMAT == 0, -0.0, LEFT_RIGHT_TRANSMAT),
+        ),
+        (LEFT_RIGHT_START, _with(LEFT_RIGHT_TRANSMAT, (0, 2), 5e-324)),
+        (np.array([1 + 1e-9, 0.0, 0.0]), LEFT_RIGHT_TRANSMAT),
+    ],
+    ids=["zeros", "negative-zeros", "denormal", "start-above-1"],
+)
 def test_structural_zeros_fit_and_score(startprob, transmat, implementation):
     """
     A left-right model is valid: zeros (``-0.0`` too), a denormal entry and
@@ -431,9 +504,9 @@ def test_structural_zeros_fit_and_score(startprob, transmat, implementation):
     ``score`` is the log of the sum over every state path, and a fit keeps
     every zero at zero.
     """
-    emissionprob = np.array([[0.7, 0.2, 0.1],
-                             [0.1, 0.7, 0.2],
-                             [0.2, 0.1, 0.7]])
+    emissionprob = np.array(
+        [[0.7, 0.2, 0.1], [0.1, 0.7, 0.2], [0.2, 0.1, 0.7]]
+    )
     X = np.array([[0], [2], [1]])
     # Every state is visited and left, so no row of the fit is empty.
     X_fit = np.array([[0], [0], [1], [1], [2], [2]])
@@ -443,13 +516,16 @@ def test_structural_zeros_fit_and_score(startprob, transmat, implementation):
         for path in itertools.product(range(3), repeat=len(X)):
             p = h.startprob_[path[0]] * h.emissionprob_[path[0], X[0, 0]]
             for t in range(1, len(X)):
-                p *= (h.transmat_[path[t - 1], path[t]]
-                      * h.emissionprob_[path[t], X[t, 0]])
+                p *= (
+                    h.transmat_[path[t - 1], path[t]]
+                    * h.emissionprob_[path[t], X[t, 0]]
+                )
             total += p
         return np.log(total)
 
-    h = hmm.CategoricalHMM(3, init_params="", n_iter=5,
-                           implementation=implementation)
+    h = hmm.CategoricalHMM(
+        3, init_params="", n_iter=5, implementation=implementation
+    )
     h.startprob_ = startprob
     h.transmat_ = transmat
     h.emissionprob_ = emissionprob
@@ -469,12 +545,14 @@ def test_stationary_distribution():
     h.transmat_ = transmat
     stationary = h.get_stationary_distribution()
     assert stationary.dtype == float
-    assert (h.get_stationary_distribution().T @ h.transmat_
-            == pytest.approx(stationary))
+    assert h.get_stationary_distribution().T @ h.transmat_ == pytest.approx(
+        stationary
+    )
 
 
 class EqualEmissionsHMM(BaseHMM):
     """An HMM whose states emit every observation with the same probability."""
+
     def _compute_log_likelihood(self, X):
         return np.zeros((len(X), self.n_components))
 
@@ -482,7 +560,8 @@ class EqualEmissionsHMM(BaseHMM):
 @pytest.mark.parametrize("lengths", [None, [3, 2]])
 @pytest.mark.parametrize("implementation", ["scaling", "log"])
 def test_map_log_prob_is_the_log_of_the_chosen_posteriors(
-        implementation, lengths):
+    implementation, lengths
+):
     h = EqualEmissionsHMM(2, implementation=implementation)
     h.startprob_ = np.full(2, 0.5)
     h.transmat_ = np.full((2, 2), 0.5)
@@ -499,8 +578,9 @@ def test_map_log_prob_sums_the_log_of_the_largest_posteriors(implementation):
     rs = np.random.RandomState(1)
     lengths = [6, 4]
     X = rs.normal(size=(10, 2)) + 2 * rs.randint(0, 2, (10, 1))
-    h = hmm.GaussianHMM(2, "diag", init_params="",
-                        implementation=implementation)
+    h = hmm.GaussianHMM(
+        2, "diag", init_params="", implementation=implementation
+    )
     h.startprob_ = np.array([0.6, 0.4])
     h.transmat_ = np.array([[0.7, 0.3], [0.2, 0.8]])
     h.means_ = np.array([[0.0, 0.0], [2.0, 2.0]])
@@ -522,28 +602,56 @@ def _occupancy_cases():
     symbols = rs.randint(0, 3, (40, 1))
     counts = rs.poisson(4, (40, 3))
     multinomial = rs.multinomial(5, [0.2, 0.3, 0.5], size=40)
-    cases = [(f"GaussianHMM-{cov}",
-              lambda cls=hmm.GaussianHMM, cov=cov: cls(
-                  2, cov, n_iter=4, random_state=0),
-              continuous, "post")
-             for cov in ("spherical", "diag", "full", "tied")]
+    cases = [
+        (
+            f"GaussianHMM-{cov}",
+            lambda cls=hmm.GaussianHMM, cov=cov: cls(
+                2, cov, n_iter=4, random_state=0
+            ),
+            continuous,
+            "post",
+        )
+        for cov in ("spherical", "diag", "full", "tied")
+    ]
     cases += [
-        ("GMMHMM", lambda: hmm.GMMHMM(2, 2, n_iter=4, random_state=0),
-         continuous, "post_sum"),
-        ("PoissonHMM", lambda: hmm.PoissonHMM(2, n_iter=4, random_state=0),
-         counts, "post"),
-        ("VariationalGaussianHMM",
-         lambda: vhmm.VariationalGaussianHMM(2, n_iter=4, random_state=0),
-         continuous, "post"),
-        ("CategoricalHMM",
-         lambda: hmm.CategoricalHMM(2, n_iter=4, random_state=0),
-         symbols, None),
-        ("MultinomialHMM",
-         lambda: hmm.MultinomialHMM(2, 5, n_iter=4, random_state=0),
-         multinomial, None),
-        ("VariationalCategoricalHMM",
-         lambda: vhmm.VariationalCategoricalHMM(2, n_iter=4, random_state=0),
-         symbols, None),
+        (
+            "GMMHMM",
+            lambda: hmm.GMMHMM(2, 2, n_iter=4, random_state=0),
+            continuous,
+            "post_sum",
+        ),
+        (
+            "PoissonHMM",
+            lambda: hmm.PoissonHMM(2, n_iter=4, random_state=0),
+            counts,
+            "post",
+        ),
+        (
+            "VariationalGaussianHMM",
+            lambda: vhmm.VariationalGaussianHMM(2, n_iter=4, random_state=0),
+            continuous,
+            "post",
+        ),
+        (
+            "CategoricalHMM",
+            lambda: hmm.CategoricalHMM(2, n_iter=4, random_state=0),
+            symbols,
+            None,
+        ),
+        (
+            "MultinomialHMM",
+            lambda: hmm.MultinomialHMM(2, 5, n_iter=4, random_state=0),
+            multinomial,
+            None,
+        ),
+        (
+            "VariationalCategoricalHMM",
+            lambda: vhmm.VariationalCategoricalHMM(
+                2, n_iter=4, random_state=0
+            ),
+            symbols,
+            None,
+        ),
     ]
     return cases
 
@@ -562,18 +670,23 @@ def _recording(model, statistic):
 
     class Recorder(cls):
         def _accumulate_sufficient_statistics(
-                self, stats, X, lattice, posteriors, fwdlattice, bwdlattice):
+            self, stats, X, lattice, posteriors, fwdlattice, bwdlattice
+        ):
             if getattr(self, "recorded_sum", None) is None:
                 self.recorded_sum = np.zeros(self.n_components)
             self.recorded_sum += posteriors.sum(axis=0)
             super()._accumulate_sufficient_statistics(
-                stats, X, lattice, posteriors, fwdlattice, bwdlattice)
+                stats, X, lattice, posteriors, fwdlattice, bwdlattice
+            )
 
         def _do_mstep(self, stats):
-            self.recorded_stat = None if statistic is None else (
-                stats[statistic].copy())
+            self.recorded_stat = (
+                None if statistic is None else (stats[statistic].copy())
+            )
             self.recorded_posterior_sum, self.recorded_sum = (
-                self.recorded_sum, None)
+                self.recorded_sum,
+                None,
+            )
             super()._do_mstep(stats)
 
     model.__class__ = Recorder
@@ -581,18 +694,22 @@ def _recording(model, statistic):
 
 
 def _fitted_arrays(model):
-    return {k: np.asarray(v) for k, v in vars(model).items()
-            if k.endswith("_") and k not in (
-                "monitor_", "state_occupancy_")}
+    return {
+        k: np.asarray(v)
+        for k, v in vars(model).items()
+        if k.endswith("_") and k not in ("monitor_", "state_occupancy_")
+    }
 
 
-@pytest.mark.parametrize("case", [c for c in OCCUPANCY_CASES if c[3]],
-                         ids=[c[0] for c in OCCUPANCY_CASES if c[3]])
+@pytest.mark.parametrize(
+    "case",
+    [c for c in OCCUPANCY_CASES if c[3]],
+    ids=[c[0] for c in OCCUPANCY_CASES if c[3]],
+)
 def test_state_occupancy_equals_the_last_m_step_statistic(case):
     _, factory, X, statistic = case
     model = _recording(factory(), statistic).fit(X, LENGTHS)
-    assert model.state_occupancy_.tobytes() == (
-        model.recorded_stat.tobytes())
+    assert model.state_occupancy_.tobytes() == (model.recorded_stat.tobytes())
 
 
 @pytest.mark.parametrize("case", OCCUPANCY_CASES, ids=OCCUPANCY_IDS)
@@ -601,7 +718,8 @@ def test_state_occupancy_is_the_posterior_sum_for_every_model(case):
     model = _recording(factory(), statistic).fit(X, LENGTHS)
     assert model.state_occupancy_.shape == (2,)
     assert model.state_occupancy_.tobytes() == (
-        model.recorded_posterior_sum.tobytes())
+        model.recorded_posterior_sum.tobytes()
+    )
     assert_allclose(model.state_occupancy_.sum(), len(X), rtol=1e-9)
 
 
@@ -631,20 +749,33 @@ def _model_cases():
     counts = rs.poisson(4, (20, 3))
     multinomial = rs.multinomial(5, [0.2, 0.3, 0.5], size=20)
     return [
-        ("GaussianHMM", lambda n: hmm.GaussianHMM(n, random_state=0),
-         continuous),
+        (
+            "GaussianHMM",
+            lambda n: hmm.GaussianHMM(n, random_state=0),
+            continuous,
+        ),
         ("GMMHMM", lambda n: hmm.GMMHMM(n, random_state=0), continuous),
-        ("CategoricalHMM", lambda n: hmm.CategoricalHMM(n, random_state=0),
-         symbols),
-        ("MultinomialHMM",
-         lambda n: hmm.MultinomialHMM(n, 5, random_state=0), multinomial),
+        (
+            "CategoricalHMM",
+            lambda n: hmm.CategoricalHMM(n, random_state=0),
+            symbols,
+        ),
+        (
+            "MultinomialHMM",
+            lambda n: hmm.MultinomialHMM(n, 5, random_state=0),
+            multinomial,
+        ),
         ("PoissonHMM", lambda n: hmm.PoissonHMM(n, random_state=0), counts),
-        ("VariationalCategoricalHMM",
-         lambda n: vhmm.VariationalCategoricalHMM(n, random_state=0),
-         symbols),
-        ("VariationalGaussianHMM",
-         lambda n: vhmm.VariationalGaussianHMM(n, random_state=0),
-         continuous),
+        (
+            "VariationalCategoricalHMM",
+            lambda n: vhmm.VariationalCategoricalHMM(n, random_state=0),
+            symbols,
+        ),
+        (
+            "VariationalGaussianHMM",
+            lambda n: vhmm.VariationalGaussianHMM(n, random_state=0),
+            continuous,
+        ),
     ]
 
 
@@ -697,13 +828,17 @@ def test_n_components_as_zero_dim_array_fits(name):
     assert model.transmat_.tobytes() == expected.transmat_.tobytes()
 
 
-@pytest.mark.parametrize("call", [
-    lambda h, X: h.fit(X),
-    lambda h, X: h.score(X),
-    lambda h, X: h.score_samples(X),
-    lambda h, X: h.predict_proba(X),
-    lambda h, X: h.decode(X, algorithm="map"),
-], ids=["fit", "score", "score_samples", "predict_proba", "decode-map"])
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda h, X: h.fit(X),
+        lambda h, X: h.score(X),
+        lambda h, X: h.score_samples(X),
+        lambda h, X: h.predict_proba(X),
+        lambda h, X: h.decode(X, algorithm="map"),
+    ],
+    ids=["fit", "score", "score_samples", "predict_proba", "decode-map"],
+)
 def test_unknown_implementation_raises(call):
     """Every path that reads ``implementation`` names it when it is wrong."""
     h = new_hmm("foo")
@@ -713,8 +848,9 @@ def test_unknown_implementation_raises(call):
 
 def test_unknown_implementation_raises_in_variational_fit():
     """The variational models read ``implementation`` through one place."""
-    model = vhmm.VariationalGaussianHMM(2, implementation="foo",
-                                        random_state=0)
+    model = vhmm.VariationalGaussianHMM(
+        2, implementation="foo", random_state=0
+    )
     X = np.random.RandomState(10).normal(size=(20, 2))
     with pytest.raises(ValueError, match="implementation"):
         model.fit(X)
@@ -730,8 +866,9 @@ def _hand_built(name):
     if name == "VariationalCategoricalHMM":
         h = vhmm.VariationalCategoricalHMM(2, init_params="")
         h.emissionprob_prior_ = np.full((2, 3), 1 / 3)
-        h.emissionprob_posterior_ = np.array([[2.0, 3.0, 5.0],
-                                              [5.0, 3.0, 2.0]])
+        h.emissionprob_posterior_ = np.array(
+            [[2.0, 3.0, 5.0], [5.0, 3.0, 2.0]]
+        )
         h.emissionprob_ = np.array([[0.2, 0.3, 0.5], [0.5, 0.3, 0.2]])
         X = rs.randint(0, 3, (20, 1))
     elif name == "VariationalGaussianHMM":
@@ -759,8 +896,9 @@ def _hand_built(name):
     elif name == "GMMHMM":
         h = hmm.GMMHMM(2, n_mix=2, covariance_type="diag", init_params="")
         h.weights_ = np.array([[0.5, 0.5], [0.3, 0.7]])
-        h.means_ = np.array([[[0.0, 0.0], [1.0, 1.0]],
-                             [[3.0, 3.0], [4.0, 4.0]]])
+        h.means_ = np.array(
+            [[[0.0, 0.0], [1.0, 1.0]], [[3.0, 3.0], [4.0, 4.0]]]
+        )
         h.covars_ = np.ones((2, 2, 2))
         X = rs.normal(size=(20, 2))
     elif name == "CategoricalHMM":
@@ -781,8 +919,9 @@ def _hand_built(name):
 
 
 @pytest.mark.parametrize("criterion", ["aic", "bic"])
-@pytest.mark.parametrize("name",
-                         ["GaussianHMM", "CategoricalHMM", "PoissonHMM"])
+@pytest.mark.parametrize(
+    "name", ["GaussianHMM", "CategoricalHMM", "PoissonHMM"]
+)
 def test_aic_bic_before_n_features(name, criterion):
     """
     ``aic`` and ``bic`` of a model built by hand take the number of
@@ -811,14 +950,23 @@ def test_n_features_none_is_taken_from_emissions(name):
     assert h.n_features is None
 
 
-@pytest.mark.parametrize("name", ["GaussianHMM", "GMMHMM", "MultinomialHMM",
-                                  "PoissonHMM", "VariationalGaussianHMM"])
+@pytest.mark.parametrize(
+    "name",
+    [
+        "GaussianHMM",
+        "GMMHMM",
+        "MultinomialHMM",
+        "PoissonHMM",
+        "VariationalGaussianHMM",
+    ],
+)
 def test_fit_reads_n_features_none_as_unset(name):
     """
     ``fit`` reads an ``n_features`` set to ``None`` as not set: the model
     fits, and the fit and the number of features it stores equal, byte for
     byte, those of the same model without the attribute.
     """
+
     def build():
         if name == "VariationalGaussianHMM":
             _, factory, X = MODEL_CASES[MODEL_IDS.index(name)]
@@ -857,31 +1005,40 @@ def _refused_then_fitted(name):
     """
     rs = np.random.RandomState(0)
     if name == "MultinomialHMM":
-        h = hmm.MultinomialHMM(n_components=2, n_trials=5, init_params="st",
-                               random_state=0)
+        h = hmm.MultinomialHMM(
+            n_components=2, n_trials=5, init_params="st", random_state=0
+        )
         h.emissionprob_ = np.array([[0.1, 0.4, 0.5], [0.6, 0.3, 0.1]])
-        return (h, rs.multinomial(5, [0.25] * 4, size=50),
-                rs.multinomial(5, [0.2, 0.3, 0.5], size=50))
+        return (
+            h,
+            rs.multinomial(5, [0.25] * 4, size=50),
+            rs.multinomial(5, [0.2, 0.3, 0.5], size=50),
+        )
     if name == "PoissonHMM":
         h = hmm.PoissonHMM(n_components=2, init_params="st", random_state=0)
         h.lambdas_ = np.array([[3.1, 1.4, 4.5], [1.6, 5.3, 0.1]])
         return h, rs.poisson(3, size=(50, 4)), rs.poisson(3, size=(50, 3))
     if name == "GMMHMM":
-        h = hmm.GMMHMM(n_components=2, n_mix=2, init_params="st",
-                       random_state=0)
+        h = hmm.GMMHMM(
+            n_components=2, n_mix=2, init_params="st", random_state=0
+        )
         h.weights_ = np.array([[0.5, 0.5], [0.5, 0.5]])
         h.means_ = rs.normal(size=(2, 2, 3))
         h.covars_ = np.ones((2, 2, 3))
     else:
-        h = hmm.GaussianHMM(n_components=2, init_params="st",
-                            random_state=0)
+        h = hmm.GaussianHMM(n_components=2, init_params="st", random_state=0)
         h.means_ = rs.normal(size=(2, 3))
         h.covars_ = np.ones((2, 3))
     return h, rs.normal(size=(50, 4)), rs.normal(size=(50, 3))
 
 
-GMM_PRIORS = ["weights_prior", "means_prior", "means_weight",
-              "covars_prior", "covars_weight"]
+GMM_PRIORS = [
+    "weights_prior",
+    "means_prior",
+    "means_weight",
+    "covars_prior",
+    "covars_weight",
+]
 
 
 @pytest.mark.parametrize("case", MODEL_CASES, ids=MODEL_IDS)
@@ -894,8 +1051,9 @@ def test_X_check_writes_nothing(case):
     name, factory, X = case
     model = factory(2).fit(X)
     before = dict(vars(model))
-    arrays = {k: v.tobytes() for k, v in before.items()
-              if isinstance(v, np.ndarray)}
+    arrays = {
+        k: v.tobytes() for k, v in before.items() if isinstance(v, np.ndarray)
+    }
     model._check_X(X)
     with pytest.raises(ValueError, match="X must"):
         model._check_X(_refused_X(name, X))
@@ -906,7 +1064,8 @@ def test_X_check_writes_nothing(case):
 
 @pytest.mark.parametrize("before", ["absent", None], ids=["absent", "None"])
 @pytest.mark.parametrize(
-    "name", ["MultinomialHMM", "PoissonHMM", "GMMHMM", "GaussianHMM"])
+    "name", ["MultinomialHMM", "PoissonHMM", "GMMHMM", "GaussianHMM"]
+)
 def test_fit_after_a_refused_fit_equals_a_fresh_fit(name, before):
     """
     A ``fit`` refused on ``X`` of another width leaves ``n_features`` as it
@@ -919,8 +1078,7 @@ def test_fit_after_a_refused_fit_equals_a_fresh_fit(name, before):
     model, wrong, right = _refused_then_fitted(name)
     if before is None:
         model.n_features = None
-    priors = {p: getattr(model, p) for p in GMM_PRIORS
-              if name == "GMMHMM"}
+    priors = {p: getattr(model, p) for p in GMM_PRIORS if name == "GMMHMM"}
     with pytest.raises(ValueError):
         model.fit(wrong)
     if name == "GaussianHMM":
@@ -946,8 +1104,13 @@ def test_fit_after_a_refused_fit_equals_a_fresh_fit(name, before):
         assert _as_bytes(getattr(model, p)) == _as_bytes(getattr(fresh, p))
 
 
-EM_NAMES = ["GaussianHMM", "GMMHMM", "CategoricalHMM", "MultinomialHMM",
-            "PoissonHMM"]
+EM_NAMES = [
+    "GaussianHMM",
+    "GMMHMM",
+    "CategoricalHMM",
+    "MultinomialHMM",
+    "PoissonHMM",
+]
 # The parameters each model converts to an array when they are assigned.
 CONVERTED = {
     "GaussianHMM": ["startprob_", "transmat_", "means_"],
@@ -958,17 +1121,35 @@ CONVERTED = {
 }
 VARIATIONAL_NAMES = ["VariationalCategoricalHMM", "VariationalGaussianHMM"]
 _VARIATIONAL_TRANSITIONS = [
-    "startprob_prior_", "startprob_posterior_", "transmat_prior_",
-    "transmat_posterior_", "startprob_", "transmat_"]
-CONVERTED.update({
-    "VariationalCategoricalHMM": _VARIATIONAL_TRANSITIONS + [
-        "emissionprob_prior_", "emissionprob_posterior_", "emissionprob_"],
-    "VariationalGaussianHMM": _VARIATIONAL_TRANSITIONS + [
-        "means_prior_", "means_posterior_", "beta_prior_", "beta_posterior_",
-        "dof_prior_", "dof_posterior_", "scale_prior_", "scale_posterior_"],
-})
-CONVERTED_CASES = [(name, attr) for name in EM_NAMES + VARIATIONAL_NAMES
-                   for attr in CONVERTED[name]]
+    "startprob_prior_",
+    "startprob_posterior_",
+    "transmat_prior_",
+    "transmat_posterior_",
+    "startprob_",
+    "transmat_",
+]
+CONVERTED.update(
+    {
+        "VariationalCategoricalHMM": _VARIATIONAL_TRANSITIONS
+        + ["emissionprob_prior_", "emissionprob_posterior_", "emissionprob_"],
+        "VariationalGaussianHMM": _VARIATIONAL_TRANSITIONS
+        + [
+            "means_prior_",
+            "means_posterior_",
+            "beta_prior_",
+            "beta_posterior_",
+            "dof_prior_",
+            "dof_posterior_",
+            "scale_prior_",
+            "scale_posterior_",
+        ],
+    }
+)
+CONVERTED_CASES = [
+    (name, attr)
+    for name in EM_NAMES + VARIATIONAL_NAMES
+    for attr in CONVERTED[name]
+]
 CONVERTED_IDS = [f"{name}-{attr}" for name, attr in CONVERTED_CASES]
 PREDICTIONS = {
     "score": lambda h, X: h.score(X),
@@ -987,13 +1168,17 @@ def _predictions(name):
     """The predictions of the model *name*: no ``aic`` or ``bic`` for a
     variational model."""
     if name in VARIATIONAL_NAMES:
-        return {k: v for k, v in PREDICTIONS.items()
-                if k not in ("aic", "bic")}
+        return {
+            k: v for k, v in PREDICTIONS.items() if k not in ("aic", "bic")
+        }
     return PREDICTIONS
 
 
-PREDICTION_CASES = [(name, key) for name in EM_NAMES + VARIATIONAL_NAMES
-                    for key in _predictions(name)]
+PREDICTION_CASES = [
+    (name, key)
+    for name in EM_NAMES + VARIATIONAL_NAMES
+    for key in _predictions(name)
+]
 
 
 def _built(name, build):
@@ -1027,8 +1212,11 @@ def _record_assignments(model):
         names.append(name)
         super(recording, self).__delattr__(name)
 
-    recording = type(cls.__name__, (cls,), {
-        "__setattr__": __setattr__, "__delattr__": __delattr__})
+    recording = type(
+        cls.__name__,
+        (cls,),
+        {"__setattr__": __setattr__, "__delattr__": __delattr__},
+    )
     model.__class__ = recording
     return names
 
@@ -1036,8 +1224,9 @@ def _record_assignments(model):
 def _snapshot(model):
     """The model's attributes, and the bytes of those that are arrays."""
     state = dict(vars(model))
-    return state, {k: v.tobytes() for k, v in state.items()
-                   if isinstance(v, np.ndarray)}
+    return state, {
+        k: v.tobytes() for k, v in state.items() if isinstance(v, np.ndarray)
+    }
 
 
 def _assert_unchanged(model, snapshot):
@@ -1057,8 +1246,11 @@ def _as_bytes(result):
 
 
 @pytest.mark.parametrize("build", ["arrays", "lists", "fitted"])
-@pytest.mark.parametrize("name, key", PREDICTION_CASES,
-                         ids=[f"{n}-{k}" for n, k in PREDICTION_CASES])
+@pytest.mark.parametrize(
+    "name, key",
+    PREDICTION_CASES,
+    ids=[f"{n}-{k}" for n, k in PREDICTION_CASES],
+)
 def test_prediction_assigns_nothing(name, key, build):
     """
     A prediction reads the model: it assigns and deletes no attribute,
@@ -1096,73 +1288,161 @@ def test_prediction_on_the_fitted_data_leaves_a_mixture_model_unchanged(
 
 
 REFUSED_PARAMETERS = [
-    ("GaussianHMM", "startprob_", [1.2, -0.2],
-     "startprob_ must not have negative entries"),
-    ("GaussianHMM", "transmat_", [[0.7, 0.3], [1.2, -0.2]],
-     "transmat_ must not have negative entries"),
-    ("GaussianHMM", "means_", [[0.0, np.nan], [3.0, 3.0]],
-     "means_ must contain only finite values"),
-    ("GMMHMM", "weights_", [[0.5, 0.6], [0.3, 0.7]],
-     "weights_ rows must sum to 1"),
-    ("GMMHMM", "means_", [[0.0, 0.0], [3.0, 3.0]],
-     r"means_ must have shape \(n_components, n_mix, n_features\)"),
-    ("CategoricalHMM", "emissionprob_", [[1.2, -0.1, -0.1], [0.5, 0.3, 0.2]],
-     "emissionprob_ must not have negative entries"),
-    ("CategoricalHMM", "emissionprob_", [[np.nan, 0.5, 0.5], [0.5, 0.3, 0.2]],
-     "emissionprob_ rows must sum to 1"),
-    ("MultinomialHMM", "emissionprob_", [[1.2, -0.1, -0.1], [0.5, 0.3, 0.2]],
-     "emissionprob_ must not have negative entries"),
-    ("MultinomialHMM", "emissionprob_", [[np.nan, 0.5, 0.5], [0.5, 0.3, 0.2]],
-     "emissionprob_ rows must sum to 1"),
-    ("MultinomialHMM", "emissionprob_", [[0.3, 0.3, 0.3], [0.5, 0.3, 0.2]],
-     "emissionprob_ rows must sum to 1"),
-    ("PoissonHMM", "lambdas_", [[1.0, -2.0], [4.0, 3.0]],
-     "lambdas_ must not have negative entries"),
-    ("PoissonHMM", "lambdas_", [[1.0, np.nan], [4.0, 3.0]],
-     "lambdas_ must contain only finite values"),
-    ("PoissonHMM", "lambdas_", [[1.0, np.inf], [4.0, 3.0]],
-     "lambdas_ must contain only finite values"),
-    ("VariationalCategoricalHMM", "transmat_", [[1.2, -0.2], [0.4, 0.6]],
-     "transmat_ must not have negative entries"),
-    ("VariationalCategoricalHMM", "startprob_", [np.inf, 0.4],
-     "startprob_ must contain only finite values"),
-    ("VariationalCategoricalHMM", "emissionprob_",
-     [[np.nan, 0.5, 0.5], [0.5, 0.3, 0.2]],
-     "emissionprob_ must contain only finite values"),
-    ("VariationalCategoricalHMM", "emissionprob_",
-     [[1.2, -0.1, -0.1], [0.5, 0.3, 0.2]],
-     "emissionprob_ must not have negative entries"),
-    ("VariationalGaussianHMM", "startprob_", [1.2, -0.2],
-     "startprob_ must not have negative entries"),
-    ("VariationalGaussianHMM", "transmat_", [[0.7, 0.3], [np.nan, 0.6]],
-     "transmat_ must contain only finite values"),
-    ("VariationalGaussianHMM", "means_posterior_", [[0.0, np.nan], [3.0, 3.0]],
-     "means_posterior_ must not contain NaN"),
-    ("VariationalGaussianHMM", "covars_", [[1.0, np.nan], [1.0, 1.0]],
-     "covars_ must not contain NaN"),
+    (
+        "GaussianHMM",
+        "startprob_",
+        [1.2, -0.2],
+        "startprob_ must not have negative entries",
+    ),
+    (
+        "GaussianHMM",
+        "transmat_",
+        [[0.7, 0.3], [1.2, -0.2]],
+        "transmat_ must not have negative entries",
+    ),
+    (
+        "GaussianHMM",
+        "means_",
+        [[0.0, np.nan], [3.0, 3.0]],
+        "means_ must contain only finite values",
+    ),
+    (
+        "GMMHMM",
+        "weights_",
+        [[0.5, 0.6], [0.3, 0.7]],
+        "weights_ rows must sum to 1",
+    ),
+    (
+        "GMMHMM",
+        "means_",
+        [[0.0, 0.0], [3.0, 3.0]],
+        r"means_ must have shape \(n_components, n_mix, n_features\)",
+    ),
+    (
+        "CategoricalHMM",
+        "emissionprob_",
+        [[1.2, -0.1, -0.1], [0.5, 0.3, 0.2]],
+        "emissionprob_ must not have negative entries",
+    ),
+    (
+        "CategoricalHMM",
+        "emissionprob_",
+        [[np.nan, 0.5, 0.5], [0.5, 0.3, 0.2]],
+        "emissionprob_ rows must sum to 1",
+    ),
+    (
+        "MultinomialHMM",
+        "emissionprob_",
+        [[1.2, -0.1, -0.1], [0.5, 0.3, 0.2]],
+        "emissionprob_ must not have negative entries",
+    ),
+    (
+        "MultinomialHMM",
+        "emissionprob_",
+        [[np.nan, 0.5, 0.5], [0.5, 0.3, 0.2]],
+        "emissionprob_ rows must sum to 1",
+    ),
+    (
+        "MultinomialHMM",
+        "emissionprob_",
+        [[0.3, 0.3, 0.3], [0.5, 0.3, 0.2]],
+        "emissionprob_ rows must sum to 1",
+    ),
+    (
+        "PoissonHMM",
+        "lambdas_",
+        [[1.0, -2.0], [4.0, 3.0]],
+        "lambdas_ must not have negative entries",
+    ),
+    (
+        "PoissonHMM",
+        "lambdas_",
+        [[1.0, np.nan], [4.0, 3.0]],
+        "lambdas_ must contain only finite values",
+    ),
+    (
+        "PoissonHMM",
+        "lambdas_",
+        [[1.0, np.inf], [4.0, 3.0]],
+        "lambdas_ must contain only finite values",
+    ),
+    (
+        "VariationalCategoricalHMM",
+        "transmat_",
+        [[1.2, -0.2], [0.4, 0.6]],
+        "transmat_ must not have negative entries",
+    ),
+    (
+        "VariationalCategoricalHMM",
+        "startprob_",
+        [np.inf, 0.4],
+        "startprob_ must contain only finite values",
+    ),
+    (
+        "VariationalCategoricalHMM",
+        "emissionprob_",
+        [[np.nan, 0.5, 0.5], [0.5, 0.3, 0.2]],
+        "emissionprob_ must contain only finite values",
+    ),
+    (
+        "VariationalCategoricalHMM",
+        "emissionprob_",
+        [[1.2, -0.1, -0.1], [0.5, 0.3, 0.2]],
+        "emissionprob_ must not have negative entries",
+    ),
+    (
+        "VariationalGaussianHMM",
+        "startprob_",
+        [1.2, -0.2],
+        "startprob_ must not have negative entries",
+    ),
+    (
+        "VariationalGaussianHMM",
+        "transmat_",
+        [[0.7, 0.3], [np.nan, 0.6]],
+        "transmat_ must contain only finite values",
+    ),
+    (
+        "VariationalGaussianHMM",
+        "means_posterior_",
+        [[0.0, np.nan], [3.0, 3.0]],
+        "means_posterior_ must not contain NaN",
+    ),
+    (
+        "VariationalGaussianHMM",
+        "covars_",
+        [[1.0, np.nan], [1.0, 1.0]],
+        "covars_ must not contain NaN",
+    ),
 ]
-REFUSED_IDS = ["GaussianHMM-negative-startprob_",
-               "GaussianHMM-negative-transmat_", "GaussianHMM-nan-means_",
-               "GMMHMM-unnormalized-weights_", "GMMHMM-2-D-means_",
-               "CategoricalHMM-negative-emissionprob_",
-               "CategoricalHMM-nan-emissionprob_",
-               "MultinomialHMM-negative-emissionprob_",
-               "MultinomialHMM-nan-emissionprob_",
-               "MultinomialHMM-unnormalized-emissionprob_",
-               "PoissonHMM-negative-lambdas_", "PoissonHMM-nan-lambdas_",
-               "PoissonHMM-inf-lambdas_",
-               "VariationalCategoricalHMM-negative-transmat_",
-               "VariationalCategoricalHMM-inf-startprob_",
-               "VariationalCategoricalHMM-nan-emissionprob_",
-               "VariationalCategoricalHMM-negative-emissionprob_",
-               "VariationalGaussianHMM-negative-startprob_",
-               "VariationalGaussianHMM-nan-transmat_",
-               "VariationalGaussianHMM-nan-means_posterior_",
-               "VariationalGaussianHMM-nan-covars_"]
+REFUSED_IDS = [
+    "GaussianHMM-negative-startprob_",
+    "GaussianHMM-negative-transmat_",
+    "GaussianHMM-nan-means_",
+    "GMMHMM-unnormalized-weights_",
+    "GMMHMM-2-D-means_",
+    "CategoricalHMM-negative-emissionprob_",
+    "CategoricalHMM-nan-emissionprob_",
+    "MultinomialHMM-negative-emissionprob_",
+    "MultinomialHMM-nan-emissionprob_",
+    "MultinomialHMM-unnormalized-emissionprob_",
+    "PoissonHMM-negative-lambdas_",
+    "PoissonHMM-nan-lambdas_",
+    "PoissonHMM-inf-lambdas_",
+    "VariationalCategoricalHMM-negative-transmat_",
+    "VariationalCategoricalHMM-inf-startprob_",
+    "VariationalCategoricalHMM-nan-emissionprob_",
+    "VariationalCategoricalHMM-negative-emissionprob_",
+    "VariationalGaussianHMM-negative-startprob_",
+    "VariationalGaussianHMM-nan-transmat_",
+    "VariationalGaussianHMM-nan-means_posterior_",
+    "VariationalGaussianHMM-nan-covars_",
+]
 
 
-@pytest.mark.parametrize("name, attr, value, match", REFUSED_PARAMETERS,
-                         ids=REFUSED_IDS)
+@pytest.mark.parametrize(
+    "name, attr, value, match", REFUSED_PARAMETERS, ids=REFUSED_IDS
+)
 @pytest.mark.parametrize("method", ["score", "decode", "sample"])
 def test_refused_prediction_assigns_nothing(name, attr, value, match, method):
     """
@@ -1184,10 +1464,16 @@ def test_refused_prediction_assigns_nothing(name, attr, value, match, method):
 
 FIT_ONLY_VALUES = [
     ("VariationalCategoricalHMM", "startprob_prior_", [np.nan, 0.5]),
-    ("VariationalCategoricalHMM", "transmat_posterior_",
-     [[7.0, -3.0], [4.0, 6.0]]),
-    ("VariationalCategoricalHMM", "emissionprob_posterior_",
-     [[np.inf, 3.0, 5.0], [5.0, 3.0, 2.0]]),
+    (
+        "VariationalCategoricalHMM",
+        "transmat_posterior_",
+        [[7.0, -3.0], [4.0, 6.0]],
+    ),
+    (
+        "VariationalCategoricalHMM",
+        "emissionprob_posterior_",
+        [[np.inf, 3.0, 5.0], [5.0, 3.0, 2.0]],
+    ),
     ("VariationalGaussianHMM", "dof_prior_", [-0.3, 2.0]),
     ("VariationalGaussianHMM", "beta_posterior_", [np.nan, 10.0]),
     ("VariationalGaussianHMM", "scale_prior_", [[np.nan, 1e-3], [1e-3, 1e-3]]),
@@ -1195,8 +1481,9 @@ FIT_ONLY_VALUES = [
 FIT_ONLY_IDS = [f"{name}-{attr}" for name, attr, _ in FIT_ONLY_VALUES]
 
 
-@pytest.mark.parametrize("name, attr, value", FIT_ONLY_VALUES,
-                         ids=FIT_ONLY_IDS)
+@pytest.mark.parametrize(
+    "name, attr, value", FIT_ONLY_VALUES, ids=FIT_ONLY_IDS
+)
 def test_prediction_does_not_test_what_only_fit_reads(name, attr, value):
     """
     A prediction does not read the priors and posteriors of a variational
@@ -1213,7 +1500,8 @@ def test_prediction_does_not_test_what_only_fit_reads(name, attr, value):
 @pytest.mark.parametrize("covariance_type", ["spherical", "diag"])
 @pytest.mark.parametrize("attr", ["means_posterior_", "covars_"])
 def test_infinite_gaussian_state_is_not_refused_on_prediction(
-        attr, covariance_type):
+    attr, covariance_type
+):
     """
     A ``spherical`` or ``diag`` ``VariationalGaussianHMM`` with an infinite
     mean or variance in one state scores and decodes: that state emits
@@ -1237,31 +1525,65 @@ def test_infinite_gaussian_state_is_not_refused_on_prediction(
 
 
 FIT_REFUSED = [
-    ("VariationalCategoricalHMM", "transmat_prior_",
-     [[np.nan, 0.5], [0.5, 0.5]], "transmat_prior_ must contain only finite"),
-    ("VariationalCategoricalHMM", "startprob_posterior_", [np.inf, 4.0],
-     "startprob_posterior_ must contain only finite"),
-    ("VariationalCategoricalHMM", "emissionprob_posterior_",
-     [[np.inf, 3.0, 5.0], [5.0, 3.0, 2.0]],
-     "emissionprob_posterior_ must contain only finite"),
-    ("VariationalGaussianHMM", "scale_prior_", [[np.nan, 1e-3], [1e-3, 1e-3]],
-     "scale_prior_ must contain only finite"),
-    ("VariationalGaussianHMM", "means_prior_", [[0.0, np.inf], [0.0, 0.0]],
-     "means_prior_ must contain only finite"),
-    ("VariationalGaussianHMM", "means_posterior_",
-     [[0.0, -np.inf], [3.0, 3.0]],
-     "means_posterior_ must contain only finite"),
-    ("VariationalGaussianHMM", "dof_posterior_", [np.nan, 12.0],
-     "dof_posterior_ must contain only finite"),
-    ("VariationalGaussianHMM", "beta_posterior_", [np.nan, 10.0],
-     "beta_posterior_ must not contain NaN"),
+    (
+        "VariationalCategoricalHMM",
+        "transmat_prior_",
+        [[np.nan, 0.5], [0.5, 0.5]],
+        "transmat_prior_ must contain only finite",
+    ),
+    (
+        "VariationalCategoricalHMM",
+        "startprob_posterior_",
+        [np.inf, 4.0],
+        "startprob_posterior_ must contain only finite",
+    ),
+    (
+        "VariationalCategoricalHMM",
+        "emissionprob_posterior_",
+        [[np.inf, 3.0, 5.0], [5.0, 3.0, 2.0]],
+        "emissionprob_posterior_ must contain only finite",
+    ),
+    (
+        "VariationalGaussianHMM",
+        "scale_prior_",
+        [[np.nan, 1e-3], [1e-3, 1e-3]],
+        "scale_prior_ must contain only finite",
+    ),
+    (
+        "VariationalGaussianHMM",
+        "means_prior_",
+        [[0.0, np.inf], [0.0, 0.0]],
+        "means_prior_ must contain only finite",
+    ),
+    (
+        "VariationalGaussianHMM",
+        "means_posterior_",
+        [[0.0, -np.inf], [3.0, 3.0]],
+        "means_posterior_ must contain only finite",
+    ),
+    (
+        "VariationalGaussianHMM",
+        "dof_posterior_",
+        [np.nan, 12.0],
+        "dof_posterior_ must contain only finite",
+    ),
+    (
+        "VariationalGaussianHMM",
+        "beta_posterior_",
+        [np.nan, 10.0],
+        "beta_posterior_ must not contain NaN",
+    ),
 ]
 
 
-@pytest.mark.parametrize("name, attr, value, match", FIT_REFUSED,
-                         ids=[f"{n}-{a}" for n, a, _, _ in FIT_REFUSED])
+@pytest.mark.parametrize(
+    "name, attr, value, match",
+    FIT_REFUSED,
+    ids=[f"{n}-{a}" for n, a, _, _ in FIT_REFUSED],
+)
 def test_variational_fit_refuses_a_non_finite_prior_or_posterior(
-        name, attr, value, match):
+    name, attr, value, match
+):
     """
     ``fit`` refuses a NaN or infinite prior or posterior of a variational
     model, naming it, before its first iteration. The model keeps the
@@ -1294,7 +1616,8 @@ def test_infinite_beta_posterior_is_not_refused_by_fit(value):
     # ``_utils.logdet`` warns as well as returning NaN.
     with np.errstate(invalid="ignore"), warnings.catch_warnings():
         warnings.filterwarnings(
-            "ignore", "invalid value encountered in log", RuntimeWarning)
+            "ignore", "invalid value encountered in log", RuntimeWarning
+        )
         h.fit(X)
     assert np.isnan(h.monitor_.history[0])
     assert np.isfinite(list(h.monitor_.history)[1:]).all()
@@ -1346,12 +1669,24 @@ def test_ragged_list_is_refused_at_assignment(name, attr):
 
 
 ONE_STATE_CASES = [
-    ("CategoricalHMM", "emissionprob_", lambda: hmm.CategoricalHMM(1),
-     np.array([[0], [2], [1], [1], [0]])),
-    ("MultinomialHMM", "emissionprob_", lambda: hmm.MultinomialHMM(1, 5),
-     np.array([[1, 2, 2], [0, 0, 5], [3, 1, 1]])),
-    ("PoissonHMM", "lambdas_", lambda: hmm.PoissonHMM(1),
-     np.array([[1, 4, 0], [2, 3, 1], [0, 5, 2]])),
+    (
+        "CategoricalHMM",
+        "emissionprob_",
+        lambda: hmm.CategoricalHMM(1),
+        np.array([[0], [2], [1], [1], [0]]),
+    ),
+    (
+        "MultinomialHMM",
+        "emissionprob_",
+        lambda: hmm.MultinomialHMM(1, 5),
+        np.array([[1, 2, 2], [0, 0, 5], [3, 1, 1]]),
+    ),
+    (
+        "PoissonHMM",
+        "lambdas_",
+        lambda: hmm.PoissonHMM(1),
+        np.array([[1, 4, 0], [2, 3, 1], [0, 5, 2]]),
+    ),
 ]
 
 
@@ -1365,8 +1700,11 @@ def _one_state(factory, attr, emission, implementation="log"):
     return h
 
 
-@pytest.mark.parametrize("name, attr, factory, X", ONE_STATE_CASES,
-                         ids=[c[0] for c in ONE_STATE_CASES])
+@pytest.mark.parametrize(
+    "name, attr, factory, X",
+    ONE_STATE_CASES,
+    ids=[c[0] for c in ONE_STATE_CASES],
+)
 def test_one_state_1d_emission_is_stored_as_one_row(name, attr, factory, X):
     """
     A one-state model given its emission parameter as one flat row stores
@@ -1379,17 +1717,22 @@ def test_one_state_1d_emission_is_stored_as_one_row(name, attr, factory, X):
 
 
 @pytest.mark.parametrize("implementation", ["log", "scaling"])
-@pytest.mark.parametrize("name, attr, factory, X", ONE_STATE_CASES,
-                         ids=[c[0] for c in ONE_STATE_CASES])
+@pytest.mark.parametrize(
+    "name, attr, factory, X",
+    ONE_STATE_CASES,
+    ids=[c[0] for c in ONE_STATE_CASES],
+)
 def test_one_state_1d_emission_predicts_as_one_row(
-        name, attr, factory, X, implementation):
+    name, attr, factory, X, implementation
+):
     """
     A one-state model given its emission parameter as one flat list
     predicts as the model given the ``(1, n_features)`` array.
     """
     h = _one_state(factory, attr, [0.2, 0.3, 0.5], implementation)
     expected = _one_state(
-        factory, attr, np.array([[0.2, 0.3, 0.5]]), implementation)
+        factory, attr, np.array([[0.2, 0.3, 0.5]]), implementation
+    )
     for call in PREDICTIONS.values():
         assert _as_bytes(call(h, X)) == _as_bytes(call(expected, X))
 
@@ -1398,10 +1741,12 @@ def test_one_state_1d_emission_predicts_as_one_row(
 @pytest.mark.parametrize(
     "name, attrs",
     [(name, (attr,)) for name, attr in CONVERTED_CASES]
-    + [(name, tuple(CONVERTED[name]))
-       for name in EM_NAMES + VARIATIONAL_NAMES],
+    + [
+        (name, tuple(CONVERTED[name])) for name in EM_NAMES + VARIATIONAL_NAMES
+    ],
     ids=CONVERTED_IDS
-    + [f"{name}-all" for name in EM_NAMES + VARIATIONAL_NAMES])
+    + [f"{name}-all" for name in EM_NAMES + VARIATIONAL_NAMES],
+)
 def test_list_parameters_predict_as_arrays(name, attrs, implementation):
     """
     A model given a parameter, or all of them, as lists predicts as the
@@ -1467,8 +1812,9 @@ def test_stationary_distribution_of_a_list_transmat():
     h.transmat_ = transmat.tolist()
     expected = StubHMM(2)
     expected.transmat_ = transmat
-    assert (_as_bytes(h.get_stationary_distribution())
-            == _as_bytes(expected.get_stationary_distribution()))
+    assert _as_bytes(h.get_stationary_distribution()) == _as_bytes(
+        expected.get_stationary_distribution()
+    )
 
 
 # A sequence that underflows under implementation="scaling" -------------------
@@ -1946,9 +2292,7 @@ class _RaisingLikelihood(hmm.GMMHMM):
 
 def _estep_values_cases():
     """(id, model, X, the error fit raises or None)."""
-    cases = [
-        (name, factory(2), X, None) for name, factory, X in MODEL_CASES
-    ]
+    cases = [(name, factory(2), X, None) for name, factory, X in MODEL_CASES]
     _, _, X = MODEL_CASES[MODEL_IDS.index("GMMHMM")]
     cases += [
         (
@@ -1988,6 +2332,7 @@ def test_e_step_values_are_removed_after_a_fit_and_when_a_hook_raises(case):
             model.fit(X)
     assert "_estep_values" not in vars(model)
     assert type(model)._estep_values is None
-    added = {name for name in set(vars(model)) - before
-             if not name.endswith("_")}
+    added = {
+        name for name in set(vars(model)) - before if not name.endswith("_")
+    }
     assert added <= {"n_features"}

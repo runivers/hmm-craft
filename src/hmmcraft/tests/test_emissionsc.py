@@ -24,8 +24,9 @@ def _arguments():
 
 def _unaligned(a):
     """A copy of ``a`` whose data starts one byte off a double's alignment."""
-    raw = np.frombuffer(bytearray(8 * a.size + 1), dtype=np.float64,
-                        offset=1).reshape(a.shape)
+    raw = np.frombuffer(
+        bytearray(8 * a.size + 1), dtype=np.float64, offset=1
+    ).reshape(a.shape)
     raw[...] = a
     assert not raw.flags.aligned
     return raw
@@ -33,16 +34,22 @@ def _unaligned(a):
 
 def _call(arguments):
     return _emissionsc.log_density_diag(
-        arguments["X"], arguments["means"], arguments["covars"],
-        arguments["head"])
+        arguments["X"],
+        arguments["means"],
+        arguments["covars"],
+        arguments["head"],
+    )
 
 
 def test_log_density_diag_of_a_hand_written_case():
     """-0.5 * (head + sum of (x - mean)**2 / variance), in a new float64
     array of shape (n_samples, n_components) that the caller may write."""
     got = _emissionsc.log_density_diag(
-        np.array([[1.0, 2.0]]), np.array([[0.0, 0.0]]),
-        np.array([[1.0, 4.0]]), np.array([0.5]))
+        np.array([[1.0, 2.0]]),
+        np.array([[0.0, 0.0]]),
+        np.array([[1.0, 4.0]]),
+        np.array([0.5]),
+    )
     # -0.5 * (0.5 + 1 / 1 + 4 / 4)
     assert type(got) is np.ndarray
     assert got.dtype == np.float64 and got.shape == (1, 1)
@@ -57,26 +64,47 @@ EMPTY = "empty array"
 
 REFUSED = {
     "float32 X": ("X", lambda a: a["X"].astype(np.float32), NOT_FLOAT64),
-    "integer means": ("means", lambda a: a["means"].astype(np.int64),
-                      NOT_FLOAT64),
-    "byte-swapped covars": ("covars", lambda a: a["covars"].astype(">f8"),
-                            NOT_FLOAT64),
+    "integer means": (
+        "means",
+        lambda a: a["means"].astype(np.int64),
+        NOT_FLOAT64,
+    ),
+    "byte-swapped covars": (
+        "covars",
+        lambda a: a["covars"].astype(">f8"),
+        NOT_FLOAT64,
+    ),
     "list X": ("X", lambda a: a["X"].tolist(), NOT_FLOAT64),
     "None head": ("head", lambda a: None, NOT_FLOAT64),
     "F-ordered X": ("X", lambda a: np.asfortranarray(a["X"]), NOT_C_ALIGNED),
     "every second column of X": (
-        "X", lambda a: np.repeat(a["X"], 2, axis=1)[:, ::2], NOT_C_ALIGNED),
+        "X",
+        lambda a: np.repeat(a["X"], 2, axis=1)[:, ::2],
+        NOT_C_ALIGNED,
+    ),
     "unaligned X": ("X", lambda a: _unaligned(a["X"]), NOT_C_ALIGNED),
-    "F-ordered covars": ("covars", lambda a: np.asfortranarray(a["covars"]),
-                         NOT_C_ALIGNED),
+    "F-ordered covars": (
+        "covars",
+        lambda a: np.asfortranarray(a["covars"]),
+        NOT_C_ALIGNED,
+    ),
     "1-D X": ("X", lambda a: a["X"][0].copy(), SHAPE),
     "2-D head": ("head", lambda a: a["head"][None, :].copy(), SHAPE),
     "X one column wider": (
-        "X", lambda a: np.hstack([a["X"], a["X"][:, :1]]), SHAPE),
-    "covars one row short": ("covars", lambda a: a["covars"][:-1].copy(),
-                             SHAPE),
+        "X",
+        lambda a: np.hstack([a["X"], a["X"][:, :1]]),
+        SHAPE,
+    ),
+    "covars one row short": (
+        "covars",
+        lambda a: a["covars"][:-1].copy(),
+        SHAPE,
+    ),
     "covars one column short": (
-        "covars", lambda a: a["covars"][:, :-1].copy(), SHAPE),
+        "covars",
+        lambda a: a["covars"][:, :-1].copy(),
+        SHAPE,
+    ),
     "head one short": ("head", lambda a: a["head"][:-1].copy(), SHAPE),
 }
 
@@ -94,19 +122,25 @@ def test_log_density_diag_refuses_an_array_it_would_have_to_convert(name):
     assert str(error.value) == text
 
 
-@pytest.mark.parametrize("name, n_samples, n_components, n_features", [
-    ("no sample", 0, N_COMPONENTS, N_FEATURES),
-    ("no state", N_SAMPLES, 0, N_FEATURES),
-    ("no feature", N_SAMPLES, N_COMPONENTS, 0),
-])
+@pytest.mark.parametrize(
+    "name, n_samples, n_components, n_features",
+    [
+        ("no sample", 0, N_COMPONENTS, N_FEATURES),
+        ("no state", N_SAMPLES, 0, N_FEATURES),
+        ("no feature", N_SAMPLES, N_COMPONENTS, 0),
+    ],
+)
 def test_log_density_diag_refuses_an_empty_dimension(
-        name, n_samples, n_components, n_features):
+    name, n_samples, n_components, n_features
+):
     """A dimension of length zero raises ValueError before any loop runs."""
     with pytest.raises(ValueError) as error:
         _emissionsc.log_density_diag(
             np.zeros((n_samples, n_features)),
             np.zeros((n_components, n_features)),
-            np.ones((n_components, n_features)), np.zeros(n_components))
+            np.ones((n_components, n_features)),
+            np.zeros(n_components),
+        )
     assert type(error.value) is ValueError
     assert str(error.value) == EMPTY
 
@@ -115,6 +149,7 @@ def _set(key, index, value):
     def change(arguments):
         arguments[key] = arguments[key].copy()
         arguments[key][index] = value
+
     return change
 
 
@@ -157,8 +192,9 @@ def _one_rounding_per_operation(weights, X):
     return out
 
 
-def _statistic_arguments(n_samples=N_SAMPLES, n_components=N_COMPONENTS,
-                         n_features=N_FEATURES):
+def _statistic_arguments(
+    n_samples=N_SAMPLES, n_components=N_COMPONENTS, n_features=N_FEATURES
+):
     """Seeded weights, each row summing to one, and samples."""
     rs = np.random.RandomState(0)
     weights = rs.dirichlet(np.ones(n_components), n_samples)
@@ -167,8 +203,7 @@ def _statistic_arguments(n_samples=N_SAMPLES, n_components=N_COMPONENTS,
 
 
 def _statistic(arguments):
-    return _emissionsc.weighted_outer_sum(
-        arguments["weights"], arguments["X"])
+    return _emissionsc.weighted_outer_sum(arguments["weights"], arguments["X"])
 
 
 def test_weighted_outer_sum_of_a_hand_written_case():
@@ -176,22 +211,26 @@ def test_weighted_outer_sum_of_a_hand_written_case():
     float64 array of shape (n_components, n_features, n_features) that the
     caller may write."""
     got = _emissionsc.weighted_outer_sum(
-        np.array([[1.0, 0.5], [2.0, 0.0]]), np.array([[1.0, 2.0],
-                                                      [3.0, 0.0]]))
+        np.array([[1.0, 0.5], [2.0, 0.0]]), np.array([[1.0, 2.0], [3.0, 0.0]])
+    )
     # State 0: 1 * [[1, 2], [2, 4]] + 2 * [[9, 0], [0, 0]]
     # State 1: 0.5 * [[1, 2], [2, 4]] + 0 * [[9, 0], [0, 0]]
     assert type(got) is np.ndarray
     assert got.dtype == np.float64 and got.shape == (2, 2, 2)
     assert got.flags.c_contiguous and got.flags.writeable
-    assert got.tolist() == [[[19.0, 2.0], [2.0, 4.0]],
-                            [[0.5, 1.0], [1.0, 2.0]]]
+    assert got.tolist() == [
+        [[19.0, 2.0], [2.0, 4.0]],
+        [[0.5, 1.0], [1.0, 2.0]],
+    ]
 
 
-@pytest.mark.parametrize("n_samples, n_components",
-                         [(1, 1), (2, 3), (9, 2), (40, 5)])
+@pytest.mark.parametrize(
+    "n_samples, n_components", [(1, 1), (2, 3), (9, 2), (40, 5)]
+)
 @pytest.mark.parametrize("n_features", [1, 2, 3, 8, 9, 17])
 def test_weighted_outer_sum_rounds_every_product_and_sum_on_its_own(
-        n_features, n_samples, n_components):
+    n_features, n_samples, n_components
+):
     """The loop gives the bytes of the same operations done one numpy call
     at a time: entry [c, k, l] gets (weight * x[k]) * x[l] added to it."""
     arguments = _statistic_arguments(n_samples, n_components, n_features)
@@ -208,10 +247,11 @@ def test_weighted_outer_sum_does_not_fuse_the_product_into_the_sum():
     0.25 + 2**-54, and the sum, a tie, rounds to 0.75; a fused multiply-add
     gives 0.75 + 2**-53.
     """
-    step = 2.0 ** -53
+    step = 2.0**-53
     a, b = 0.25 + step, 1.0 - step
     got = _emissionsc.weighted_outer_sum(
-        np.array([[0.5], [a]]), np.array([[1.0, 1.0], [1.0, b]]))
+        np.array([[0.5], [a]]), np.array([[1.0, 1.0], [1.0, b]])
+    )
     assert got[0, 0, 1] == 0.75
     assert got.tolist() == [[[0.75 + step, 0.75], [0.75, 0.75]]]
 
@@ -219,29 +259,42 @@ def test_weighted_outer_sum_does_not_fuse_the_product_into_the_sum():
 def test_weighted_outer_sum_adds_to_positive_zero():
     """The sums start from +0.0: products of -0.0 leave every entry +0.0."""
     got = _emissionsc.weighted_outer_sum(
-        np.array([[1.0]]), np.array([[-0.0, 1.0]]))
+        np.array([[1.0]]), np.array([[-0.0, 1.0]])
+    )
     assert got.tolist() == [[[0.0, 0.0], [0.0, 1.0]]]
     assert not np.signbit(got).any()
 
 
 STATISTIC_REFUSED = {
     "float32 X": ("X", lambda a: a["X"].astype(np.float32), NOT_FLOAT64),
-    "integer weights": ("weights", lambda a: a["weights"].astype(np.int64),
-                        NOT_FLOAT64),
+    "integer weights": (
+        "weights",
+        lambda a: a["weights"].astype(np.int64),
+        NOT_FLOAT64,
+    ),
     "byte-swapped X": ("X", lambda a: a["X"].astype(">f8"), NOT_FLOAT64),
     "list X": ("X", lambda a: a["X"].tolist(), NOT_FLOAT64),
     "None weights": ("weights", lambda a: None, NOT_FLOAT64),
     "F-ordered X": ("X", lambda a: np.asfortranarray(a["X"]), NOT_C_ALIGNED),
     "every second column of X": (
-        "X", lambda a: np.repeat(a["X"], 2, axis=1)[:, ::2], NOT_C_ALIGNED),
+        "X",
+        lambda a: np.repeat(a["X"], 2, axis=1)[:, ::2],
+        NOT_C_ALIGNED,
+    ),
     "unaligned X": ("X", lambda a: _unaligned(a["X"]), NOT_C_ALIGNED),
     "F-ordered weights": (
-        "weights", lambda a: np.asfortranarray(a["weights"]), NOT_C_ALIGNED),
+        "weights",
+        lambda a: np.asfortranarray(a["weights"]),
+        NOT_C_ALIGNED,
+    ),
     "1-D X": ("X", lambda a: a["X"][0].copy(), SHAPE),
     "3-D weights": ("weights", lambda a: a["weights"][None].copy(), SHAPE),
     "X one row short": ("X", lambda a: a["X"][:-1].copy(), SHAPE),
     "weights one row short": (
-        "weights", lambda a: a["weights"][:-1].copy(), SHAPE),
+        "weights",
+        lambda a: a["weights"][:-1].copy(),
+        SHAPE,
+    ),
 }
 
 
@@ -258,18 +311,23 @@ def test_weighted_outer_sum_refuses_an_array_it_would_have_to_convert(name):
     assert str(error.value) == text
 
 
-@pytest.mark.parametrize("name, n_samples, n_components, n_features", [
-    ("no sample", 0, N_COMPONENTS, N_FEATURES),
-    ("no state", N_SAMPLES, 0, N_FEATURES),
-    ("no feature", N_SAMPLES, N_COMPONENTS, 0),
-])
+@pytest.mark.parametrize(
+    "name, n_samples, n_components, n_features",
+    [
+        ("no sample", 0, N_COMPONENTS, N_FEATURES),
+        ("no state", N_SAMPLES, 0, N_FEATURES),
+        ("no feature", N_SAMPLES, N_COMPONENTS, 0),
+    ],
+)
 def test_weighted_outer_sum_refuses_an_empty_dimension(
-        name, n_samples, n_components, n_features):
+    name, n_samples, n_components, n_features
+):
     """A dimension of length zero raises ValueError before any loop runs."""
     with pytest.raises(ValueError) as error:
         _emissionsc.weighted_outer_sum(
             np.ones((n_samples, n_components)),
-            np.zeros((n_samples, n_features)))
+            np.zeros((n_samples, n_features)),
+        )
     assert type(error.value) is ValueError
     assert str(error.value) == EMPTY
 
@@ -277,6 +335,7 @@ def test_weighted_outer_sum_refuses_an_empty_dimension(
 def _scale(key, factor):
     def change(arguments):
         arguments[key] = arguments[key] * factor
+
     return change
 
 

@@ -76,20 +76,28 @@ ERROR_STATES = [
     {"all": "raise"},
     {"all": "ignore"},
 ]
-ERROR_STATE_IDS = ["default", "all=warn", "all=call", "all=raise",
-                   "all=ignore"]
+ERROR_STATE_IDS = [
+    "default",
+    "all=warn",
+    "all=call",
+    "all=raise",
+    "all=ignore",
+]
 # Every exception flag bit of the C library; it ignores the others.
 ANY_FLAG = 0xFF
 
 
-def _threaded_block(implementation, start, trans, lattice, lengths,
-                    with_xi_sum, n_threads):
+def _threaded_block(
+    implementation, start, trans, lattice, lengths, with_xi_sum, n_threads
+):
     """Call the block function of ``implementation`` on ``n_threads``
     threads; name its results."""
     results = getattr(_hmmc, "estep_" + implementation)(
-        start, trans, lattice, lengths, with_xi_sum, n_threads=n_threads)
-    names = BLOCK_RESULTS + (["underflow"] if implementation == "scaling"
-                             else [])
+        start, trans, lattice, lengths, with_xi_sum, n_threads=n_threads
+    )
+    names = BLOCK_RESULTS + (
+        ["underflow"] if implementation == "scaling" else []
+    )
     assert len(results) == len(names)
     return dict(zip(names, results))
 
@@ -109,8 +117,9 @@ def requested_threads(monkeypatch):
         real = getattr(_hmmc, name)
 
         def recording(*args, _real=real, **kwargs):
-            counts.append(args[5] if len(args) > 5
-                          else kwargs.get("n_threads", 1))
+            counts.append(
+                args[5] if len(args) > 5 else kwargs.get("n_threads", 1)
+            )
             return _real(*args, **kwargs)
 
         monkeypatch.setattr(_hmmc, name, recording)
@@ -135,27 +144,41 @@ def test_block_functions_on_threads_equal_the_per_sequence_functions(
     the bytes of the per-sequence functions, with the transition sums and
     without them."""
     start, trans, lattice = _block_inputs(
-        implementation, n_components, lengths, data)
+        implementation, n_components, lengths, data
+    )
     lengths = np.array(lengths, dtype=np.intp)
     expected = _per_sequence(implementation, start, trans, lattice, lengths)
-    without = dict(expected,
-                   xi_sum=np.empty((0, n_components, n_components)))
+    without = dict(expected, xi_sum=np.empty((0, n_components, n_components)))
     for n_threads in (2, 4, len(lengths) + 1):
         _assert_same_bytes(
-            _threaded_block(implementation, start, trans, lattice, lengths,
-                            True, n_threads),
-            expected)
+            _threaded_block(
+                implementation, start, trans, lattice, lengths, True, n_threads
+            ),
+            expected,
+        )
         _assert_same_bytes(
-            _threaded_block(implementation, start, trans, lattice, lengths,
-                            False, n_threads),
-            without)
+            _threaded_block(
+                implementation,
+                start,
+                trans,
+                lattice,
+                lengths,
+                False,
+                n_threads,
+            ),
+            without,
+        )
 
 
 @pytest.mark.parametrize(
     "rows, value",
-    [([3], 0.), ([7], 0.), ([1, 8], 0.), ([4], 1e-301)],
-    ids=["zero-first-row", "zero-one-row-sequence", "two-sequences",
-         "below-the-floor"],
+    [([3], 0.0), ([7], 0.0), ([1, 8], 0.0), ([4], 1e-301)],
+    ids=[
+        "zero-first-row",
+        "zero-one-row-sequence",
+        "two-sequences",
+        "below-the-floor",
+    ],
 )
 def test_estep_scaling_on_threads_flags_the_sequences_of_one_thread(
     rows, value
@@ -163,16 +186,19 @@ def test_estep_scaling_on_threads_flags_the_sequences_of_one_thread(
     """On several threads, the sequences whose scaled forward pass
     underflows get their flag and NaN in every result, as on one."""
     start, trans, frame = _block_inputs(
-        "scaling", 2, UNDERFLOW_LENGTHS, "dense")
+        "scaling", 2, UNDERFLOW_LENGTHS, "dense"
+    )
     frame[rows] = value
     lengths = np.array(UNDERFLOW_LENGTHS)
     expected = _per_sequence("scaling", start, trans, frame, lengths)
     assert expected["underflow"].any()
     for n_threads in (2, 4, len(UNDERFLOW_LENGTHS) + 1):
         _assert_same_bytes(
-            _threaded_block("scaling", start, trans, frame, lengths, True,
-                            n_threads),
-            expected)
+            _threaded_block(
+                "scaling", start, trans, frame, lengths, True, n_threads
+            ),
+            expected,
+        )
 
 
 @pytest.mark.parametrize("n_threads", [0, -1])
@@ -180,12 +206,18 @@ def test_estep_scaling_on_threads_flags_the_sequences_of_one_thread(
 def test_block_functions_refuse_fewer_than_one_thread(name, n_threads):
     with pytest.raises(ValueError, match="^n_threads must be at least 1$"):
         getattr(_hmmc, name)(
-            np.full(2, 0.5), np.full((2, 2), 0.5), np.full((5, 2), 0.5),
-            np.array([2, 3]), True, n_threads=n_threads)
+            np.full(2, 0.5),
+            np.full((2, 2), 0.5),
+            np.full((5, 2), 0.5),
+            np.array([2, 3]),
+            True,
+            n_threads=n_threads,
+        )
 
 
 @pytest.mark.skipif(
-    not LINUX, reason="reads the C library's flags through ctypes")
+    not LINUX, reason="reads the C library's flags through ctypes"
+)
 def test_flags_raised_on_threads_are_raised_on_the_calling_thread():
     """The floating-point exception flags a call on 4 threads leaves on
     the calling thread are those of the call on one thread, whichever
@@ -199,8 +231,9 @@ def test_flags_raised_on_threads_are_raised_on_the_calling_thread():
 
     def flags(lattice, n_threads):
         libc.feclearexcept(ANY_FLAG)
-        _hmmc.estep_log(start, trans, lattice, lengths, True,
-                        n_threads=n_threads)
+        _hmmc.estep_log(
+            start, trans, lattice, lengths, True, n_threads=n_threads
+        )
         return libc.fetestexcept(ANY_FLAG)
 
     one = flags(lattice, 1)
@@ -209,20 +242,24 @@ def test_flags_raised_on_threads_are_raised_on_the_calling_thread():
 
 
 @pytest.mark.skipif(
-    not LINUX, reason="lowers the process limit through resource")
+    not LINUX, reason="lowers the process limit through resource"
+)
 def test_a_thread_the_system_refuses_leaves_the_result_unchanged():
     """With the process limit at one, no thread starts (for an unprivileged
     user) and the call on 4 threads returns the bytes of one thread."""
     start, trans, lattice = _block_inputs(
-        "scaling", 3, SHORT_AND_LONG, "zeros")
+        "scaling", 3, SHORT_AND_LONG, "zeros"
+    )
     lengths = np.array(SHORT_AND_LONG, dtype=np.intp)
     expected = _threaded_block(
-        "scaling", start, trans, lattice, lengths, True, 1)
+        "scaling", start, trans, lattice, lengths, True, 1
+    )
     soft, hard = resource.getrlimit(resource.RLIMIT_NPROC)
     resource.setrlimit(resource.RLIMIT_NPROC, (1, hard))
     try:
         got = _threaded_block(
-            "scaling", start, trans, lattice, lengths, True, 4)
+            "scaling", start, trans, lattice, lengths, True, 4
+        )
         refused = False
         try:
             threading.Thread(target=lambda: None).start()
@@ -265,7 +302,8 @@ def test_one_thread_cuts_the_blocks_of_the_default(monkeypatch):
     (mark,) = [m for m in test.pytestmark if m.name == "parametrize"]
     for lengths, block_rows, n_components, expected in mark.args[1]:
         monkeypatch.setattr(
-            base, "_ESTEP_BLOCK_ROWS", block_rows, raising=False)
+            base, "_ESTEP_BLOCK_ROWS", block_rows, raising=False
+        )
         assert base._estep_blocks(lengths, n_components, 1) == expected
 
 
@@ -291,8 +329,16 @@ def test_n_threads_is_the_last_parameter_of_every_model(cls):
 
 
 INVALID = [0, -1, True, False, np.True_, 2.0, None, "2"]
-INVALID_IDS = ["zero", "negative", "true", "false", "numpy-true", "float",
-               "none", "string"]
+INVALID_IDS = [
+    "zero",
+    "negative",
+    "true",
+    "false",
+    "numpy-true",
+    "float",
+    "none",
+    "string",
+]
 
 
 @pytest.mark.parametrize("value", INVALID, ids=INVALID_IDS)
@@ -302,15 +348,15 @@ def test_fit_refuses_an_n_threads_that_is_not_a_count(
 ):
     _, factory, X = variant
     model = factory(2, "log").set_params(n_threads=value)
-    message = ("n_threads must be an integer of at least 1, "
-               f"got {value!r}")
+    message = f"n_threads must be an integer of at least 1, got {value!r}"
     with pytest.raises(ValueError, match=f"^{re.escape(message)}$"):
         model.fit(X, LENGTHS)
     assert block_calls == []
 
 
 @pytest.mark.parametrize(
-    "value", [2, np.int64(2), 2**70],
+    "value",
+    [2, np.int64(2), 2**70],
     ids=["int", "numpy-int64", "beyond-a-c-integer"],
 )
 @pytest.mark.parametrize("variant", VARIANTS, ids=VARIANT_IDS)
@@ -351,21 +397,30 @@ def test_a_model_pickled_without_n_threads_loads_with_one(variant):
 @pytest.mark.parametrize(
     "n_components, block_rows",
     [(1, 16), (1, None), (3, 16), (3, None)],
-    ids=["1-state-16-rows", "1-state-default", "3-states-16-rows",
-         "3-states-default"],
+    ids=[
+        "1-state-16-rows",
+        "1-state-default",
+        "3-states-16-rows",
+        "3-states-default",
+    ],
 )
 @pytest.mark.parametrize("implementation", ["log", "scaling"])
 @pytest.mark.parametrize("variant", VARIANTS, ids=VARIANT_IDS)
 def test_fits_on_threads_equal_the_one_thread_fit(
-    monkeypatch, requested_threads, variant, implementation, n_components,
-    block_rows
+    monkeypatch,
+    requested_threads,
+    variant,
+    implementation,
+    n_components,
+    block_rows,
 ):
     """Every fitted array, ``state_occupancy_``, the history and its types,
     the warnings and the log records of a fit on 2, 4 and more threads
     than sequences are those of one thread."""
     if block_rows is not None:
         monkeypatch.setattr(
-            base, "_ESTEP_BLOCK_ROWS", block_rows, raising=False)
+            base, "_ESTEP_BLOCK_ROWS", block_rows, raising=False
+        )
     _, factory, X = variant
     expected = _fitted(factory(n_components, implementation), X)
     assert isinstance(expected[0], dict)
@@ -373,7 +428,8 @@ def test_fits_on_threads_equal_the_one_thread_fit(
     for n_threads in THREAD_COUNTS:
         del requested_threads[:]
         model = factory(n_components, implementation).set_params(
-            n_threads=n_threads)
+            n_threads=n_threads
+        )
         assert _fitted(model, X) == expected, n_threads
         assert max(requested_threads) > 1
 
@@ -456,8 +512,7 @@ def test_threads_take_the_transition_sums_from_the_block_call(
     assert {with_xi for _, with_xi in block_calls} == {False}
     assert bool(xi_sum_calls) == ("t" in params)
     del block_calls[:], xi_sum_calls[:]
-    model = factory(2, implementation).set_params(
-        params=params, n_threads=2)
+    model = factory(2, implementation).set_params(params=params, n_threads=2)
     assert _fitted(model, X) == expected
     assert {with_xi for _, with_xi in block_calls} == {"t" in params}
     assert xi_sum_calls == []
@@ -532,8 +587,11 @@ def test_a_report_on_threads_gives_the_one_thread_outcome(name, state):
     threaded._check()
     expected = _estep(model, X, LENGTHS, state)
     if state in blocks.REPORT_STATES:
-        assert (expected[1] != [] or expected[2] != []
-                or isinstance(expected[0], tuple))
+        assert (
+            expected[1] != []
+            or expected[2] != []
+            or isinstance(expected[0], tuple)
+        )
     assert _estep(threaded, X, LENGTHS, state) == expected
 
 
@@ -551,5 +609,6 @@ def test_far_rows_on_threads_give_the_one_thread_outcome(rows, state):
         # What fit does before its first E-step.
         each._check()
         each._store_checked()
-    assert (_estep(threaded, X, LENGTHS, state)
-            == _estep(model, X, LENGTHS, state))
+    assert _estep(threaded, X, LENGTHS, state) == _estep(
+        model, X, LENGTHS, state
+    )

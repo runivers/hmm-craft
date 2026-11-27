@@ -45,9 +45,12 @@ def cpu_tables():
 def avx512_targets():
     """Return the AVX-512 dispatch targets numpy has enabled."""
     dispatch, features = cpu_tables()
-    return [name for name in dispatch
-            if (name.startswith("AVX512") or name == "X86_V4")
-            and features.get(name)]
+    return [
+        name
+        for name in dispatch
+        if (name.startswith("AVX512") or name == "X86_V4")
+        and features.get(name)
+    ]
 
 
 def count_differing(n=N_VALUES, stride=STRIDE):
@@ -61,8 +64,9 @@ def count_differing(n=N_VALUES, stride=STRIDE):
     np.log(strided, out=out)
     contiguous = strided.copy()
     np.log(contiguous, out=contiguous)
-    return int(np.count_nonzero(out.view(np.int64)
-                                != contiguous.view(np.int64))), n
+    return int(
+        np.count_nonzero(out.view(np.int64) != contiguous.view(np.int64))
+    ), n
 
 
 def main():
@@ -70,8 +74,10 @@ def main():
     targets = avx512_targets()
     print("AVX-512 dispatch targets enabled:", " ".join(targets) or "none")
     differing, n = count_differing()
-    print(f"float64 log of a strided input against one in place: "
-          f"{differing} of {n} values differ")
+    print(
+        f"float64 log of a strided input against one in place: "
+        f"{differing} of {n} values differ"
+    )
     return 0
 
 

@@ -22,8 +22,9 @@ def sample_from_parallelepiped(low, high, n_samples, random_state):
     return X
 
 
-def prep_params(n_comps, n_mix, n_features, covar_type,
-                low, high, random_state):
+def prep_params(
+    n_comps, n_mix, n_features, covar_type, low, high, random_state
+):
     # the idea is to generate ``n_comps`` bounding boxes and then
     # generate ``n_mix`` mixture means in each of them
 
@@ -37,14 +38,14 @@ def prep_params(n_comps, n_mix, n_features, covar_type,
 
     means = np.zeros((n_comps, n_mix, n_features))
     for i, (left, right) in enumerate(itertools.pairwise(dim_lims)):
-        means[i] = sample_from_parallelepiped(left, right, n_mix,
-                                              random_state)
+        means[i] = sample_from_parallelepiped(left, right, n_mix, random_state)
 
     startprob = np.zeros(n_comps)
     startprob[0] = 1
 
-    transmat = normalized(random_state.uniform(size=(n_comps, n_comps)),
-                          axis=1)
+    transmat = normalized(
+        random_state.uniform(size=(n_comps, n_comps)), axis=1
+    )
 
     if covar_type == "spherical":
         covs = random_state.uniform(0.1, 5, size=(n_comps, n_mix))
@@ -59,8 +60,9 @@ def prep_params(n_comps, n_mix, n_features, covar_type,
         covs = np.zeros((n_comps, n_mix, n_features, n_features))
         for i in range(n_comps):
             for j in range(n_mix):
-                low = random_state.uniform(-2, 2,
-                                           size=(n_features, n_features))
+                low = random_state.uniform(
+                    -2, 2, size=(n_features, n_features)
+                )
                 covs[i, j] = low.T @ low
 
     weights = normalized(random_state.uniform(size=(n_comps, n_mix)), axis=1)
@@ -77,12 +79,21 @@ class GMMHMMTestMixin:
     def new_hmm(self, implementation):
         prng = np.random.RandomState(14)
         covars, means, startprob, transmat, weights = prep_params(
-            self.n_components, self.n_mix, self.n_features,
-            self.covariance_type, self.low, self.high, prng)
-        h = GMMHMM(n_components=self.n_components, n_mix=self.n_mix,
-                   covariance_type=self.covariance_type,
-                   random_state=prng,
-                   implementation=implementation)
+            self.n_components,
+            self.n_mix,
+            self.n_features,
+            self.covariance_type,
+            self.low,
+            self.high,
+            prng,
+        )
+        h = GMMHMM(
+            n_components=self.n_components,
+            n_mix=self.n_mix,
+            covariance_type=self.covariance_type,
+            random_state=prng,
+            implementation=implementation,
+        )
         h.startprob_ = startprob
         h.transmat_ = transmat
         h.weights_ = weights
@@ -102,9 +113,14 @@ class GMMHMMTestMixin:
         h = self.new_hmm(implementation)
         h._check()  # should not raise any errors
 
-    @pytest.mark.parametrize("means", [
-        lambda m: m[:, 0], lambda m: m[:, 0, 0],
-    ], ids=["2-D", "1-D"])
+    @pytest.mark.parametrize(
+        "means",
+        [
+            lambda m: m[:, 0],
+            lambda m: m[:, 0, 0],
+        ],
+        ids=["2-D", "1-D"],
+    )
     def test_means_of_wrong_ndim_raise(self, means):
         """
         Without ``n_features``, a ``means_`` that is not 3-D is refused with
@@ -132,8 +148,7 @@ class GMMHMMTestMixin:
         setattr(h, name, value)
         # Without the check the NaN arithmetic would warn; ignoring it lets
         # a missing refusal show as one.
-        with np.errstate(all="ignore"), \
-                pytest.raises(ValueError, match=name):
+        with np.errstate(all="ignore"), pytest.raises(ValueError, match=name):
             h.score(X)
 
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
@@ -145,22 +160,27 @@ class GMMHMMTestMixin:
         h = self.new_hmm(implementation)
         X, _ = h.sample(10, random_state=0)
         h.weights_[0] = [1.5, -0.5]
-        with np.errstate(all="ignore"), \
-                pytest.raises(ValueError, match="weights_"):
+        with (
+            np.errstate(all="ignore"),
+            pytest.raises(ValueError, match="weights_"),
+        ):
             h.score(X)
 
     @pytest.mark.parametrize("method", ["score", "predict"])
     @pytest.mark.parametrize("n_columns", [1, 3])
     def test_prediction_refuses_X_of_another_n_features(
-            self, n_columns, method):
+        self, n_columns, method
+    ):
         """
         ``X`` with one column fewer or one more than the model's features is
         refused, naming ``X``.
         """
         h = self.new_hmm("log")
         X = np.random.RandomState(10).normal(size=(10, n_columns))
-        with np.errstate(all="ignore"), \
-                pytest.raises(ValueError, match="X must have"):
+        with (
+            np.errstate(all="ignore"),
+            pytest.raises(ValueError, match="X must have"),
+        ):
             getattr(h, method)(X)
 
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
@@ -201,9 +221,13 @@ class GMMHMMTestMixin:
 
         # Mess up the parameters and see if we can re-learn them.
         covs0, means0, priors0, trans0, weights0 = prep_params(
-            self.n_components, self.n_mix, self.n_features,
-            self.covariance_type, self.low, self.high,
-            np.random.RandomState(15)
+            self.n_components,
+            self.n_mix,
+            self.n_features,
+            self.covariance_type,
+            self.low,
+            self.high,
+            np.random.RandomState(15),
         )
         h.covars_ = covs0 * 100
         h.means_ = means0
@@ -229,17 +253,19 @@ class GMMHMMTestMixin:
     def test_fit_zero_variance(self, implementation):
         # Example from issue #2 on GitHub.
         # this data has singular covariance matrix
-        X = np.asarray([
-            [7.15000000e+02, 5.8500000e+02, 0.00000000e+00, 0.00000000e+00],
-            [7.15000000e+02, 5.2000000e+02, 1.04705811e+00, -6.03696289e+01],
-            [7.15000000e+02, 4.5500000e+02, 7.20886230e-01, -5.27055664e+01],
-            [7.15000000e+02, 3.9000000e+02, -4.57946777e-01, -7.80605469e+01],
-            [7.15000000e+02, 3.2500000e+02, -6.43127441e+00, -5.59954834e+01],
-            [7.15000000e+02, 2.6000000e+02, -2.90063477e+00, -7.80220947e+01],
-            [7.15000000e+02, 1.9500000e+02, 8.45532227e+00, -7.03294373e+01],
-            [7.15000000e+02, 1.3000000e+02, 4.09387207e+00, -5.83621216e+01],
-            [7.15000000e+02, 6.5000000e+01, -1.21667480e+00, -4.48131409e+01]
-        ])
+        X = np.asarray(
+            [
+                [7.15000000e02, 5.8500000e02, 0.00000000e00, 0.00000000e00],
+                [7.15000000e02, 5.2000000e02, 1.04705811e00, -6.03696289e01],
+                [7.15000000e02, 4.5500000e02, 7.20886230e-01, -5.27055664e01],
+                [7.15000000e02, 3.9000000e02, -4.57946777e-01, -7.80605469e01],
+                [7.15000000e02, 3.2500000e02, -6.43127441e00, -5.59954834e01],
+                [7.15000000e02, 2.6000000e02, -2.90063477e00, -7.80220947e01],
+                [7.15000000e02, 1.9500000e02, 8.45532227e00, -7.03294373e01],
+                [7.15000000e02, 1.3000000e02, 4.09387207e00, -5.83621216e01],
+                [7.15000000e02, 6.5000000e01, -1.21667480e00, -4.48131409e01],
+            ]
+        )
 
         h = self.new_hmm(implementation)
         h.fit(X)
@@ -256,8 +282,13 @@ class GMMHMMTestMixin:
         bic = []
         ns = [2, 3, 4, 5]
         for n in ns:
-            h = GMMHMM(n, n_mix=2, covariance_type=self.covariance_type,
-                random_state=random_state, implementation=implementation)
+            h = GMMHMM(
+                n,
+                n_mix=2,
+                covariance_type=self.covariance_type,
+                random_state=random_state,
+                implementation=implementation,
+            )
             h.fit(X)
             aic.append(h.aic(X))
             bic.append(h.bic(X))
@@ -270,19 +301,19 @@ class GMMHMMTestMixin:
 
 
 class TestGMMHMMWithSphericalCovars(GMMHMMTestMixin):
-    covariance_type = 'spherical'
+    covariance_type = "spherical"
 
 
 class TestGMMHMMWithDiagCovars(GMMHMMTestMixin):
-    covariance_type = 'diag'
+    covariance_type = "diag"
 
 
 class TestGMMHMMWithTiedCovars(GMMHMMTestMixin):
-    covariance_type = 'tied'
+    covariance_type = "tied"
 
 
 class TestGMMHMMWithFullCovars(GMMHMMTestMixin):
-    covariance_type = 'full'
+    covariance_type = "full"
 
 
 class TestGMMHMM_KmeansInit:
@@ -294,8 +325,9 @@ class TestGMMHMM_KmeansInit:
         data1 = np.random.uniform(low=0, high=1, size=(100, 2))
         data2 = np.random.uniform(low=5, high=6, size=(5, 2))
         data = np.r_[data1, data2]
-        model = GMMHMM(n_components=2, n_mix=10, n_iter=5,
-                       implementation=implementation)
+        model = GMMHMM(
+            n_components=2, n_mix=10, n_iter=5, implementation=implementation
+        )
         model.fit(data)  # _init() should not fail here
         # test whether the means are bounded by the data lower- and upperbounds
         assert_array_less(0, model.means_)
@@ -303,25 +335,34 @@ class TestGMMHMM_KmeansInit:
 
 
 class TestGMMHMM_MultiSequence:
-
-    @pytest.mark.parametrize("covtype",
-                             ["diag", "spherical", "tied", "full"])
-    def test_chunked(sellf, covtype, init_params='mcw'):
+    @pytest.mark.parametrize("covtype", ["diag", "spherical", "tied", "full"])
+    def test_chunked(sellf, covtype, init_params="mcw"):
         np.random.seed(0)
         gmm = create_random_gmm(3, 2, covariance_type=covtype, prng=0)
         gmm.covariances_ = gmm.covars_
         data = gmm.sample(n_samples=1000)[0]
 
-        model1 = GMMHMM(n_components=3, n_mix=2, covariance_type=covtype,
-                        random_state=1, init_params=init_params)
-        model2 = GMMHMM(n_components=3, n_mix=2, covariance_type=covtype,
-                        random_state=1, init_params=init_params)
+        model1 = GMMHMM(
+            n_components=3,
+            n_mix=2,
+            covariance_type=covtype,
+            random_state=1,
+            init_params=init_params,
+        )
+        model2 = GMMHMM(
+            n_components=3,
+            n_mix=2,
+            covariance_type=covtype,
+            random_state=1,
+            init_params=init_params,
+        )
         # don't use random parameters for testing
-        init = 1. / model1.n_components
+        init = 1.0 / model1.n_components
         for model in (model1, model2):
             model.startprob_ = np.full(model.n_components, init)
-            model.transmat_ = \
-                np.full((model.n_components, model.n_components), init)
+            model.transmat_ = np.full(
+                (model.n_components, model.n_components), init
+            )
 
         model1.fit(data)
         model2.fit(data, lengths=[200] * 5)
@@ -347,7 +388,8 @@ def _stack(covariance_type, replace, n_features=3):
     """
     shape = {"tied": (2,), "full": (2, 2)}[covariance_type]
     covars = np.broadcast_to(
-        np.eye(n_features), shape + (n_features, n_features)).copy()
+        np.eye(n_features), shape + (n_features, n_features)
+    ).copy()
     flat = covars.reshape(-1, n_features, n_features)
     for position, matrix in replace.items():
         flat[position] = matrix
@@ -376,14 +418,15 @@ def _check_matrix_by_matrix(covariance_type, covars):
     same calls, in the same order, with the same errors and log messages.
     """
     n_features = covars.shape[-1]
-    for name, covar in zip(_matrix_names(covariance_type),
-                           covars.reshape(-1, n_features, n_features)):
+    for name, covar in zip(
+        _matrix_names(covariance_type),
+        covars.reshape(-1, n_features, n_features),
+    ):
         if not np.allclose(covar, covar.T):
             raise ValueError(f"Covariance of {name} is not symmetric")
         min_eigvalsh = linalg.eigvalsh(covar).min()
         if min_eigvalsh < 0:
-            raise ValueError(
-                f"Covariance of {name} is not positive definite")
+            raise ValueError(f"Covariance of {name} is not positive definite")
         if min_eigvalsh == 0:
             _test_log.warning("Covariance of %s has a null eigenvalue.", name)
 
@@ -392,37 +435,46 @@ def _outcome(call, caplog, **errstate):
     """The error, the warnings and the log messages of ``call()``."""
     caplog.clear()
     raised = None
-    with caplog.at_level("WARNING", logger="hmmcraft"), \
-            warnings.catch_warnings(record=True) as caught:
+    with (
+        caplog.at_level("WARNING", logger="hmmcraft"),
+        warnings.catch_warnings(record=True) as caught,
+    ):
         warnings.simplefilter("always")
         try:
             with np.errstate(**errstate):
                 call()
         except (ValueError, FloatingPointError) as exc:
             raised = type(exc), str(exc)
-    return (raised, [str(w.message) for w in caught],
-            [r.getMessage() for r in caplog.records])
+    return (
+        raised,
+        [str(w.message) for w in caught],
+        [r.getMessage() for r in caplog.records],
+    )
 
 
 def _same_as_matrix_by_matrix(covariance_type, covars, caplog, **errstate):
     h = _gmm_with(covariance_type, covars)
     got = _outcome(h._check, caplog, **errstate)
     expected = _outcome(
-        lambda: _check_matrix_by_matrix(covariance_type, covars), caplog,
-        **errstate)
+        lambda: _check_matrix_by_matrix(covariance_type, covars),
+        caplog,
+        **errstate,
+    )
     return got, expected
 
 
 def _fitted_gmm(covariance_type):
     rs = np.random.RandomState(7)
     X = rs.normal(size=(40, 2)) + 3 * rs.randint(0, 2, (40, 1))
-    return GMMHMM(2, 2, covariance_type=covariance_type, n_iter=4,
-                  random_state=0).fit(X)
+    return GMMHMM(
+        2, 2, covariance_type=covariance_type, n_iter=4, random_state=0
+    ).fit(X)
 
 
 @pytest.mark.parametrize("covariance_type", ["tied", "full"])
 def test_check_of_fitted_covariances_does_not_call_scipy(
-        monkeypatch, covariance_type):
+    monkeypatch, covariance_type
+):
     """
     The check of a fitted model tests its float64 covariances on the whole
     stack, without a call to ``scipy.linalg.eigvalsh`` per matrix.
@@ -461,9 +513,13 @@ COVARIANCE_CASES = {
     "identity-1e-320": (np.eye(3) * 1e-320, "pass"),
     "identity-1e300": (np.eye(3) * 1e300, "pass"),
     "asymmetric-within-tolerance": (
-        2 * np.eye(3) + np.triu(np.full((3, 3), 1e-9), 1), "pass"),
+        2 * np.eye(3) + np.triu(np.full((3, 3), 1e-9), 1),
+        "pass",
+    ),
     "asymmetric-beyond-tolerance": (
-        np.eye(3) + np.triu(np.full((3, 3), 1e-3), 1), "asymmetric"),
+        np.eye(3) + np.triu(np.full((3, 3), 1e-3), 1),
+        "asymmetric",
+    ),
     "rank-2": (_rank_2(0), None),
     "rank-2-minus-4-n-eps": (_rank_2(-4 * 3 * EPS), None),
     "rank-2-plus-4-n-eps": (_rank_2(4 * 3 * EPS), None),
@@ -477,7 +533,8 @@ COVARIANCE_CASES = {
 @pytest.mark.parametrize("position", [0, -1], ids=["first", "last"])
 @pytest.mark.parametrize("case", COVARIANCE_CASES)
 def test_covariance_check_at_and_near_a_zero_eigenvalue(
-        caplog, covariance_type, position, case):
+    caplog, covariance_type, position, case
+):
     """
     A covariance at, just below, just above or well above a zero eigenvalue,
     or not symmetric, among identities, is refused, warned about or passed
@@ -485,18 +542,25 @@ def test_covariance_check_at_and_near_a_zero_eigenvalue(
     """
     matrix, kind = COVARIANCE_CASES[case]
     covars = _stack(covariance_type, {position: matrix})
-    got, expected = _same_as_matrix_by_matrix(covariance_type, covars,
-                                              caplog)
+    got, expected = _same_as_matrix_by_matrix(covariance_type, covars, caplog)
     assert got == expected
     if kind is not None:
         name = _matrix_names(covariance_type)[position]
-        refusal = {"negative": "not positive definite",
-                   "asymmetric": "not symmetric"}.get(kind)
+        refusal = {
+            "negative": "not positive definite",
+            "asymmetric": "not symmetric",
+        }.get(kind)
         raised, _, logged = expected
-        assert raised == (None if refusal is None else (
-            ValueError, f"Covariance of {name} is {refusal}"))
-        assert logged == ([f"Covariance of {name} has a null eigenvalue."]
-                          if kind == "null" else [])
+        assert raised == (
+            None
+            if refusal is None
+            else (ValueError, f"Covariance of {name} is {refusal}")
+        )
+        assert logged == (
+            [f"Covariance of {name} has a null eigenvalue."]
+            if kind == "null"
+            else []
+        )
 
 
 @pytest.mark.parametrize("covariance_type", ["tied", "full"])
@@ -505,28 +569,37 @@ def test_covariance_check_warns_before_it_refuses(caplog, covariance_type):
     A null eigenvalue in the first matrix and a negative one in the last:
     the first is warned about, then the last is refused.
     """
-    covars = _stack(covariance_type, {0: np.diag([1.0, 1.0, 0.0]),
-                                      -1: np.diag([1.0, 1.0, -1.0])})
+    covars = _stack(
+        covariance_type,
+        {0: np.diag([1.0, 1.0, 0.0]), -1: np.diag([1.0, 1.0, -1.0])},
+    )
     names = _matrix_names(covariance_type)
     first, last = names[0], names[-1]
     got = _outcome(_gmm_with(covariance_type, covars)._check, caplog)
     assert got == (
-        (ValueError, f"Covariance of {last} is not positive definite"), [],
-        [f"Covariance of {first} has a null eigenvalue."])
+        (ValueError, f"Covariance of {last} is not positive definite"),
+        [],
+        [f"Covariance of {first} has a null eigenvalue."],
+    )
 
 
 @pytest.mark.parametrize("covariance_type", ["tied", "full"])
-@pytest.mark.parametrize("factor, decided_on_the_stack", [
-    (2, True), (0.5, False)], ids=["twice", "half"])
-def test_covariance_margin(monkeypatch, covariance_type, factor,
-                           decided_on_the_stack):
+@pytest.mark.parametrize(
+    "factor, decided_on_the_stack",
+    [(2, True), (0.5, False)],
+    ids=["twice", "half"],
+)
+def test_covariance_margin(
+    monkeypatch, covariance_type, factor, decided_on_the_stack
+):
     """
     A smallest eigenvalue above ``1024 * n_features * eps`` times the
     largest is decided on the stack; below it, each matrix gets its own
     ``scipy.linalg.eigvalsh`` call.
     """
-    covars = _stack(covariance_type,
-                    {-1: np.diag([1.0, 1.0, factor * MARGIN_3])})
+    covars = _stack(
+        covariance_type, {-1: np.diag([1.0, 1.0, factor * MARGIN_3])}
+    )
     calls = []
     eigvalsh = linalg.eigvalsh
 
@@ -536,8 +609,9 @@ def test_covariance_margin(monkeypatch, covariance_type, factor,
 
     monkeypatch.setattr(linalg, "eigvalsh", spy)
     _gmm_with(covariance_type, covars)._check()
-    assert len(calls) == (0 if decided_on_the_stack
-                          else len(_matrix_names(covariance_type)))
+    assert len(calls) == (
+        0 if decided_on_the_stack else len(_matrix_names(covariance_type))
+    )
 
 
 def _singular_integer_matrices():
@@ -546,8 +620,17 @@ def _singular_integer_matrices():
     of small integers and one column fewer, times scales from 1e-300 to
     1e300.
     """
-    scales = [1.0, 2.0**-40, 2.0**40, 1e-150, 1e150, 1e-300, 1e300, 3.7e-7,
-              9.1e11]
+    scales = [
+        1.0,
+        2.0**-40,
+        2.0**40,
+        1e-150,
+        1e150,
+        1e-300,
+        1e300,
+        3.7e-7,
+        9.1e11,
+    ]
     rng = np.random.default_rng(0)
     for n_features in (2, 3, 4):
         for i in range(40):
@@ -557,7 +640,8 @@ def _singular_integer_matrices():
 
 @pytest.mark.parametrize("covariance_type", ["tied", "full"])
 def test_singular_covariances_are_checked_one_matrix_at_a_time(
-        caplog, covariance_type):
+    caplog, covariance_type
+):
     """
     Singular covariances, whose smallest eigenvalue two routines may round
     to opposite signs, get the outcome one matrix at a time gives.
@@ -565,8 +649,9 @@ def test_singular_covariances_are_checked_one_matrix_at_a_time(
     differ = []
     for matrix in _singular_integer_matrices():
         covars = _stack(covariance_type, {-1: matrix}, len(matrix))
-        got, expected = _same_as_matrix_by_matrix(covariance_type, covars,
-                                                  caplog)
+        got, expected = _same_as_matrix_by_matrix(
+            covariance_type, covars, caplog
+        )
         if got != expected:
             differ.append((matrix, got, expected))
     assert differ == []
@@ -588,28 +673,56 @@ def _asymmetric_overflowing():
 # refused or warned about, or after an identity.
 FLAG_CASES = {
     "negative-then-subnormal-identity": (
-        np.diag([1.0, 1.0, -1.0]), np.eye(3) * 1e-320),
+        np.diag([1.0, 1.0, -1.0]),
+        np.eye(3) * 1e-320,
+    ),
     "null-then-subnormal-identity": (
-        np.diag([1.0, 1.0, 0.0]), np.eye(3) * 1e-320),
+        np.diag([1.0, 1.0, 0.0]),
+        np.eye(3) * 1e-320,
+    ),
     "negative-then-subnormal-entry": (
-        np.diag([1.0, 1.0, -1.0]), _with_subnormal_pair()),
+        np.diag([1.0, 1.0, -1.0]),
+        _with_subnormal_pair(),
+    ),
     "null-then-subnormal-entry": (
-        np.diag([1.0, 1.0, 0.0]), _with_subnormal_pair()),
+        np.diag([1.0, 1.0, 0.0]),
+        _with_subnormal_pair(),
+    ),
     "identity-then-subnormal-entry": (np.eye(3), _with_subnormal_pair()),
     "negative-then-overflowing": (
-        np.diag([1.0, 1.0, -1.0]), _asymmetric_overflowing()),
+        np.diag([1.0, 1.0, -1.0]),
+        _asymmetric_overflowing(),
+    ),
 }
 
 
-@pytest.mark.parametrize("errstate", [
-    {"divide": "warn", "over": "warn", "under": "ignore", "invalid": "warn"},
-    {"all": "warn"}, {"under": "raise"}, {"over": "raise"}, {"all": "raise"},
-], ids=["numpy-default", "all-warn", "under-raise", "over-raise",
-        "all-raise"])
+@pytest.mark.parametrize(
+    "errstate",
+    [
+        {
+            "divide": "warn",
+            "over": "warn",
+            "under": "ignore",
+            "invalid": "warn",
+        },
+        {"all": "warn"},
+        {"under": "raise"},
+        {"over": "raise"},
+        {"all": "raise"},
+    ],
+    ids=[
+        "numpy-default",
+        "all-warn",
+        "under-raise",
+        "over-raise",
+        "all-raise",
+    ],
+)
 @pytest.mark.parametrize("covariance_type", ["tied", "full"])
 @pytest.mark.parametrize("case", FLAG_CASES)
 def test_covariance_check_reports_floating_point_errors_in_order(
-        caplog, case, covariance_type, errstate):
+    caplog, case, covariance_type, errstate
+):
     """
     Under the caller's error state, a matrix whose symmetry test underflows
     or overflows reports it where, and only if, one matrix at a time
@@ -617,8 +730,9 @@ def test_covariance_check_reports_floating_point_errors_in_order(
     """
     first, last = FLAG_CASES[case]
     covars = _stack(covariance_type, {0: first, -1: last})
-    got, expected = _same_as_matrix_by_matrix(covariance_type, covars,
-                                              caplog, **errstate)
+    got, expected = _same_as_matrix_by_matrix(
+        covariance_type, covars, caplog, **errstate
+    )
     assert got == expected
 
 
@@ -627,11 +741,13 @@ def test_stack_screen_sets_no_floating_point_flag():
     Covariances with entries at the stack test's bounds pass it without a
     floating-point error.
     """
-    covars = np.array([
-        np.eye(2) * 1e-280,
-        np.eye(2) * 2.0**1022,
-        [[1.0, 2.0**-1000], [2.0**-1000, 1.0]],
-        [[2.0, -2.0**-1000], [-2.0**-1000, 1.0]],
-    ]).reshape(2, 2, 2, 2)
+    covars = np.array(
+        [
+            np.eye(2) * 1e-280,
+            np.eye(2) * 2.0**1022,
+            [[1.0, 2.0**-1000], [2.0**-1000, 1.0]],
+            [[2.0, -(2.0**-1000)], [-(2.0**-1000), 1.0]],
+        ]
+    ).reshape(2, 2, 2, 2)
     with np.errstate(all="raise"):
         assert hmm._covars_pass_on_stack(covars)

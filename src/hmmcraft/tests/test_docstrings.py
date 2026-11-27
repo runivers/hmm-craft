@@ -28,8 +28,9 @@ def _raise_import_error(name):
 def _module_names():
     """Return the names of the package's modules, the tests excluded."""
     names = [hmmcraft.__name__]
-    for info in pkgutil.walk_packages(hmmcraft.__path__, "hmmcraft.",
-                                      onerror=_raise_import_error):
+    for info in pkgutil.walk_packages(
+        hmmcraft.__path__, "hmmcraft.", onerror=_raise_import_error
+    ):
         if not (info.name + ".").startswith("hmmcraft.tests."):
             names.append(info.name)
     return names
@@ -41,8 +42,9 @@ def _docstrings_with_examples():
     tests = []
     for name in _module_names():
         module = importlib.import_module(name)
-        tests.extend(test for test in finder.find(module, globs={})
-                     if test.examples)
+        tests.extend(
+            test for test in finder.find(module, globs={}) if test.examples
+        )
     return sorted(tests)
 
 
@@ -55,7 +57,8 @@ def test_docstring_examples_are_found():
 
 
 @pytest.mark.parametrize(
-    "test", [pytest.param(test, id=test.name) for test in DOCTESTS])
+    "test", [pytest.param(test, id=test.name) for test in DOCTESTS]
+)
 def test_docstring_examples_print_what_they_show(test):
     """
     Each example of the docstring prints the output written under it.
@@ -66,8 +69,7 @@ def test_docstring_examples_print_what_they_show(test):
     np_state = np.random.get_state()
     py_state = random.getstate()
     report = []
-    runner = doctest.DocTestRunner(verbose=False,
-                                   optionflags=doctest.ELLIPSIS)
+    runner = doctest.DocTestRunner(verbose=False, optionflags=doctest.ELLIPSIS)
     try:
         result = runner.run(test, out=report.append)
     finally:

@@ -27,14 +27,13 @@ class TestCategoricalAgainstWikipedia:
     """
 
     def new_hmm(self, impl):
-        n_components = 2   # ['Rainy', 'Sunny']
-        n_features = 3     # ['walk', 'shop', 'clean']
+        n_components = 2  # ['Rainy', 'Sunny']
+        n_features = 3  # ['walk', 'shop', 'clean']
         h = hmm.CategoricalHMM(n_components, implementation=impl)
         h.n_features = n_features
         h.startprob_ = np.array([0.6, 0.4])
         h.transmat_ = np.array([[0.7, 0.3], [0.4, 0.6]])
-        h.emissionprob_ = np.array([[0.1, 0.4, 0.5],
-                                    [0.6, 0.3, 0.1]])
+        h.emissionprob_ = np.array([[0.1, 0.4, 0.5], [0.6, 0.3, 0.1]])
         return h
 
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
@@ -63,11 +62,16 @@ class TestCategoricalAgainstWikipedia:
         state_sequence = h.predict(X)
         posteriors = h.predict_proba(X)
         assert_allclose(state_sequence, [1, 0, 0])
-        assert_allclose(posteriors, [
-            [0.23170303, 0.76829697],
-            [0.62406281, 0.37593719],
-            [0.86397706, 0.13602294],
-        ], rtol=0, atol=1e-6)
+        assert_allclose(
+            posteriors,
+            [
+                [0.23170303, 0.76829697],
+                [0.62406281, 0.37593719],
+                [0.86397706, 0.13602294],
+            ],
+            rtol=0,
+            atol=1e-6,
+        )
 
 
 class TestCategoricalHMM:
@@ -86,16 +90,16 @@ class TestCategoricalHMM:
         sequences, _ = self.new_hmm(implementation).sample(500)
         # set n_features
         model = hmm.CategoricalHMM(
-            n_components=2, implementation=implementation)
+            n_components=2, implementation=implementation
+        )
 
         assert_log_likelihood_increasing(model, sequences, [500], 10)
         assert model.n_features == 3
 
         # Respect n_features
         model = hmm.CategoricalHMM(
-            n_components=2,
-            implementation=implementation,
-            n_features=5)
+            n_components=2, implementation=implementation, n_features=5
+        )
 
         assert_log_likelihood_increasing(model, sequences, [500], 10)
         assert model.n_features == 5
@@ -107,8 +111,9 @@ class TestCategoricalHMM:
             h.emissionprob_ = []
             h._check()
         with pytest.raises(ValueError):
-            h.emissionprob_ = np.zeros((self.n_components - 2,
-                                        self.n_features))
+            h.emissionprob_ = np.zeros(
+                (self.n_components - 2, self.n_features)
+            )
             h._check()
         for row in ([1.2, -0.2, 0.0], [np.nan, 0.5, 0.5]):
             h = self.new_hmm(implementation)
@@ -128,13 +133,16 @@ class TestCategoricalHMM:
         X = np.array([[0, 1, 2, 0, 2]]).T
         # Without the check the NaN arithmetic would warn; ignoring it lets
         # a missing refusal show as one.
-        with np.errstate(all="ignore"), \
-                pytest.raises(ValueError, match="transmat_"):
+        with (
+            np.errstate(all="ignore"),
+            pytest.raises(ValueError, match="transmat_"),
+        ):
             getattr(h, method)(X)
 
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
     def test_fit_counts_symbols_from_a_kept_emissionprob_as_fit_alone(
-            self, implementation):
+        self, implementation
+    ):
         """
         A ``score`` leaves nothing for a later ``fit``: without
         ``n_features``, ``fit`` takes the number of symbols from a kept
@@ -158,7 +166,8 @@ class TestCategoricalHMM:
 
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
     def test_fit_refuses_a_symbol_beyond_a_kept_emissionprob(
-            self, implementation):
+        self, implementation
+    ):
         """
         Without ``n_features``, ``fit`` refuses a symbol that a kept
         ``emissionprob_`` does not emit, naming it, and leaves
@@ -197,7 +206,7 @@ class TestCategoricalHMM:
         assert len(np.unique(X)) == self.n_features
 
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
-    def test_fit(self, implementation, params='ste', n_iter=5):
+    def test_fit(self, implementation, params="ste", n_iter=5):
 
         h = self.new_hmm(implementation)
         h.params = params
@@ -208,37 +217,41 @@ class TestCategoricalHMM:
         # Mess up the parameters and see if we can re-learn them.
         h.startprob_ = normalized(np.random.random(self.n_components))
         h.transmat_ = normalized(
-            np.random.random((self.n_components, self.n_components)),
-            axis=1)
+            np.random.random((self.n_components, self.n_components)), axis=1
+        )
         h.emissionprob_ = normalized(
-            np.random.random((self.n_components, self.n_features)),
-            axis=1)
+            np.random.random((self.n_components, self.n_features)), axis=1
+        )
 
         assert_log_likelihood_increasing(h, X, lengths, n_iter)
 
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
     def test_fit_emissionprob(self, implementation):
-        self.test_fit(implementation, 'e')
+        self.test_fit(implementation, "e")
 
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
-    def test_fit_with_init(self, implementation, params='ste', n_iter=5):
+    def test_fit_with_init(self, implementation, params="ste", n_iter=5):
         lengths = [10] * 10
         h = self.new_hmm(implementation)
         X, _state_sequence = h.sample(sum(lengths))
 
         # use init_function to initialize paramerters
-        h = hmm.CategoricalHMM(self.n_components, params=params,
-                               init_params=params)
+        h = hmm.CategoricalHMM(
+            self.n_components, params=params, init_params=params
+        )
         h._init(X, lengths)
 
         assert_log_likelihood_increasing(h, X, lengths, n_iter)
 
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
-    @pytest.mark.parametrize("method", [
-        "score", "score_samples", "decode", "predict", "predict_proba"])
+    @pytest.mark.parametrize(
+        "method",
+        ["score", "score_samples", "decode", "predict", "predict_proba"],
+    )
     @pytest.mark.parametrize("symbol", [-1, 3, 1.5, -1.0])
     def test_prediction_refuses_symbols_outside_range(
-            self, symbol, method, implementation):
+        self, symbol, method, implementation
+    ):
         """
         A symbol that is negative, not a whole number, or not below
         ``n_features`` is refused, naming ``X``, instead of being read as a
@@ -253,15 +266,15 @@ class TestCategoricalHMM:
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
     @pytest.mark.parametrize("symbol, probability", [(0, 0.30), (2, 0.34)])
     def test_symbols_at_the_range_ends_score(
-            self, symbol, probability, implementation):
+        self, symbol, probability, implementation
+    ):
         """
         The symbols ``0`` and ``n_features - 1`` stay valid: one sample
         scores the log of ``startprob_ @ emissionprob_[:, symbol]``
         (``0.6 * 0.1 + 0.4 * 0.6`` and ``0.6 * 0.5 + 0.4 * 0.1``).
         """
         h = self.new_hmm(implementation)
-        assert_allclose(h.score([[symbol]]), np.log(probability),
-                        rtol=1e-12)
+        assert_allclose(h.score([[symbol]]), np.log(probability), rtol=1e-12)
 
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
     def test_two_column_layout_scores_as_one_sequence(self, implementation):
@@ -278,14 +291,19 @@ class TestCategoricalHMM:
 
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
     @pytest.mark.parametrize("method", ["score", "predict", "decode"])
-    @pytest.mark.parametrize("emissionprob, X", [
-        ([[1.0], [1.0]], [[True]]),
-        ([[0.3, 0.7], [0.8, 0.2]], [[True], [False]]),
-        ([[0.3, 0.7], [0.8, 0.2]], [[False]]),
-        ([[0.1, 0.4, 0.5], [0.6, 0.3, 0.1]], [[True], [False], [True]]),
-    ], ids=["1-symbol-T", "2-symbols-TF", "2-symbols-F", "3-symbols-TFT"])
+    @pytest.mark.parametrize(
+        "emissionprob, X",
+        [
+            ([[1.0], [1.0]], [[True]]),
+            ([[0.3, 0.7], [0.8, 0.2]], [[True], [False]]),
+            ([[0.3, 0.7], [0.8, 0.2]], [[False]]),
+            ([[0.1, 0.4, 0.5], [0.6, 0.3, 0.1]], [[True], [False], [True]]),
+        ],
+        ids=["1-symbol-T", "2-symbols-TF", "2-symbols-F", "3-symbols-TFT"],
+    )
     def test_prediction_refuses_boolean_X(
-            self, emissionprob, X, method, implementation):
+        self, emissionprob, X, method, implementation
+    ):
         """
         A boolean ``X`` is refused, naming ``X``, as ``fit`` refuses it:
         NumPy reads a boolean array as a mask over the symbols, not as the
@@ -302,6 +320,6 @@ class TestCategoricalHMM:
         h._check_and_set_n_features(np.array([[0, 0, 2, 1, 3, 1, 1]]).T)
         h._check_and_set_n_features(np.array([[0, 0, 1, 3, 1]], np.uint8))
         with pytest.raises(ValueError):  # non-integral
-            h._check_and_set_n_features(np.array([[0., 2., 1., 3.]]))
+            h._check_and_set_n_features(np.array([[0.0, 2.0, 1.0, 3.0]]))
         with pytest.raises(ValueError):  # negative integers
             h._check_and_set_n_features(np.array([[0, -2, 1, 3, 1, 1]]))
