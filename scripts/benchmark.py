@@ -23,7 +23,7 @@ class Benchmark:
 
     def benchmark(self, sequences, lengths, model, tag):
         elapsed = []
-        for i in range(self.repeat):
+        for _i in range(self.repeat):
             start = time.time()
             cloned = sklearn.base.clone(model)
             cloned.fit(sequences, lengths)
@@ -212,9 +212,7 @@ class GMMBenchmark(GaussianBenchmark):
 
         n_sequences = 10
         length = 5_000
-        sequences = []
-        for i in range(n_sequences):
-            sequences.append(sampler.sample(5000)[0])
+        sequences = [sampler.sample(5000)[0] for _ in range(n_sequences)]
         return np.concatenate(sequences), [length] * n_sequences
 
     def new_model(self, implementation):

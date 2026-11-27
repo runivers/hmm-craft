@@ -91,7 +91,7 @@ def test_full_and_tied_log_density_match_scipy(covariance_type, n_features):
     expected = np.column_stack(
         [
             multivariate_normal(mean=mu, cov=cv).logpdf(X)
-            for mu, cv in zip(means, covars)
+            for mu, cv in zip(means, covars, strict=False)
         ]
     )
     assert got.shape == (len(X), N_COMPONENTS)
@@ -116,7 +116,7 @@ def _full_as_written(X, means, covars, min_covar=1.0e-7):
     replaces ``linalg.cholesky`` replaces it here too."""
     _, nf = means.shape
     log_prob = []
-    for c, (mu, cv) in enumerate(zip(means, covars)):
+    for _c, (mu, cv) in enumerate(zip(means, covars, strict=False)):
         try:
             cv_chol = linalg.cholesky(cv, lower=True)
         except linalg.LinAlgError:
@@ -126,10 +126,10 @@ def _full_as_written(X, means, covars, min_covar=1.0e-7):
                 cv_chol = linalg.cholesky(
                     cv + min_covar * np.eye(nf), lower=True
                 )
-            except linalg.LinAlgError:
+            except linalg.LinAlgError as err:
                 raise ValueError(
                     "'covars' must be symmetric, positive-definite"
-                )
+                ) from err
 
         # In place on a copy: numpy < 2.0.2 with AVX-512 picks its log loop by
         # where the output lies near the input, unless the two coincide.
@@ -463,8 +463,26 @@ def test_a_held_factor_is_the_array_cholesky_returned(
         for c in range(N_COMPONENTS)
     ] * 2
     assert len(solved) == len(expected)
-    assert all(a is b for a, b in zip(solved, expected))
+    assert all(a is b for a, b in zip(solved, expected, strict=False))
     assert all(factor.tobytes() == before for factor, before in returned)
+
+
+@pytest.mark.parametrize("covariance_type", ["full", "tied"])
+def test_a_covariance_that_does_not_factor_raises_from_the_cholesky_error(
+    covariance_type,
+):
+    """The full and tied densities refuse a covariance that does not factor
+    even with ``min_covar`` added, with a ValueError caused by scipy's
+    LinAlgError."""
+    X, means, covars = _covar([[1.0, 2.0], [2.0, 1.0]])(covariance_type)
+    with pytest.raises(
+        ValueError, match="^'covars' must be symmetric, positive-definite$"
+    ) as raised:
+        stats.log_multivariate_normal_density(
+            X, means, covars, covariance_type
+        )
+    assert isinstance(raised.value.__cause__, linalg.LinAlgError)
+    assert raised.value.__context__ is raised.value.__cause__
 
 
 # The diag and spherical log-densities: a C++ loop for the arrays it is proven

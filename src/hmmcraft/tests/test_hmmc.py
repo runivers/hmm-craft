@@ -234,6 +234,7 @@ def _per_sequence(implementation, start, trans, lattice, lengths):
                 np.concatenate(bwds),
                 np.stack(sums),
             ],
+            strict=False,
         )
     )
     if implementation == "scaling":
@@ -250,7 +251,7 @@ def _block(implementation, start, trans, lattice, lengths, with_xi_sum=True):
         ["underflow"] if implementation == "scaling" else []
     )
     assert len(results) == len(names)
-    return dict(zip(names, results))
+    return dict(zip(names, results, strict=False))
 
 
 def _assert_same_bytes(got, expected):

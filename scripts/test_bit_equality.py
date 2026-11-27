@@ -692,7 +692,7 @@ def test_short_sequence_family_covers_every_class():
     state = np.random.get_state()
     first, second = be.make_short_data(), be.make_short_data()
     after = np.random.get_state()
-    assert all(_same_state(a, b) for a, b in zip(state, after))
+    assert all(_same_state(a, b) for a, b in zip(state, after, strict=False))
     assert {c["data"] for _, c in short} == set(first)
     for name, family in first.items():
         assert name.startswith("short-")
@@ -971,7 +971,7 @@ def test_added_data_are_reproducible_and_leave_the_old_untouched():
     state = np.random.get_state()
     first, second = be.make_added_data(), be.make_added_data()
     after = np.random.get_state()
-    assert all(_same_state(a, b) for a, b in zip(state, after))
+    assert all(_same_state(a, b) for a, b in zip(state, after, strict=False))
     assert _old_data_digest({**be.make_data(), **be.make_short_data()}) == (
         OLD_DATA_SHA256
     )
@@ -1364,7 +1364,7 @@ def test_underflow_data_differ_from_their_source_in_one_row():
     state = np.random.get_state()
     far = be.make_underflow_data(data)
     after = np.random.get_state()
-    assert all(_same_state(a, b) for a, b in zip(state, after))
+    assert all(_same_state(a, b) for a, b in zip(state, after, strict=False))
     assert {name: d["X"].tobytes() for name, d in data.items()} == before
     assert set(far) == {"far-gauss3", "far-gmm", "far-pois"}
     for name, family in far.items():

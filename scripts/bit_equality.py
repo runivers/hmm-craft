@@ -557,12 +557,12 @@ def _added_cases():
         )
         for cov in ("full", "tied"):
             for start in ("fixed", "seeded"):
-                for impl in IMPLEMENTATIONS:
-                    wide_cases.append(
-                        _added_case(
-                            cls, "wide4", cov, start, impl, "wide", **variant
-                        )
+                wide_cases.extend(
+                    _added_case(
+                        cls, "wide4", cov, start, impl, "wide", **variant
                     )
+                    for impl in IMPLEMENTATIONS
+                )
     set_params_cases = [
         _added_case(
             cls,
@@ -1376,8 +1376,9 @@ def dump(package, out, load_pickles=None, n_threads=1):
                 results.append(
                     _dump_indexed_fit(modules, index, case, data, pickle_dir)
                 )
-        for case in build_utility_cases():
-            results.append(_dump_utility(package, case))
+        results.extend(
+            _dump_utility(package, case) for case in build_utility_cases()
+        )
         if load_pickles is not None:
             results += _pickle_pass(
                 package, Path(load_pickles), data, section="main"
@@ -1564,12 +1565,12 @@ def _refusals(ref, fork):
     """Reasons the two dumps cannot be compared; empty if they can."""
     reasons = []
     ref_env, fork_env = ref[0]["environment"], fork[0]["environment"]
-    for field in _COMPARED_ENVIRONMENT:
-        if ref_env.get(field) != fork_env.get(field):
-            reasons.append(
-                f"environment differs in {field}: reference "
-                f"{ref_env.get(field)!r}, fork {fork_env.get(field)!r}"
-            )
+    reasons.extend(
+        f"environment differs in {field}: reference "
+        f"{ref_env.get(field)!r}, fork {fork_env.get(field)!r}"
+        for field in _COMPARED_ENVIRONMENT
+        if ref_env.get(field) != fork_env.get(field)
+    )
     for label, env in (("reference", ref_env), ("fork", fork_env)):
         wrong = {k: v for k, v in env["thread_variables"].items() if v != "1"}
         if wrong:
@@ -1590,9 +1591,11 @@ def _refusals(ref, fork):
             if ref_cases[name]["meta"] != fork_cases[name]["meta"]:
                 reasons.append(f"the recipe of case {name} differs")
                 break
-    for name in fork[1]:
-        if name.startswith(_PICKLED) and name[len(_PICKLED) :] not in ref[1]:
-            reasons.append(f"{name} has no reference case")
+    reasons.extend(
+        f"{name} has no reference case"
+        for name in fork[1]
+        if name.startswith(_PICKLED) and name[len(_PICKLED) :] not in ref[1]
+    )
     return reasons
 
 
@@ -2009,8 +2012,7 @@ def format_result(result):
             f"threadpoolctl {env['threadpoolctl']}, {env['machine']}, "
             f"threads {sorted(set(env['thread_variables'].values()))}"
         )
-    for reason in result.refused:
-        lines.append(f"REFUSED: {reason}")
+    lines.extend(f"REFUSED: {reason}" for reason in result.refused)
     if not result.refused:
         lines.append(
             f"compared {result.n_cases} cases, {result.n_arrays} arrays "
@@ -2023,8 +2025,10 @@ def format_result(result):
                 f"difference(s) in {len(result.examples[exception])} "
                 f"case(s), e.g. {result.examples[exception][0]}"
             )
-    for diff in result.differences:
-        lines.append(f"DIFFERENCE {diff.case} | {diff.key} | {diff.text}")
+    lines.extend(
+        f"DIFFERENCE {diff.case} | {diff.key} | {diff.text}"
+        for diff in result.differences
+    )
     equal = (
         "equal apart from the named exceptions"
         if result.fired

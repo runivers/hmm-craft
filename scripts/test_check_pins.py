@@ -63,8 +63,7 @@ def _header(stem):
 def _txt(stem, pins, header=True):
     """Return the text of a hashed requirements file pinning ``pins``."""
     lines = [_header(stem)] if header else []
-    for pin in pins:
-        lines.append(f"{pin} \\\n{HASH} \\\n{HASH}\n")
+    lines.extend(f"{pin} \\\n{HASH} \\\n{HASH}\n" for pin in pins)
     return "".join(lines)
 
 

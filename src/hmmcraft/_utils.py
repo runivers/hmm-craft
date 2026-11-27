@@ -8,7 +8,9 @@ import numpy as np
 def logdet(a):
     sign, logdet = np.linalg.slogdet(a)
     if (sign < 0).any():
-        warnings.warn("invalid value encountered in log", RuntimeWarning)
+        warnings.warn(
+            "invalid value encountered in log", RuntimeWarning, stacklevel=1
+        )
         return np.where(sign < 0, np.nan, logdet)
     else:
         return logdet

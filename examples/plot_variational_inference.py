@@ -99,7 +99,7 @@ model.covars_ = np.array([[0.25], [0.25], [0.25], [0.25]]) ** 2
 sequences = []
 lengths = []
 
-for i in range(num_samples):
+for _i in range(num_samples):
     sequences.extend(model.sample(sample_length, random_state=rs)[0])
     lengths.append(sample_length)
 sequences = np.asarray(sequences)
@@ -109,7 +109,7 @@ sequences = np.asarray(sequences)
 best_scores = collections.defaultdict(dict)
 best_models = collections.defaultdict(dict)
 for n in num_states:
-    for i in range(num_inits):
+    for _i in range(num_inits):
         vi = vhmm.VariationalGaussianHMM(
             n,
             n_iter=1000,

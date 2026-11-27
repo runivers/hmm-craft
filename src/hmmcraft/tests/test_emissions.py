@@ -546,7 +546,11 @@ def _calls_left_to_scipy_stats(outcome, per_state_calls):
         return per_state_calls
     values = np.frombuffer(result[-1]).reshape(result[3])
     has_nan = np.isnan(values).any(axis=0)
-    return [call for call, nan in zip(per_state_calls, has_nan) if nan]
+    return [
+        call
+        for call, nan in zip(per_state_calls, has_nan, strict=False)
+        if nan
+    ]
 
 
 def _poisson_inputs(n_samples, n_components, n_features, dtype=np.int64):
@@ -573,7 +577,7 @@ def _multinomial_inputs(n_samples, n_components, n_features, totals=5):
     X = np.array(
         [
             rs.multinomial(total, emissionprob[state])
-            for total, state in zip(totals, states)
+            for total, state in zip(totals, states, strict=False)
         ],
         dtype=np.int64,
     )

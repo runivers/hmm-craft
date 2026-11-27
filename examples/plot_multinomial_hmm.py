@@ -36,7 +36,7 @@ from hmmcraft import hmm
 # For this example, we will model the stages of a conversation,
 # where each sentence is "generated" with an underlying topic, "cat" or "dog"
 states = ["cat", "dog"]
-id2topic = dict(zip(range(len(states)), states))
+id2topic = dict(zip(range(len(states)), states, strict=False))
 # we are more likely to talk about cats first
 start_probs = np.array([0.6, 0.4])
 
@@ -69,7 +69,7 @@ observations = [
 ]
 
 # Convert "sentences" to numbers:
-vocab2id = dict(zip(vocabulary, range(len(vocabulary))))
+vocab2id = dict(zip(vocabulary, range(len(vocabulary)), strict=False))
 
 
 def sentence2counts(sentence):

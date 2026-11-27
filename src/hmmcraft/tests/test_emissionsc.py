@@ -187,7 +187,7 @@ def _one_rounding_per_operation(weights, X):
     rounded on its own on every platform.
     """
     out = np.zeros((weights.shape[1], X.shape[1], X.shape[1]))
-    for w, x in zip(weights, X):
+    for w, x in zip(weights, X, strict=False):
         out = (w[:, None, None] * x[:, None]) * x + out
     return out
 

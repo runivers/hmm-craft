@@ -421,6 +421,7 @@ def _check_matrix_by_matrix(covariance_type, covars):
     for name, covar in zip(
         _matrix_names(covariance_type),
         covars.reshape(-1, n_features, n_features),
+        strict=False,
     ):
         if not np.allclose(covar, covar.T):
             raise ValueError(f"Covariance of {name} is not symmetric")

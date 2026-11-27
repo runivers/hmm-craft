@@ -141,9 +141,21 @@ class TestMultinomialHMM:
         h.n_trials = None
         with pytest.raises(ValueError):
             h.sample(n_samples)
+
+    @pytest.mark.parametrize("implementation", ["scaling", "log"])
+    def test_sample_with_several_n_trials_raises_from_the_unpacking_error(
+        self, implementation
+    ):
+        """Sampling with one trial count per sequence is refused with a
+        ValueError caused by the failed unpacking of the counts."""
+        h = self.new_hmm(implementation)
         h.n_trials = [1, 2, 3]
-        with pytest.raises(ValueError):
-            h.sample(n_samples)
+        with pytest.raises(
+            ValueError, match="^For sampling, a single n_trials must be given$"
+        ) as raised:
+            h.sample(1000)
+        assert isinstance(raised.value.__cause__, ValueError)
+        assert raised.value.__context__ is raised.value.__cause__
 
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
     def test_fit(self, implementation, params="ste", n_iter=5):

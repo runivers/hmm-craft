@@ -99,7 +99,7 @@ def _threaded_block(
         ["underflow"] if implementation == "scaling" else []
     )
     assert len(results) == len(names)
-    return dict(zip(names, results))
+    return dict(zip(names, results, strict=False))
 
 
 @pytest.fixture

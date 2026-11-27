@@ -31,7 +31,7 @@ class GMMHMMTestMixin:
             self.prng.rand(self.n_components, self.n_components), axis=1
         )
         self.gmms = []
-        for state in range(self.n_components):
+        for _state in range(self.n_components):
             self.gmms.append(
                 create_random_gmm(
                     self.n_mix,

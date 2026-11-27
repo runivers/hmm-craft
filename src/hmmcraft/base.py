@@ -229,7 +229,7 @@ class ConvergenceMonitor:
         params = sorted(dict(vars(self), history=list(self.history)).items())
         return (
             f"{class_name}(\n"
-            + "".join(map("    {}={},\n".format, *zip(*params)))
+            + "".join(map("    {}={},\n".format, *zip(*params, strict=False)))
             + ")"
         )
 
@@ -793,7 +793,7 @@ class _AbstractHMM(BaseEstimator):
             )
         ]
 
-        for t in range(n_samples - 1):
+        for _t in range(n_samples - 1):
             currstate = (
                 transmat_cdf[currstate] > random_state.rand()
             ).argmax()
@@ -877,7 +877,7 @@ class _AbstractHMM(BaseEstimator):
             raise
         self.monitor_._reset()
 
-        for iter in range(self.n_iter):
+        for _iter in range(self.n_iter):
             stats, curr_logprob = self._do_estep(X, lengths)
 
             # Compute lower bound before updating model parameters
@@ -1531,7 +1531,7 @@ class _AbstractHMM(BaseEstimator):
                     lattice = np.ascontiguousarray(hook(X), dtype=np.float64)
                 else:
                     parts = []
-                    for sub_X, kept in zip(sub_Xs, values):
+                    for sub_X, kept in zip(sub_Xs, values, strict=False):
                         vars(self)["_estep_values"] = kept
                         try:
                             parts.append(
