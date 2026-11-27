@@ -12,9 +12,11 @@ Run with ``python -m pytest scripts/test_bit_equality.py``.
 """
 
 import copy
+import hashlib
 import json
 import sys
 import types
+from collections import Counter
 
 import bit_equality as be
 import numpy as np
@@ -645,6 +647,19 @@ def test_cases_have_unique_names_and_cover_the_table():
 # many rows takes several on the short-sequence family.
 BLOCK_ROWS = 4096
 N_TWO_SEQUENCE_CASES = 374
+# The cases before the added families: the two-sequence and the short ones.
+N_OLD_CASES = 428
+ADDED_FAMILIES = {"prior": 22, "lr": 28, "wide": 16, "set_params": 32}
+N_ADDED_CASES = sum(ADDED_FAMILIES.values())
+# SHA-256 of the JSON of the first N_OLD_CASES recipes (keys sorted), and
+# ``_digest`` of the old data families (names sorted, X then lengths), taken
+# before the added families existed: adding them moves no old case.
+OLD_RECIPES_SHA256 = (
+    "aa6a1c61fe2b8053b8c5d428be4e53804d93b444a573584fa1a26d2fccf9acca"
+)
+OLD_DATA_SHA256 = (
+    "acae410e6ce4205a32b615d016b65336b0a7303dd0915feab27f0dd782dd6109"
+)
 
 
 def _short_cases():
@@ -667,7 +682,7 @@ def test_short_sequence_family_covers_every_class():
     assert {c["impl"] for _, c in short} == set(be.IMPLEMENTATIONS)
     # Appended after every two-sequence case, so those keep their numbers.
     assert [i for i, _ in short] == list(
-        range(N_TWO_SEQUENCE_CASES, len(cases))
+        range(N_TWO_SEQUENCE_CASES, N_OLD_CASES)
     )
     assert not any(
         c["data"].startswith("short-") for c in cases[:N_TWO_SEQUENCE_CASES]
@@ -726,6 +741,312 @@ def test_one_ulp_in_a_short_sequence_case_fails(tmp_path):
             (recipe["name"], "predict_proba")
         ]
         assert f"({row}, 0)" in result.differences[0].text
+
+
+def _added_cases(family=None):
+    return [
+        (index, c)
+        for index, c in enumerate(be.build_cases())
+        if "family" in c and family in (None, c["family"])
+    ]
+
+
+def _old_data_digest(data):
+    return be._digest(
+        *[a for n in sorted(data) for a in (data[n]["X"], data[n]["lengths"])]
+    )
+
+
+@pytest.mark.parametrize("family", list(ADDED_FAMILIES))
+def test_one_ulp_in_an_added_family_case_fails(tmp_path, family):
+    """One ulp in one fitted array of the first case of an added family is
+    the one difference ``compare`` reports, with or without the exceptions,
+    beside an old case that is equal."""
+    cases = _added_cases(family)
+    assert cases, f"no {family} case"
+    index, recipe = cases[0]
+    ref = fit_case(
+        recipe["name"],
+        cov=recipe["cov"] or "diag",
+        params=recipe["params"] or "stmc",
+        cls=recipe["cls"],
+    )
+    ref["meta"] = dict(
+        ref["meta"], **recipe, index=index, lengths=LENGTHS, n_features=NF
+    )
+    fork = copy.deepcopy(ref)
+    value = fork["arrays"]["transmat_"]
+    value[0, 1] = np.nextafter(value[0, 1], np.inf)
+    old = fit_case("old")
+    for allow in ((), ALL_BUT_E6):
+        result = run(
+            tmp_path / str(len(allow)),
+            [old, ref],
+            [copy.deepcopy(old), fork],
+            allow=allow,
+        )
+        assert result.code == 1
+        assert [(d.case, d.key) for d in result.differences] == [
+            (recipe["name"], "transmat_")
+        ]
+        assert "(0, 1)" in result.differences[0].text
+
+
+class _ProbedModel:
+    """The read-only calls ``_probe`` makes, each with a fixed result."""
+
+    covars_ = np.eye(NF)[None]
+
+    def score(self, X, lengths=None):
+        return -1.5
+
+    def decode(self, X, lengths=None, algorithm="viterbi"):
+        return -2.5, np.zeros(len(X), dtype=int)
+
+    def predict_proba(self, X, lengths=None):
+        return np.full((len(X), NC), 1 / NC)
+
+    def sample(self, n_samples, random_state=None):
+        return np.zeros((n_samples, NF)), np.zeros(n_samples, dtype=int)
+
+
+class _ScoredModel(_ProbedModel):
+    """A model with information criteria: each counts the rows given."""
+
+    def aic(self, X, lengths=None):
+        return 10.0 + len(X)
+
+    def bic(self, X, lengths=None):
+        return 20.0 + len(X)
+
+
+def test_probe_records_aic_and_bic_where_the_model_has_them(tmp_path):
+    """``_probe`` records ``aic`` and ``bic`` of a model that has them and
+    neither a key nor an error for one that has not; the pickled cases
+    compare their errors, and one ulp in ``aic`` is the one difference."""
+    X = np.zeros((sum(LENGTHS), NF))
+    arrays, errors = {}, {}
+    be._probe(_ScoredModel(), X, LENGTHS, arrays, errors)
+    assert errors == {}
+    assert arrays["aic"].tobytes() == np.asarray(16.0).tobytes()
+    assert arrays["bic"].tobytes() == np.asarray(26.0).tobytes()
+    plain_arrays, plain_errors = {}, {}
+    be._probe(_ProbedModel(), X, LENGTHS, plain_arrays, plain_errors)
+    assert plain_errors == {}
+    assert set(arrays) - set(plain_arrays) == {"aic", "bic"}
+    assert {"aic", "bic"} <= set(be._PROBE_STEPS)
+
+    ref, fork = pair()
+    for side in (ref, fork):
+        side["arrays"]["aic"] = np.asarray(16.0)
+        side["arrays"]["bic"] = np.asarray(26.0)
+    fork["arrays"]["aic"] = np.nextafter(fork["arrays"]["aic"], np.inf)
+    result = run(tmp_path / "ulp", [ref], [fork])
+    assert [(d.case, d.key) for d in result.differences] == [("c", "aic")]
+
+    ref, fork = pair()
+    pickled = copy.deepcopy(fork)
+    pickled["meta"] = dict(fork["meta"], name="pickled:c", kind="pickled")
+    pickled["arrays"] = {"score": fork["arrays"]["score"]}
+    pickled["errors"] = {"bic": ["ValueError", "x"]}
+    result = run(tmp_path / "pickled", [ref], [fork, pickled])
+    assert [(d.case, d.key) for d in result.differences] == [
+        ("pickled:c", "errors:bic")
+    ]
+
+
+def test_added_families_follow_every_old_case():
+    """The added cases come after every old one, which keep their recipes,
+    names and indexes; each family has its count and every name is new."""
+    cases = be.build_cases()
+    old, added = cases[:N_OLD_CASES], cases[N_OLD_CASES:]
+    assert len(added) == N_ADDED_CASES
+    assert not any("family" in c for c in old)
+    assert Counter(c["family"] for c in added) == ADDED_FAMILIES
+    assert [i for i, _ in _added_cases()] == list(
+        range(N_OLD_CASES, N_OLD_CASES + N_ADDED_CASES)
+    )
+    digest = hashlib.sha256(json.dumps(old, sort_keys=True).encode())
+    assert digest.hexdigest() == OLD_RECIPES_SHA256
+    names = [c["name"] for c in cases]
+    assert len(names) == len(set(names))
+    assert all(c["kind"] == "fit" for c in added)
+    assert json.dumps(added)
+
+
+def _all_data():
+    return {**be.make_data(), **be.make_added_data()}
+
+
+def test_prior_keywords_take_the_documented_shapes():
+    """The prior keywords of each added case, at the shapes the classes
+    document: a Dirichlet prior of 10 * p + 2 on probabilities p, the
+    generating means and covariances, mixture weights that leave no weight
+    negative, equal Poisson entries; the weak sets below one."""
+    data = _all_data()
+    nc = be.N_COMPONENTS
+    seen = Counter()
+    for _, case in _added_cases():
+        truth = data[case["data"]]["truth"]
+        kw = be._prior_keywords(case, truth)
+        prior, cls, cov = case.get("prior"), case["cls"], case["cov"]
+        seen[prior] += 1
+        if prior is None:
+            assert kw == {}
+            continue
+        if prior == "weak-emission":
+            assert set(kw) == {"emissionprob_prior"}
+            assert kw["emissionprob_prior"].shape == (nc, 4)
+            assert (kw["emissionprob_prior"] == 1 / 4).all()
+            continue
+        assert kw["startprob_prior"].shape == (nc,)
+        assert kw["transmat_prior"].shape == (nc, nc)
+        if prior == "weak":
+            assert set(kw) == {"startprob_prior", "transmat_prior"}
+            assert (kw["startprob_prior"] == 1 / nc).all()
+            assert (kw["transmat_prior"] == 1 / nc).all()
+            continue
+        assert prior == "strong"
+        assert np.array_equal(
+            kw["startprob_prior"], 10 * truth["startprob"] + 2.0
+        )
+        assert np.array_equal(
+            kw["transmat_prior"], 10 * truth["transmat"] + 2.0
+        )
+        rest = {k: v for k, v in kw.items() if not k.startswith(("st", "tr"))}
+        if cls == "GaussianHMM":
+            nf = truth["means"].shape[1]
+            shape = {
+                "full": (nc, nf, nf),
+                "tied": (nf, nf),
+                "diag": (nc, nf),
+                "spherical": (nc, 1),
+            }[cov]
+            assert set(rest) == {
+                "means_prior",
+                "means_weight",
+                "covars_prior",
+                "covars_weight",
+            }
+            assert np.array_equal(rest["means_prior"], truth["means"])
+            assert rest["means_weight"] == 2.0
+            assert rest["covars_prior"].shape == shape
+            weight = 2.0 + nf if cov in ("full", "tied") else 2.0
+            assert rest["covars_weight"] == weight
+        elif cls == "GMMHMM":
+            assert set(rest) == {
+                "weights_prior",
+                "means_prior",
+                "means_weight",
+                "covars_prior",
+            }
+            assert rest["weights_prior"].shape == (nc, 2)
+            assert (rest["weights_prior"] >= 1).all()
+            assert rest["means_prior"].shape == truth["mix_means"].shape
+            assert rest["means_weight"] == 2.0
+            assert rest["covars_prior"] == 1.0
+        elif cls == "PoissonHMM":
+            assert set(rest) == {"lambdas_prior", "lambdas_weight"}
+            for value in rest.values():
+                assert value.shape == (nc,)
+                assert (value == value[0]).all()
+        elif cls == "CategoricalHMM":
+            assert set(rest) == {"emissionprob_prior"}
+            assert np.array_equal(
+                rest["emissionprob_prior"], 10 * truth["emission"] + 2.0
+            )
+        else:
+            assert cls == "MultinomialHMM"
+            assert rest == {}
+    assert set(seen) == {None, "strong", "weak", "weak-emission"}
+
+
+def test_added_data_are_reproducible_and_leave_the_old_untouched():
+    """The added families are drawn from their own generators: twice the
+    same bytes, the global generator untouched, the old families as before;
+    the left-to-right truth has zeros, the four-feature family has sequences
+    of one sample."""
+    old = {**be.make_data(), **be.make_short_data()}
+    assert _old_data_digest(old) == OLD_DATA_SHA256
+    state = np.random.get_state()
+    first, second = be.make_added_data(), be.make_added_data()
+    after = np.random.get_state()
+    assert all(_same_state(a, b) for a, b in zip(state, after))
+    assert _old_data_digest({**be.make_data(), **be.make_short_data()}) == (
+        OLD_DATA_SHA256
+    )
+    assert set(first) == {"lr-gauss3", "lr-cat", "wide4"}
+    assert not set(first) & set(old)
+    for name, family in first.items():
+        assert family["X"].tobytes() == second[name]["X"].tobytes()
+        assert family["lengths"].tobytes() == second[name]["lengths"].tobytes()
+        assert family["lengths"].sum() == len(family["X"])
+    for name in ("lr-gauss3", "lr-cat"):
+        truth = first[name]["truth"]
+        assert (truth["startprob"] == 0).any()
+        assert (truth["transmat"] == 0).any()
+        assert first[name]["lengths"].tolist() == [10] * 10
+    wide = first["wide4"]
+    assert wide["X"].shape[1] == 4
+    assert (wide["lengths"] == 1).sum() == 4
+    assert wide["truth"]["covs"].shape == (be.N_COMPONENTS, 4, 4)
+
+
+class _ConstructorRecorder:
+    """Records its constructor and ``set_params`` calls; takes attributes."""
+
+    calls = None
+
+    def __init__(self, **kw):
+        self.calls.append(("init", kw))
+
+    def set_params(self, **kw):
+        self.calls.append(("set_params", kw))
+        return self
+
+
+def _same_keywords(a, b):
+    return set(a) == set(b) and all(np.array_equal(a[k], b[k]) for k in a)
+
+
+def test_set_params_cases_build_through_set_params(monkeypatch):
+    """A ``set_params`` case gives the constructor only the keywords that
+    reach the convergence monitor (``n_iter``, ``tol``, ``verbose``) and
+    ``set_params`` every other one, priors and ``n_threads`` included; its
+    twin among the prior cases gives the constructor the same keywords."""
+    calls = []
+    monkeypatch.setattr(_ConstructorRecorder, "calls", calls)
+    module = types.SimpleNamespace(
+        **{name: _ConstructorRecorder for name in be._CLASSES}
+    )
+    modules = {"hmm": module, "vhmm": module}
+    data = _all_data()
+    recipes = {c["name"]: c for c in be.build_cases()}
+    built = _added_cases("set_params")
+    assert built
+    for _, case in built:
+        for n_threads, tol in ((1, "default"), (4, "default"), (1, "neginf")):
+            variant = be._threaded(dict(case, tol=tol), n_threads)
+            truth = data[case["data"]]["truth"]
+            expected = dict(
+                be._model_keywords(variant),
+                **be._prior_keywords(variant, truth),
+            )
+            del calls[:]
+            be.build_model(modules, variant, data[case["data"]])
+            monitor = {
+                k: expected.pop(k) for k in ("n_iter", "tol") if k in expected
+            }
+            assert [kind for kind, _ in calls] == ["init", "set_params"]
+            assert calls[0][1] == monitor
+            assert _same_keywords(calls[1][1], expected)
+            assert ("n_threads" in calls[1][1]) == (n_threads != 1)
+        twin = recipes[case["name"].removesuffix("|set_params")]
+        del calls[:]
+        be.build_model(modules, case, data[case["data"]])
+        be.build_model(modules, twin, data[twin["data"]])
+        assert [kind for kind, _ in calls] == ["init", "set_params", "init"]
+        assert _same_keywords(calls[0][1] | calls[1][1], calls[2][1])
 
 
 def test_threadpool_info_is_recorded_in_a_fixed_order(monkeypatch, tmp_path):
@@ -1020,8 +1341,10 @@ def test_underflow_cases_have_unique_names_and_cover_the_classes():
     assert len(cases) == 33
     assert len(names) == len(set(names))
     assert not set(names) & {c["name"] for c in be.build_cases()}
-    assert len(be.build_cases()) == 428
-    assert len(be.build_cases()) - len(_short_cases()) == 374
+    assert len(be.build_cases()) == N_OLD_CASES + N_ADDED_CASES
+    assert len(be.build_cases()) - len(_short_cases()) == (
+        N_TWO_SEQUENCE_CASES + N_ADDED_CASES
+    )
     assert {c["cls"] for c in cases} == set(be._CLASSES)
     for cls in be._COVARIANCE_CLASSES:
         assert {c["cov"] for c in cases if c["cls"] == cls} == set(

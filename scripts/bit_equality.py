@@ -14,10 +14,12 @@ scikit-learn and threadpoolctl versions:
 no file read) and writes every fitted array, the score, both decodes, the
 posteriors and a sample, one ``.npz`` per model. It then runs the underflow
 cases: models whose scaled forward pass underflows on one sample, in a
-prediction and in a fit with ``implementation="scaling"``. Last come the
-fits on many short sequences. It refuses to run unless the thread-count
-variables are all ``1``: where a start is seeded, the
-k-means partial sums are added in the order the threads finish. ``compare``
+prediction and in a fit with ``implementation="scaling"``. Then come the
+fits on many short sequences, then the added families (priors, a
+left-to-right chain, sequences of one sample at four features, models built
+by ``set_params``) and their pickled models. It refuses to run unless the
+thread-count variables are all ``1``: where a start is seeded,
+the k-means partial sums are added in the order the threads finish. ``compare``
 checks the two dumps byte for byte. A difference is accepted only where the
 table ``EXCEPTIONS`` names it, only if listed by ``--allow``, and only if it
 has exactly the shape that entry describes. Exit status of ``compare``: 0
@@ -160,15 +162,40 @@ _COLLAPSE_ROW = np.array([9.0, 9.0, 9.0])
 # One feature with no spread at all: a pooled (tied) covariance has an
 # eigenvalue near zero, where a per-state collapse leaves it far from zero.
 _FLAT_VALUE = 5.0
+# A left-to-right chain (the left-right model of hmmlearn's tutorial): it
+# starts in the first state and from each state stays or moves to the next,
+# until the last, which it keeps. Zeros in both, on 10 sequences of 10.
+_LR_STARTPROB = np.array([1.0, 0.0, 0.0])
+_LR_TRANSMAT = np.array([[0.5, 0.5, 0.0], [0.0, 0.5, 0.5], [0.0, 0.0, 1.0]])
+_LR_LENGTHS = np.full(10, 10)
+# Four features, so that a one-row covariance solve of full and tied
+# models runs at a size where its order can show; four sequences of one
+# sample among 40, 924 samples in all.
+_WIDE_LENGTHS = np.tile([1, 2, 3, 5, 8, 13, 21, 34, 55, 89], 4)
+_WIDE_MEANS = np.array(
+    [[0.0, 0.0, 0.0, 0.0], [3.0, -2.0, 1.0, -1.0], [-3.0, 2.0, 4.0, 1.0]]
+)
+_WIDE_FACTORS = np.array(
+    [
+        np.diag([0.5, 0.7, 0.9, 0.6]),
+        [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.6, 0.8, 0.0, 0.0],
+            [0.3, 0.2, 0.9, 0.0],
+            [0.1, -0.3, 0.2, 0.7],
+        ],
+        np.diag([1.2, 0.6, 0.8, 1.0]),
+    ]
+)
 
 
-def _chain(rs, lengths):
+def _chain(rs, lengths, startprob=_STARTPROB, transmat=_TRANSMAT):
     states = []
     for n in lengths:
         s = np.empty(n, dtype=int)
-        s[0] = (_STARTPROB.cumsum() > rs.rand()).argmax()
+        s[0] = (startprob.cumsum() > rs.rand()).argmax()
         for t in range(1, n):
-            s[t] = (_TRANSMAT[s[t - 1]].cumsum() > rs.rand()).argmax()
+            s[t] = (transmat[s[t - 1]].cumsum() > rs.rand()).argmax()
         states.append(s)
     return np.concatenate(states)
 
@@ -198,11 +225,48 @@ def make_short_data():
     return {"short-" + name: data[name] for name in _SHORT_SOURCES}
 
 
-def _draw_families(rs, lengths):
+def make_added_data():
+    """
+    Return ``{name: dict(X=, lengths=, truth=)}`` for the added families:
+    the three-feature Gaussian and the categorical family of the
+    left-to-right chain, and the four-feature Gaussian of the three-state
+    chain. Each is drawn from its own ``RandomState(10)``.
+    """
+    lr = _draw_families(
+        np.random.RandomState(10), _LR_LENGTHS, _LR_STARTPROB, _LR_TRANSMAT
+    )
+    return {
+        "lr-gauss3": lr["gauss3"],
+        "lr-cat": lr["cat"],
+        "wide4": _draw_wide(np.random.RandomState(10)),
+    }
+
+
+def _draw_wide(rs):
+    lengths = _WIDE_LENGTHS
     n = int(lengths.sum())
     states = _chain(rs, lengths)
+    z = rs.standard_normal((n, 4))
+    X = _WIDE_MEANS[states] + np.einsum("tij,tj->ti", _WIDE_FACTORS[states], z)
+    covs = np.einsum("kij,klj->kil", _WIDE_FACTORS, _WIDE_FACTORS)
+    truth = {
+        "startprob": _STARTPROB,
+        "transmat": _TRANSMAT,
+        "means": _WIDE_MEANS,
+        "covs": covs,
+        # GMMHMM: two components per state, as for "gauss1".
+        "mix_means": _WIDE_MEANS[:, None, :]
+        + np.array([-0.5, 0.5])[None, :, None],
+        "mix_covs": covs,
+    }
+    return {"X": X, "lengths": lengths, "truth": truth}
+
+
+def _draw_families(rs, lengths, startprob=_STARTPROB, transmat=_TRANSMAT):
+    n = int(lengths.sum())
+    states = _chain(rs, lengths, startprob, transmat)
     nc = N_COMPONENTS
-    common = {"startprob": _STARTPROB, "transmat": _TRANSMAT}
+    common = {"startprob": startprob, "transmat": transmat}
 
     z = rs.standard_normal((n, 3))
     gauss3 = _GAUSS3_MEANS[states] + np.einsum(
@@ -358,7 +422,8 @@ def build_cases():
     """
     Return the list of fit cases; each is a dict, the model's recipe.
 
-    The cases on the short sequences come after all the others.
+    The cases on the short sequences come after the two-sequence ones, the
+    added families after all the others.
     """
     cases = []
     for cls, (_, stat_key, families) in _CLASSES.items():
@@ -373,11 +438,154 @@ def build_cases():
             else ((None, "default"),)
         )
         cases += _class_cases(cls, _CLASSES[cls][1], (family,), variants)
-    return cases
+    return cases + _added_cases()
 
 
 def _is_short(case):
     return case["data"] in _SHORT_CLASSES.values()
+
+
+def _is_added(case):
+    return "family" in case
+
+
+def _section(case):
+    """The part of the dump a fit case belongs to."""
+    if _is_added(case):
+        return "added"
+    return "short" if _is_short(case) else "main"
+
+
+# The added families. Each case carries ``family`` and ``prior`` (a set of
+# prior keywords, see ``_prior_keywords``, or None); a case built by
+# ``set_params`` carries ``build``.
+_PRIOR_CLASSES = (
+    ("GaussianHMM", "gauss3"),
+    ("GMMHMM", "gmm"),
+    ("PoissonHMM", "pois"),
+    ("CategoricalHMM", "cat"),
+    ("MultinomialHMM", "multi"),
+)
+_SET_PARAMS_CLASSES = (
+    ("VariationalGaussianHMM", "gauss3"),
+    ("VariationalCategoricalHMM", "cat"),
+)
+
+
+def _covariances(cls):
+    return COVARIANCE_TYPES if cls in _COVARIANCE_CLASSES else (None,)
+
+
+def _added_case(
+    cls,
+    data,
+    cov,
+    start,
+    impl,
+    family,
+    prior=None,
+    *,
+    params=None,
+    tol="default",
+    build=None,
+):
+    stat_key = _CLASSES[cls][1]
+    name = _case_name(cls, data, cov, start, impl, params, tol)
+    if prior is not None:
+        name += "|prior=" + prior
+    if build is not None:
+        name += "|" + build
+    case = {
+        "name": name,
+        "kind": "fit",
+        "cls": cls,
+        "data": data,
+        "cov": cov,
+        "start": start,
+        "impl": impl,
+        "params": params,
+        "tol": tol,
+        "stat_key": stat_key,
+        "stat_defined": stat_key is not None
+        and (cls != "GaussianHMM" or "m" in (params or "stmc")),
+        "family": family,
+        "prior": prior,
+    }
+    if build is not None:
+        case["build"] = build
+    return case
+
+
+def _added_cases():
+    prior_cases = [
+        _added_case(cls, data, cov, "fixed", impl, "prior", "strong")
+        for cls, data in _PRIOR_CLASSES
+        for cov in _covariances(cls)
+        for impl in IMPLEMENTATIONS
+    ]
+    lr_cases = []
+    for cov in COVARIANCE_TYPES:
+        for impl in IMPLEMENTATIONS:
+            lr_cases += [
+                _added_case(
+                    "GaussianHMM", "lr-gauss3", cov, "lr", impl, "lr", "strong"
+                ),
+                _added_case(
+                    "GaussianHMM",
+                    "lr-gauss3",
+                    cov,
+                    "fixed",
+                    impl,
+                    "lr",
+                    "weak",
+                ),
+                _added_case(
+                    "GaussianHMM", "lr-gauss3", cov, "lr-seeded", impl, "lr"
+                ),
+            ]
+    for impl in IMPLEMENTATIONS:
+        for start, prior in (("lr", "strong"), ("fixed", "weak-emission")):
+            lr_cases.append(
+                _added_case(
+                    "CategoricalHMM", "lr-cat", None, start, impl, "lr", prior
+                )
+            )
+    wide_cases = []
+    for cls in ("GaussianHMM", "GMMHMM"):
+        variant = (
+            {"params": "stmc", "tol": "neginf"} if cls == "GaussianHMM" else {}
+        )
+        for cov in ("full", "tied"):
+            for start in ("fixed", "seeded"):
+                for impl in IMPLEMENTATIONS:
+                    wide_cases.append(
+                        _added_case(
+                            cls, "wide4", cov, start, impl, "wide", **variant
+                        )
+                    )
+    set_params_cases = [
+        _added_case(
+            cls,
+            data,
+            cov,
+            "fixed",
+            impl,
+            "set_params",
+            "strong",
+            build="set_params",
+        )
+        for cls, data in _PRIOR_CLASSES
+        for cov in _covariances(cls)
+        for impl in IMPLEMENTATIONS
+    ] + [
+        _added_case(
+            cls, data, cov, "seeded", impl, "set_params", build="set_params"
+        )
+        for cls, data in _SET_PARAMS_CLASSES
+        for cov in _covariances(cls)
+        for impl in IMPLEMENTATIONS
+    ]
+    return prior_cases + lr_cases + wide_cases + set_params_cases
 
 
 def _class_cases(cls, stat_key, families, variants):
@@ -515,8 +723,12 @@ def _model_keywords(case):
         "implementation": case["impl"],
         "random_state": MODEL_SEED,
     }
-    if case["start"] == "fixed":
+    if case["start"] in ("fixed", "lr"):
         kw["init_params"] = ""
+    elif case["start"] == "lr-seeded":
+        # The tutorial's left-right model: the start and transition matrix
+        # set, the emissions from the seeded start.
+        kw["init_params"] = "mc"
     if case["cov"]:
         kw["covariance_type"] = case["cov"]
     if case["params"]:
@@ -532,12 +744,90 @@ def _model_keywords(case):
     return kw
 
 
+def _prior_keywords(case, truth):
+    """
+    Return the prior keywords of ``case``, at the shapes the classes
+    document. ``"strong"``: as in hmmlearn's ``test_fit_with_priors``, a
+    Dirichlet prior of ``10 * p + 2`` on probabilities ``p`` (the mixture
+    weights included, so that none can become negative), the generating
+    means and covariances with weight 2, ``covars_prior=1.0`` for GMMHMM as
+    in hmmlearn's ``test_gmm_hmm``, 2 for both Poisson parameters.
+    ``"weak"``: ``1 / n_components`` for the start and the transitions,
+    ``"weak-emission"``: ``1 / n_features`` for the categorical emissions,
+    the variational models' defaults.
+    """
+    prior = case.get("prior")
+    nc = N_COMPONENTS
+    if prior is None:
+        return {}
+    if prior == "weak-emission":
+        n_symbols = truth["emission"].shape[1]
+        return {"emissionprob_prior": np.full((nc, n_symbols), 1 / n_symbols)}
+    if prior == "weak":
+        return {
+            "startprob_prior": np.full(nc, 1 / nc),
+            "transmat_prior": np.full((nc, nc), 1 / nc),
+        }
+    if prior != "strong":
+        raise ValueError(f"unknown prior set: {prior!r}")
+    kw = {
+        "startprob_prior": 10 * truth["startprob"] + 2.0,
+        "transmat_prior": 10 * truth["transmat"] + 2.0,
+    }
+    name, cov = case["cls"], case["cov"]
+    if name == "GaussianHMM":
+        covs = truth["covs"]
+        kw["means_prior"] = truth["means"]
+        kw["means_weight"] = 2.0
+        if cov == "full":
+            kw["covars_prior"] = covs
+        elif cov == "tied":
+            kw["covars_prior"] = covs.mean(axis=0)
+        elif cov == "diag":
+            kw["covars_prior"] = np.diagonal(covs, axis1=1, axis2=2).copy()
+        else:
+            # One variance per state, as a column: an (n_components,) array
+            # would be read per feature.
+            kw["covars_prior"] = _spherical_variances(covs)[:, None]
+        n_features = covs.shape[-1]
+        kw["covars_weight"] = 2.0 + (
+            n_features if cov in ("full", "tied") else 0
+        )
+    elif name == "GMMHMM":
+        kw["weights_prior"] = 10 * np.full((nc, 2), 0.5) + 2.0
+        kw["means_prior"] = truth["mix_means"]
+        kw["means_weight"] = 2.0
+        kw["covars_prior"] = 1.0
+    elif name == "PoissonHMM":
+        # Equal entries: the documented (n_components,) shape is applied
+        # along the features, and equal entries read the same either way.
+        kw["lambdas_prior"] = np.full(nc, 2.0)
+        kw["lambdas_weight"] = np.full(nc, 2.0)
+    elif name == "CategoricalHMM":
+        kw["emissionprob_prior"] = 10 * truth["emission"] + 2.0
+    return kw
+
+
+# The keywords that reach the convergence monitor only when given to the
+# constructor: a model built by set_params receives them there.
+_MONITOR_KEYWORDS = ("n_iter", "tol", "verbose")
+
+
 def build_model(modules, case, data):
     """Return the unfitted model of ``case``."""
     cls = getattr(modules[_CLASSES[case["cls"]][0]], case["cls"])
-    model = cls(**_model_keywords(case))
-    if case["start"] == "fixed":
+    kw = dict(_model_keywords(case), **_prior_keywords(case, data["truth"]))
+    if case.get("build") == "set_params":
+        monitor = {k: kw.pop(k) for k in _MONITOR_KEYWORDS if k in kw}
+        model = cls(**monitor)
+        model.set_params(**kw)
+    else:
+        model = cls(**kw)
+    if case["start"] in ("fixed", "lr"):
         _set_fixed_start(model, case, data["truth"])
+    if case["start"] in ("lr", "lr-seeded"):
+        model.startprob_ = data["truth"]["startprob"].copy()
+        model.transmat_ = data["truth"]["transmat"].copy()
     return model
 
 
@@ -671,6 +961,12 @@ def _probe(model, X, lengths, arrays, errors, prefix=""):
         pass
     except Exception as exc:  # noqa: BLE001
         errors[prefix + "covars_"] = _error(exc)
+    # The variational models have no information criteria: no key on
+    # either side, so a package that adds or drops one shows as a key that
+    # one side lacks.
+    for name in ("aic", "bic"):
+        if callable(getattr(model, name, None)):
+            put(name, run(name, lambda n=name: getattr(model, n)(X, lengths)))
 
 
 def _recording_class(cls, stat_key):
@@ -1076,7 +1372,7 @@ def dump(package, out, load_pickles=None, n_threads=1):
     with threadpoolctl.threadpool_limits(limits=1):
         environment = _environment(package, modules)
         for index, case in fits:
-            if not _is_short(case):
+            if _section(case) == "main":
                 results.append(
                     _dump_indexed_fit(modules, index, case, data, pickle_dir)
                 )
@@ -1084,7 +1380,7 @@ def dump(package, out, load_pickles=None, n_threads=1):
             results.append(_dump_utility(package, case))
         if load_pickles is not None:
             results += _pickle_pass(
-                package, Path(load_pickles), data, short=False
+                package, Path(load_pickles), data, section="main"
             )
         # Last, so the cases above keep their file numbers.
         data.update(make_underflow_data(data))
@@ -1098,17 +1394,28 @@ def dump(package, out, load_pickles=None, n_threads=1):
                 case, lengths=lengths, n_features=int(family["X"].shape[1])
             )
             results.append(_dump_underflow(modules, case, data))
-        # Last, for the same reason: the fits on the short sequences, then
+        # Then, for the same reason: the fits on the short sequences, then
         # their pickled models, on data drawn only now.
         data.update(make_short_data())
         for index, case in fits:
-            if _is_short(case):
+            if _section(case) == "short":
                 results.append(
                     _dump_indexed_fit(modules, index, case, data, pickle_dir)
                 )
         if load_pickles is not None:
             results += _pickle_pass(
-                package, Path(load_pickles), data, short=True
+                package, Path(load_pickles), data, section="short"
+            )
+        # Last again: the added families, then their pickled models.
+        data.update(make_added_data())
+        for index, case in fits:
+            if _section(case) == "added":
+                results.append(
+                    _dump_indexed_fit(modules, index, case, data, pickle_dir)
+                )
+        if load_pickles is not None:
+            results += _pickle_pass(
+                package, Path(load_pickles), data, section="added"
             )
     data_sha256 = {
         name: _digest(d["X"], d["lengths"]) for name, d in data.items()
@@ -1137,15 +1444,15 @@ def _dump_indexed_fit(modules, index, case, data, pickle_dir):
     return _dump_fit(modules, case, family, pickle_dir)
 
 
-def _pickle_pass(package, ref_dir, data, short):
-    """Probe the reference's pickled fits, on the short sequences or not."""
+def _pickle_pass(package, ref_dir, data, section):
+    """Probe the reference's pickled fits of one section of the dump."""
     manifest = json.loads((ref_dir / "manifest.json").read_text())
     results = []
     for name, entry in manifest["cases"].items():
         meta = entry["meta"]
         if meta["kind"] != "fit" or entry["errors"].get("fit"):
             continue
-        if _is_short(meta) != short:
+        if _section(meta) != section:
             continue
         file = ref_dir / "pickles" / f"{meta['index']:04d}.pkl"
         case = dict(meta, name="pickled:" + name)
@@ -1175,6 +1482,8 @@ _PROBE_STEPS = (
     "predict_proba",
     "sample",
     "covars_",
+    "aic",
+    "bic",
 )
 _PICKLED = "pickled:"
 # The prediction steps E7 applies to -> the keys each records.
