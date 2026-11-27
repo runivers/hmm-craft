@@ -71,14 +71,40 @@ nothing else.
   and the three-feature Gaussian, Gaussian mixture, categorical, multinomial
   and Poisson emissions with `RandomState(10)` on 220 sequences whose lengths
   run through 1, 2, 3, 5, 8, 13, 21, 34, 55 and 89, 22 times, 5082 samples in
-  all. The hash of every input is recorded and compared.
+  all. Two more families are drawn with `RandomState(10)`, each from its own
+  generator: a left-to-right chain, which starts in the first state and from
+  each state stays or moves to the next with probability 0.5 until the last,
+  which it keeps (the matrices of hmmlearn's tutorial), with the
+  three-feature Gaussian and the categorical emissions, on 10 sequences of 10
+  samples; and a four-feature Gaussian of the three-state chain on 40
+  sequences whose lengths run through 1, 2, 3, 5, 8, 13, 21, 34, 55 and 89,
+  four times, 924 samples in all. The hash of every input is recorded and
+  compared.
 * **Fits.** All seven model classes, every covariance type, both
   implementations (`"log"`, `"scaling"`), a fixed start (`init_params=""`,
   parameters set from the generator's values moved by a fixed amount) and a
   seeded start (`random_state=0`), ten iterations. For `GaussianHMM` the
   `params` `"stmc"` (with and without `tol=-inf`), `"stm"`, `"st"` and `"stc"`.
   On the short sequences every class is fitted the same way, `GaussianHMM`
-  with `"stmc"` and `tol=-inf` only.
+  with `"stmc"` and `tol=-inf` only. Further cases fit `GaussianHMM`,
+  `GMMHMM`, `PoissonHMM`, `CategoricalHMM` and `MultinomialHMM` from the fixed
+  start with priors of their documented shapes, valued as in hmmlearn's
+  `test_fit_with_priors` (`10 * p + 2` for a Dirichlet prior on probabilities
+  `p`, the generating means and covariances with weight 2, plus
+  `n_features` for the `full` and `tied` covariances; for `GMMHMM` the
+  same for the mixture weights, so that none can become negative, and
+  `covars_prior=1.0` as in hmmlearn's `test_gmm_hmm`; 2 for both `PoissonHMM`
+  rate parameters); fit `GaussianHMM` and `CategoricalHMM` on the
+  left-to-right families from its own start and transition matrix, zeros
+  included, with those priors, and from the fixed start with priors below one
+  (for `GaussianHMM` `1 / n_components` on the start and transitions, for
+  `CategoricalHMM` `1 / n_features` on the emissions only, the variational
+  models' defaults), so that the update's clip at zero decides some entries;
+  fit `GaussianHMM` from the tutorial's start and transition matrix with its
+  `init_params="mc"`; fit `GaussianHMM` and `GMMHMM` `full`
+  and `tied` on the four-feature family as on the short sequences; and build
+  the prior cases and the variational models with `set_params` after
+  construction, `n_iter`, `tol` and `verbose` given to the constructor.
 * **Underflow cases.** 33 cases with `implementation="scaling"` in which the
   scaled forward pass underflows: each predicts on the first sequence alone,
   with `"log"` as well, or fits on both sequences. The models start from the
@@ -90,9 +116,10 @@ nothing else.
   emission count of every state set to 1e-5, and no prediction case). In two
   `CategoricalHMM` cases that probability is zero: both packages must raise
   the same error.
-* **Compared.** Every fitted attribute, `monitor_.history`, the score, both
-  decodes, `predict_proba`, a sample drawn with `random_state=1`, `covars_`, the
-  parameters, and the exception type of a call that raises. The sufficient
+* **Compared.** Every fitted attribute, `monitor_.history`, the score, `aic`
+  and `bic` where the model has them, both decodes, `predict_proba`, a sample
+  drawn with `random_state=1`, `covars_`, the parameters, and the exception
+  type of a call that raises. The sufficient
   statistic of the last M-step is compared with `state_occupancy_`. Each fit
   is repeated with a subclass that records the statistics; the package
   computes that fit sequence by sequence and the first one by blocks of
@@ -217,6 +244,17 @@ the fit on one thread, on its seeded data (`RandomState(10)`, the sequence
 lengths of `src/hmmcraft/tests/test_estep_blocks.py`), and the block
 functions' results on several threads with those of the per-sequence
 functions (`RandomState(0)`).
+
+At the tree that adds the prior, left-to-right, four-feature and `set_params`
+cases and the `aic` and `bic` probes, which changes the check and its tests
+only, the check gives equal apart from E1 to E7 on the data above, with Python
+3.12.3, Linux x86_64, one thread, 526 fits (98 in the added families), the 33
+underflow cases and the utility arrays, in both environments: numpy 1.26.0,
+scipy 1.11.2, scikit-learn 1.3.1, threadpoolctl 3.5.0, and numpy 2.5.4, scipy
+1.18.1, scikit-learn 1.9.1, threadpoolctl 3.8.0. In each environment, the
+package's results for the cases of the tree before are byte for byte that
+tree's, and its dumps with `--n-threads 2` and `--n-threads 4` hold the bytes
+of its one-thread dump.
 
 This is the whole claim of the check: no result is stated for other data,
 other versions, other thread counts than those named above, or another
