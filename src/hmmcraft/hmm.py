@@ -920,6 +920,10 @@ class GMMHMM(_emissions.BaseGMMHMM):
 
             With "full" or "tied", a number is added to every entry of the
             matrix, not only to its diagonal.
+            With "full" or "tied" and "c" in ``params``, :meth:`fit`
+            raises ValueError for a ``covars_prior`` that, broadcast to
+            the shape of :attr:`covars_`, is not symmetric as
+            ``np.allclose`` tests it.
 
         covars_weight : float or array, optional
             Parameters of the prior distribution for :attr:`covars_`, with
@@ -1157,6 +1161,20 @@ class GMMHMM(_emissions.BaseGMMHMM):
         ):
             return float(np.asarray(current).flat[0])
         return super()._value_after_refused_fit(name, before, current)
+
+    def _store_checked(self):
+        super()._store_checked()
+        # The M-step adds covars_prior, transposed, to every covariance
+        # matrix: a scale matrix that is not symmetric gives covariances
+        # that are not. Tested whatever n_iter is, and only with "c", as
+        # the M-step reads it only then.
+        if "c" in self.params and self.covariance_type in ("full", "tied"):
+            shape = dict(self._prior_shapes(self._get_n_features()))[
+                "covars_prior"
+            ]
+            _check_prior_symmetric(
+                "covars_prior", self.covars_prior, shape, self.covariance_type
+            )
 
     def _check(self):
         super()._check()
