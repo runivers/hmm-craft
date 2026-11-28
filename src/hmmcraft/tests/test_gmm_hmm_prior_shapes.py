@@ -1,6 +1,8 @@
+import re
+
 import numpy as np
 import pytest
-from numpy.testing import assert_array_equal
+from numpy.testing import assert_allclose, assert_array_equal
 
 from ..hmm import GMMHMM
 from .test_gmm_hmm_new import prep_params
@@ -59,14 +61,20 @@ def _model(covariance_type, **priors):
     return h, prng
 
 
-def _fit(covariance_type, **priors):
+def _model_and_sample(covariance_type, **priors):
     """
-    One EM iteration from a fixed start on a seeded sample, drawn by a
-    model without priors: sample() broadcasts the priors too.
+    The model of _model with *priors*, and a seeded sample drawn by a model
+    without priors: sample() broadcasts the priors too.
     """
     h, prng = _model(covariance_type)
     X, _ = h.sample(200, random_state=prng)
     h, _ = _model(covariance_type, **priors)
+    return h, X
+
+
+def _fit(covariance_type, **priors):
+    """One EM iteration from a fixed start on a seeded sample."""
+    h, X = _model_and_sample(covariance_type, **priors)
     return h.fit(X)
 
 
@@ -405,3 +413,167 @@ def test_refused_fit_leaves_a_filled_covariance_prior_as_its_number(
         else:
             assert type(value) is float
             assert value == number
+
+
+# the row of the reported example, (n_features,), and a value per state
+ROW = np.array([1.0, 2.0, 3.0, 4.0])
+PER_STATE = np.arange(12.0).reshape(NC, 1, NF)
+
+
+def _distinct(shape):
+    """Distinct values, so the matrices of the broadcast are not symmetric."""
+    return 0.1 * (1 + np.arange(np.prod(shape)).reshape(shape))
+
+
+def _shape_id(covariance_type, value):
+    dims = "x".join(map(str, np.shape(value)))
+    return f"{covariance_type}-shape-{dims}"
+
+
+# the parameters of the start, which a refused fit leaves as they were
+START = ["weights_", "means_", "covars_"]
+ASYMMETRIC = [
+    ("full", ROW),
+    ("tied", ROW),
+    ("tied", PER_STATE),
+    *[(ct, _distinct((NF, 1))) for ct in ["full", "tied"]],
+    *[
+        ("full", _distinct(shape))
+        for shape in [(NF, NF), (NM, NF, NF), (NC, NM, NF, NF)]
+    ],
+    *[("tied", _distinct(shape)) for shape in [(NF, NF), (NC, NF, NF)]],
+]
+
+
+@pytest.mark.parametrize("n_iter", [0, 1], ids=lambda n: f"n_iter{n}")
+@pytest.mark.parametrize(
+    "covariance_type, value",
+    ASYMMETRIC,
+    ids=[_shape_id(ct, value) for ct, value in ASYMMETRIC],
+)
+def test_asymmetric_covars_prior_raises(covariance_type, value, n_iter):
+    """
+    With "full" or "tied" and "c" in params, fit raises ValueError naming
+    covars_prior when the prior, broadcast to the shape of covars_, is not
+    symmetric, whatever n_iter is: before the first iteration, so the
+    start is left as it was, and the prior is the object given.
+    """
+    h, X = _model_and_sample(covariance_type, covars_prior=value)
+    h.n_iter = n_iter
+    start = {name: np.copy(getattr(h, name)) for name in START}
+    message = (
+        "covars_prior must be symmetric with "
+        f'covariance_type="{covariance_type}"'
+    )
+    with pytest.raises(ValueError, match=f"^{re.escape(message)}$"):
+        h.fit(X)
+    for name in START:
+        assert_array_equal(getattr(h, name), start[name])
+    assert h.covars_prior is value
+
+
+def _symmetric_matrices(lead):
+    """Symmetric positive definite matrices, a different scale for each."""
+    scale = 1.0 + np.arange(np.prod(lead)).reshape(lead) / 10
+    return scale[..., None, None] * (np.eye(NF) + 0.5)
+
+
+SYMMETRIC_UNDOCUMENTED = [
+    ("tied", np.full(NF, 2.0)),
+    ("tied", (1.0 + np.arange(NC)).reshape(NC, 1, 1)),
+    ("tied", _symmetric_matrices((1,))),
+    ("full", _symmetric_matrices((1,))),
+    ("full", _symmetric_matrices((NC, 1))),
+    ("full", (1.0 + np.arange(NC * NM)).reshape(NC, NM, 1, 1)),
+]
+
+
+@pytest.mark.parametrize(
+    "covariance_type, value",
+    SYMMETRIC_UNDOCUMENTED,
+    ids=[_shape_id(ct, value) for ct, value in SYMMETRIC_UNDOCUMENTED],
+)
+def test_symmetric_covars_prior_of_an_undocumented_shape_fits_as_its_broadcast(
+    covariance_type, value
+):
+    """
+    A "full" or "tied" covars_prior of a shape the constructor does not
+    document, whose broadcast to the shape of covars_ is symmetric, fits,
+    and gives the fit of that broadcast: symmetry decides, not the shape.
+    """
+    h = _fit(covariance_type, covars_prior=value)
+    fitted_shape = FITTED_SHAPES["covars_prior"][covariance_type]
+    ref = _fit(
+        covariance_type,
+        covars_prior=np.broadcast_to(value, fitted_shape),
+    )
+    assert_array_equal(h.weights_, ref.weights_)
+    assert_array_equal(h.means_, ref.means_)
+    assert_array_equal(h.covars_, ref.covars_)
+
+
+@pytest.mark.parametrize("covariance_type", ["full", "tied"])
+def test_covars_prior_close_to_symmetric_fits(covariance_type):
+    """
+    The symmetry test is np.allclose's: a covars_prior one ulp from
+    symmetric fits, close to the fit of its symmetric copy.
+    """
+    prior = np.eye(NF) + 0.5
+    moved = prior.copy()
+    moved[0, 1] = np.nextafter(moved[0, 1], 1.0)
+    assert not np.array_equal(moved, moved.T)
+    ref = _fit(covariance_type, covars_prior=prior)
+    h = _fit(covariance_type, covars_prior=moved)
+    for name in START:
+        assert_allclose(getattr(h, name), getattr(ref, name), rtol=1e-12)
+
+
+def _fit_state(model, X):
+    """The fitted arrays, the history and the score, as bytes."""
+    names = ["weights_", "means_", "covars_", "transmat_", "startprob_"]
+    out = {name: getattr(model, name).tobytes() for name in names}
+    out["history"] = np.asarray(model.monitor_.history, float).tobytes()
+    out["score"] = np.float64(model.score(X)).tobytes()
+    return out
+
+
+@pytest.mark.parametrize("covariance_type", ["full", "tied"])
+def test_covars_prior_is_not_tested_without_c_in_params(covariance_type):
+    """
+    Without "c" in params the M-step does not read covars_prior, which is
+    not tested: an asymmetric one gives the fit of the default prior.
+    """
+    h, X = _model_and_sample(covariance_type, covars_prior=ROW)
+    ref, _ = _model_and_sample(covariance_type)
+    h.params = ref.params = "stmw"
+    assert _fit_state(h.fit(X), X) == _fit_state(ref.fit(X), X)
+
+
+def _prediction_bytes(model, X):
+    """score, decode (viterbi, map), predict_proba and sample, as bytes."""
+    out: dict[str, object] = {"score": np.float64(model.score(X)).tobytes()}
+    for algorithm in ["viterbi", "map"]:
+        logprob, states = model.decode(X, algorithm=algorithm)
+        out[algorithm] = (np.float64(logprob).tobytes(), states.tobytes())
+    out["predict_proba"] = model.predict_proba(X).tobytes()
+    sample, states = model.sample(5, random_state=0)
+    out["sample"] = (sample.tobytes(), states.tobytes())
+    return out
+
+
+@pytest.mark.parametrize(
+    "covariance_type, value",
+    [("full", ROW), ("tied", ROW), ("tied", PER_STATE)],
+    ids=lambda v: v if isinstance(v, str) else "x".join(map(str, v.shape)),
+)
+def test_prediction_ignores_an_asymmetric_covars_prior(covariance_type, value):
+    """
+    A prediction does not read the priors: a fitted model gives the same
+    score, decode, predict_proba and sample after an asymmetric
+    covars_prior is set.
+    """
+    h, X = _model_and_sample(covariance_type)
+    h.fit(X)
+    before = _prediction_bytes(h, X)
+    h.covars_prior = value
+    assert _prediction_bytes(h, X) == before

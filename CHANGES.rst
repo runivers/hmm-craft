@@ -4,6 +4,12 @@ hmm-craft Changelog
 The changes of hmm-craft, a fork of hmmlearn, come first. The entries from
 "Version 0.3.3" down are hmmlearn's own history, kept as written.
 
+Unreleased
+~~~~~~~~~~
+
+- Changed: ``fit`` raises ``ValueError`` naming an undocumented ``GaussianHMM`` prior or variational
+  start or transition array, an asymmetric ``GMMHMM`` ``covars_prior`` or a kept infinite posterior.
+
 Version 0.5.0
 ~~~~~~~~~~~~~
 

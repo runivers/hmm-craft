@@ -1123,6 +1123,38 @@ class _AbstractHMM(BaseEstimator):
                 f"{np.min(value):.4g}"
             )
 
+    @staticmethod
+    def _check_shape(name, value, shape, also=(), broadcast=False):
+        """
+        Check that an array has the given shape, or one of the shapes in
+        ``also``, which the message does not name.
+
+        With ``broadcast``, a shape passes when ``np.broadcast_to`` takes
+        it to one of them without adding an axis.
+
+        Raises
+        ------
+        ValueError
+            If ``value`` has another shape.
+        """
+        actual = np.shape(value)
+        if not broadcast:
+            if actual != shape and actual not in also:
+                raise ValueError(
+                    f"{name} must have shape {shape}, actual shape: {actual}"
+                )
+            return
+        for target in (shape, *also):
+            try:
+                # More axes than the target broadcast to more axes.
+                if np.broadcast_shapes(actual, target) == target:
+                    return
+            except ValueError:
+                pass
+        raise ValueError(
+            f"{name} must broadcast to shape {shape}, actual shape: {actual}"
+        )
+
     def _check(self):
         """
         Validate model parameters before fitting or predicting.
@@ -2135,12 +2167,13 @@ class VariationalBaseHMM(_AbstractHMM):
         """
         nc = self.n_components
 
-        if len(self.startprob_prior_) != nc:
-            raise ValueError("startprob_prior_ must have length n_components")
-        if len(self.startprob_posterior_) != nc:
-            raise ValueError(
-                "startprob_posterior_ must have length n_components"
-            )
+        # The length only: a prediction reads neither array, and one of
+        # shape (n_components, k) gives 0.3.3's results. fit tests the
+        # shapes (_store_checked).
+        for name in ("startprob_prior_", "startprob_posterior_"):
+            value = getattr(self, name)
+            if np.ndim(value) == 0 or len(value) != nc:
+                raise ValueError(f"{name} must have length n_components")
 
         if self.transmat_prior_.shape != (nc, nc):
             raise ValueError(
@@ -2157,6 +2190,31 @@ class VariationalBaseHMM(_AbstractHMM):
         # sums are not tested: they are concentrations, which a fitted
         # posterior gives summing to more than 1.
         super()._store_checked()
+        # fit reads the start and transition arrays at these shapes, in the
+        # E-step, the M-step and the lower bound, whatever params holds;
+        # another shape broadcasts to a wrong bound or raises unnamed. With
+        # one state, a number as the start prior and a transition prior of
+        # shape (1,) give the fit of the documented shapes.
+        nc = self.n_components
+        one = nc == 1
+        self._check_shape(
+            "startprob_prior_",
+            self.startprob_prior_,
+            (nc,),
+            also=[()] if one else [],
+        )
+        self._check_shape(
+            "startprob_posterior_", self.startprob_posterior_, (nc,)
+        )
+        self._check_shape(
+            "transmat_prior_",
+            self.transmat_prior_,
+            (nc, nc),
+            also=[(1,)] if one else [],
+        )
+        self._check_shape(
+            "transmat_posterior_", self.transmat_posterior_, (nc, nc)
+        )
         for name in (
             "startprob_prior_",
             "startprob_posterior_",
