@@ -43,6 +43,36 @@ Report a security problem as described in `SECURITY.md`, not in an issue.
        python -m coverage run -m pytest --pyargs hmmcraft.tests doc
        python -m coverage report
 
+   On a pull request CI also measures the lines the pull request adds or
+   changes, and their branches, in the Python package and in the C++ kernel
+   (`ext/`). It fails when fewer than 90% of the added lines that a report
+   measures run, or fewer than 85% of their branches are taken, the Python
+   package and the kernel each on its own; blank lines, comments, docstrings
+   and deleted lines are not measured and do not count, and a pull request
+   that adds no measured line passes. A line the pull request changes counts
+   as added, also when only its style changed. To run the same
+   check, with the suite already run under coverage.py and the kernel built
+   with `--coverage` as `.github/workflows/instrumented.yml` does:
+
+       python -m coverage json --fail-under=0 -o python.json
+       python -m gcovr --root . --fail-under-line 0 --json kernel.json
+       pkg=$(python -c "import hmmcraft, os; \
+           print(os.path.dirname(hmmcraft.__file__))")
+       python scripts/check_diff_coverage.py \
+           "$(git merge-base main HEAD)" HEAD \
+           --python python.json --map "$pkg=src/hmmcraft" \
+           --kernel kernel.json
+
+   Code that no test can reach may be excluded with the tools' own markers:
+   `# pragma: no cover` (a line) and `# pragma: no branch` (a branch) for
+   coverage.py, `GCOVR_EXCL_LINE`, `GCOVR_EXCL_START` / `GCOVR_EXCL_STOP` (a
+   range) and `GCOVR_EXCL_BR_LINE` (a line's branches) for gcovr. They are for
+   unreachable code only; code that is hard to test gets a test. Each use
+   gives its reason on the marker's line or on the comment line above it. A
+   `# pragma: no cover` on a line that opens a block excludes the whole
+   block. An excluded line counts nowhere, the totals included; the check
+   prints each excluded line a pull request adds.
+
 3. Keep every Python line under 80 characters, as upstream does. CI also runs
    `ruff check .` (pyflakes, syntax errors, a docstring on every public
    module, class and function of the package, and ruff's bugbear, numpy,
@@ -69,6 +99,66 @@ Report a security problem as described in `SECURITY.md`, not in an issue.
    The formatting commit is listed in `.git-blame-ignore-revs`; `git config
    blame.ignoreRevsFile .git-blame-ignore-revs` makes local `git blame` skip
    it.
+
+   CI also runs pyright, a type checker, in its basic mode over
+   `src/hmmcraft` (`[tool.pyright]` in `pyproject.toml`) and fails when a
+   file has more errors of a rule than `ci/pyright_baseline.json` records, or
+   fewer. The package has no type annotations, and the baseline holds the
+   errors of the tree when the check was added. With the versions CI uses, in
+   an environment of their own:
+
+       pip install --require-hashes --only-binary :all: \
+         -r ci/type_requirements.txt
+       python -I scripts/check_pyright_baseline.py
+
+   The script uses the Python that runs it, for pyright and for the packages
+   it reads, and stops if that environment does not match the lock. A new
+   error is fixed in the code; a `# type: ignore` comment is not used. After
+   fixing errors, lower the baseline with
+   `python -I scripts/check_pyright_baseline.py --update` and commit it.
+   `--update --allow-rise` may raise it, only in a commit that changes
+   `ci/type_requirements.txt` and the baseline and nothing else.
+
+   CI also compiles both modules of the C++ kernel with warnings as errors,
+   with GCC, clang, Apple clang (`-Wall -Wextra -Werror`) and MSVC (`-W4
+   -WX`). Python's and pybind11's headers are passed as system headers, so a
+   warning in them does not count. With GCC or clang, after `pip install
+   --require-hashes -r ci/build_requirements.txt`:
+
+       work=$(mktemp -d)
+       pybind11=$(python -c 'import pybind11; print(pybind11.get_include())')
+       include=$(python -c \
+         'import sysconfig; print(sysconfig.get_config_var("INCLUDEPY"))')
+       CPPFLAGS="-isystem $pybind11 -isystem $include" \
+         CXXFLAGS="-O2 -DNDEBUG -Wall -Wextra -Werror" \
+         python setup.py build_ext \
+         --build-temp "$work/temp" --build-lib "$work/lib"
+
+   The objects go to a temporary directory, not `build/`, which a later `pip
+   install .` would reuse. With MSVC, set
+   `_CL_=-W4 -WX -external:anglebrackets -external:W0` instead, as the job
+   does (cl takes `-` or `/` before an option). A warning is fixed in the
+   code; where a fix would change what the kernel computes, it is silenced on
+   its line with the reason in a comment, never by dropping a flag.
+
+   CI also builds the documentation with Sphinx and fails on any warning; the
+   examples in `examples/` run as part of the build. In an environment of its
+   own, with Python 3.13, which the newest Sphinx requires:
+
+       pip install --require-hashes --only-binary :all: \
+         -r ci/build_requirements.txt
+       pip install --no-build-isolation --no-deps .
+       pip install --require-hashes --only-binary :all: \
+         -r ci/docs_requirements.txt
+       sphinx-build -W --keep-going -b html doc/source doc/build/html
+
+   `-D plot_gallery=0` skips running the examples. The methods the models
+   inherit from scikit-learn link to its glossary through its Sphinx
+   inventory. CI downloads the inventory with retries to
+   `doc/source/sklearn-objects.inv` before the build; a local build fetches it
+   as before unless a copy is present there (the file is not tracked). A
+   reference to a missing label, document or glossary term fails the build; a
+   misspelt Python name in backquotes does not.
 4. Sign off every commit with `git commit -s`. The line `Signed-off-by: Your
    Name <you@example.com>` certifies the
    [Developer Certificate of Origin](https://developercertificate.org/): you

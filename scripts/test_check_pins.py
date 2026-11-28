@@ -31,6 +31,10 @@ COVERAGE_COMMAND = BUILD_COMMAND.replace(
     "build_requirements", "coverage_requirements"
 )
 LINT_COMMAND = BUILD_COMMAND.replace("build_requirements", "lint_requirements")
+TYPE_COMMAND = BUILD_COMMAND.replace("build_requirements", "type_requirements")
+DOCS_COMMAND = BUILD_COMMAND.replace(
+    "build_requirements", "docs_requirements"
+).replace("3.12", "3.13")
 HASH = "    --hash=sha256:" + "0" * 64
 BUILD_TXT = ("alpha-pkg==1.0", "packaging==26.3")
 BUILD_IN = ("alpha-pkg==1.0",)
@@ -40,29 +44,35 @@ COVERAGE_TXT = ("cov-pkg==2.0", "packaging==26.3")
 COVERAGE_IN = ("cov-pkg==2.0",)
 LINT_TXT = ("lint-pkg==3.0",)
 LINT_IN = ("lint-pkg==3.0",)
+TYPE_TXT = ("type-pkg==4.0",)
+TYPE_IN = ("type-pkg[x]==4.0",)
+DOCS_TXT = ("docs-pkg==5.0",)
+DOCS_IN = ("docs-pkg==5.0",)
 CURRENT = {
     "alpha-pkg": ["1.0"],
     "build": ["1.6.1"],
     "cov-pkg": ["2.0"],
+    "docs-pkg": ["5.0"],
     "lint-pkg": ["3.0"],
     "packaging": ["26.3"],
+    "type-pkg": ["4.0"],
 }
 
 
-def _header(stem):
+def _header(stem, python="3.12"):
     """Return the three comment lines a regenerated file starts with."""
     return (
         f"# Pinned with hashes. Regenerate, from this directory, after"
         f" editing {stem}.in:\n"
-        "#   uv pip compile --universal --python-version 3.12"
+        f"#   uv pip compile --universal --python-version {python}"
         " --generate-hashes \\\n"
         f"#     --no-header --no-annotate {stem}.in -o {stem}.txt\n"
     )
 
 
-def _txt(stem, pins, header=True):
+def _txt(stem, pins, header=True, python="3.12"):
     """Return the text of a hashed requirements file pinning ``pins``."""
-    lines = [_header(stem)] if header else []
+    lines = [_header(stem, python)] if header else []
     lines.extend(f"{pin} \\\n{HASH} \\\n{HASH}\n" for pin in pins)
     return "".join(lines)
 
@@ -77,6 +87,10 @@ def _tree(
     coverage_in=COVERAGE_IN,
     lint=LINT_TXT,
     lint_in=LINT_IN,
+    types=TYPE_TXT,
+    types_in=TYPE_IN,
+    docs=DOCS_TXT,
+    docs_in=DOCS_IN,
     header=True,
 ):
     """Write ``ci/`` under ``root`` and return ``root``."""
@@ -94,6 +108,16 @@ def _tree(
     (ci / "lint_requirements.txt").write_text(
         _txt("lint_requirements", lint, header)
     )
+    (ci / "type_requirements.txt").write_text(
+        _txt("type_requirements", types, header)
+    )
+    (ci / "docs_requirements.txt").write_text(
+        _txt("docs_requirements", docs, header, python="3.13")
+    )
+    if docs_in is not None:
+        (ci / "docs_requirements.in").write_text("\n".join(docs_in) + "\n")
+    if types_in is not None:
+        (ci / "type_requirements.in").write_text("\n".join(types_in) + "\n")
     if lint_in is not None:
         (ci / "lint_requirements.in").write_text("\n".join(lint_in) + "\n")
     if build_in is not None:
@@ -150,9 +174,9 @@ def test_current_pins_pass(tmp_path, capsys):
     """Pins equal to the newest final release pass, one line each."""
     status, out, _ = _run(tmp_path, capsys)
     assert status == 0, out
-    assert len(_lines(out, "ok")) == 7
+    assert len(_lines(out, "ok")) == 9
     assert not _lines(out, "stale")
-    assert "7 pin(s) checked: 0 stale, 0 held, 0 lookup failure(s)." in out
+    assert "9 pin(s) checked: 0 stale, 0 held, 0 lookup failure(s)." in out
 
 
 def test_stale_pin_names_file_package_pin_and_newest(tmp_path, capsys):
@@ -206,6 +230,35 @@ def test_stale_pin_in_the_lint_lock_names_its_remedy(tmp_path, capsys):
         assert text in line
     assert "set lint-pkg==3.1 in ci/lint_requirements.in" in out
     assert LINT_COMMAND in out
+
+
+def test_stale_pin_in_the_type_lock_names_its_remedy(tmp_path, capsys):
+    """A stale pin of the type lock is named with its remedy.
+
+    The ``.in`` file names the package with an extra; the remedy is still
+    the direct one.
+    """
+    status, out, _ = _run(tmp_path, capsys, world={"type-pkg": ["4.0", "4.1"]})
+    assert status == 1
+    (line,) = _lines(out, "stale")
+    for text in ("ci/type_requirements.txt", "type-pkg==4.0", "4.1"):
+        assert text in line
+    assert "set type-pkg==4.1 in ci/type_requirements.in" in out
+    assert TYPE_COMMAND in out
+
+
+def test_stale_pin_in_the_docs_lock_names_its_remedy(tmp_path, capsys):
+    """A stale pin of the docs lock names the command of its own header.
+
+    The lock is compiled for Python 3.13, not the other files' 3.12.
+    """
+    status, out, _ = _run(tmp_path, capsys, world={"docs-pkg": ["5.0", "5.1"]})
+    assert status == 1
+    (line,) = _lines(out, "stale")
+    for text in ("ci/docs_requirements.txt", "docs-pkg==5.0", "5.1"):
+        assert text in line
+    assert "set docs-pkg==5.1 in ci/docs_requirements.in" in out
+    assert DOCS_COMMAND in out
 
 
 def test_stale_transitive_pin_remedy_adds_upgrade_package(tmp_path, capsys):
@@ -471,6 +524,8 @@ def test_files_exclude_the_floor_file():
         "ci/tool_requirements.txt",
         "ci/coverage_requirements.txt",
         "ci/lint_requirements.txt",
+        "ci/type_requirements.txt",
+        "ci/docs_requirements.txt",
     )
 
 
@@ -483,7 +538,7 @@ def test_lookup_failure_has_its_own_message_and_status(tmp_path, capsys):
     assert "PyPI lookup failed: boom" in line
     assert "alpha-pkg==1.0" in line
     assert not _lines(out, "stale")
-    assert len(_lines(out, "ok")) == 6
+    assert len(_lines(out, "ok")) == 8
     assert "1 lookup failure(s)" in out
 
 
@@ -512,8 +567,10 @@ def test_package_in_several_files_is_asked_once(tmp_path, capsys):
         "alpha-pkg",
         "build",
         "cov-pkg",
+        "docs-pkg",
         "lint-pkg",
         "packaging",
+        "type-pkg",
     ]
 
 

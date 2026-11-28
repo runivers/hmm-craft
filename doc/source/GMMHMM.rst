@@ -1,3 +1,5 @@
+:orphan:
+
 We'll use Matrix Cookbook (https://www.math.uwaterloo.ca/~hwolkowi/matrixcookbook.pdf) for some useful equations.
 
 General form of expectation :math:`Q(\theta, \theta^{old})` of any GMM model looks like this (Bishop, (13.17)):

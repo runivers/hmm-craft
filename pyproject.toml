@@ -133,6 +133,15 @@ omit = ["*/hmmcraft/tests/*"]
 fail_under = 92
 precision = 2
 
+[tool.pyright]
+# CI's types job (scripts/check_pyright_baseline.py): pyright's basic mode
+# over the package and its tests, for the oldest supported Python on Linux
+# so that every machine counts the same.
+include = ["src/hmmcraft"]
+typeCheckingMode = "basic"
+pythonVersion = "3.12"
+pythonPlatform = "Linux"
+
 [tool.gcovr]
 filter = ["ext/"]
 exclude-throw-branches = true

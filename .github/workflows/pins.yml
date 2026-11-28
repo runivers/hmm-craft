@@ -1,8 +1,9 @@
 name: pins
 
 # Names each pin of ci/build_requirements.txt, ci/tool_requirements.txt,
-# ci/coverage_requirements.txt and ci/lint_requirements.txt that is older
-# than the newest final release on PyPI, with the command that updates it
+# ci/coverage_requirements.txt, ci/lint_requirements.txt,
+# ci/type_requirements.txt and ci/docs_requirements.txt that is older than
+# the newest final release on PyPI, with the command that updates it
 # (scripts/check_pins.py). Weekly and by hand, never on a pull request: a
 # release elsewhere must not turn a contributor's pull request red.
 # ci/floor_constraints.txt pins the declared minimums on purpose and is not

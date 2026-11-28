@@ -36,15 +36,16 @@ py::array_t<double> log(
 {
   auto n = x_.size();
   auto ptr = x_.data();
-  auto log = py::array_t<double>{{n}};
-  auto log_ptr = log.mutable_data();
+  auto log_ = py::array_t<double>(n);
+  auto log_ptr = log_.mutable_data();
   for (auto i = 0; i < n; ++i) {
     *(log_ptr++) = std::log(*(ptr++));
   }
   if (std::fetestexcept(FE_DIVBYZERO)) {
     std::feclearexcept(FE_DIVBYZERO);  // log(0) = -inf, ignore exception.
   }
-  return log.reshape(std::vector<ssize_t>(x_.shape(), x_.shape() + x_.ndim()));
+  return log_.reshape(
+    std::vector<ssize_t>(x_.shape(), x_.shape() + x_.ndim()));
 }
 
 // Most recursions start at row 0 or row ns - 1 of a lattice, and the
@@ -80,7 +81,7 @@ std::tuple<double, py::array_t<double>, py::array_t<double>> forward_scaling(
   check_not_empty(ns, nc);
   auto fwdlattice_ = py::array_t<double>{{ns, nc}};
   auto fwd = fwdlattice_.mutable_unchecked<2>();
-  auto scaling_ = py::array_t<double>{{ns}};
+  auto scaling_ = py::array_t<double>(ns);
   auto scaling = scaling_.mutable_unchecked<1>();
   auto log_prob = 0.;
   {
@@ -89,15 +90,15 @@ std::tuple<double, py::array_t<double>, py::array_t<double>> forward_scaling(
     for (auto i = 0; i < nc; ++i) {
       fwd(0, i) = startprob(i) * frameprob(0, i);
     }
-    auto sum = std::accumulate(&fwd(0, 0), &fwd(0, nc), 0.);
-    if (sum < min_sum) {
+    auto sum0 = std::accumulate(&fwd(0, 0), &fwd(0, nc), 0.);
+    if (sum0 < min_sum) {
       throw std::range_error{"forward pass failed with underflow; "
                              "consider using implementation='log' instead"};
     }
-    auto scale = scaling(0) = 1. / sum;
-    log_prob -= std::log(scale);
+    auto scale0 = scaling(0) = 1. / sum0;
+    log_prob -= std::log(scale0);
     for (auto i = 0; i < nc; ++i) {
-      fwd(0, i) *= scale;
+      fwd(0, i) *= scale0;
     }
     for (auto t = 1; t < ns; ++t) {
       for (auto j = 0; j < nc; ++j) {
@@ -316,7 +317,7 @@ std::tuple<double, py::array_t<ssize_t>> viterbi(
     throw std::invalid_argument{"shape mismatch"};
   }
   check_not_empty(ns, nc);
-  auto state_sequence_ = py::array_t<ssize_t>{{ns}};
+  auto state_sequence_ = py::array_t<ssize_t>(ns);
   auto viterbi_lattice_ = py::array_t<double>{{ns, nc}};
   auto state_sequence = state_sequence_.mutable_unchecked<1>();
   auto viterbi_lattice = viterbi_lattice_.mutable_unchecked<2>();
@@ -459,14 +460,14 @@ bool estep_scaling_sequence(
   for (auto i = ssize_t{0}; i < nc; ++i) {
     fwd[i] = startprob[i] * frameprob[i];
   }
-  auto sum = std::accumulate(fwd, fwd + nc, 0.);
-  if (sum < min_sum) {
+  auto sum0 = std::accumulate(fwd, fwd + nc, 0.);
+  if (sum0 < min_sum) {
     return false;
   }
-  auto scale = scaling[0] = 1. / sum;
-  log_prob -= std::log(scale);
+  auto scale0 = scaling[0] = 1. / sum0;
+  log_prob -= std::log(scale0);
   for (auto i = ssize_t{0}; i < nc; ++i) {
-    fwd[i] *= scale;
+    fwd[i] *= scale0;
   }
   for (auto t = ssize_t{1}; t < ns; ++t) {
     for (auto j = ssize_t{0}; j < nc; ++j) {
@@ -613,7 +614,7 @@ std::tuple<py::array_t<double>, py::array_t<double>, py::array_t<double>,
   auto log_startprob_ = log(startprob_);
   auto log_transmat_ = log(transmat_);
   auto buf = std::vector<double>(nc);
-  auto log_prob_ = py::array_t<double>{{nq}};
+  auto log_prob_ = py::array_t<double>(nq);
   auto fwdlattice_ = py::array_t<double>{{ns, nc}};
   auto bwdlattice_ = py::array_t<double>{{ns, nc}};
   auto log_xi_sum_ = py::array_t<double>{{with_xi_sum ? nq : 0, nc, nc}};
@@ -668,11 +669,11 @@ std::tuple<py::array_t<double>, py::array_t<double>, py::array_t<double>,
   auto nq = lengths_.shape(0);
   auto threads = std::min(n_threads, nq);
   auto scaling = std::vector<double>(longest);
-  auto log_prob_ = py::array_t<double>{{nq}};
+  auto log_prob_ = py::array_t<double>(nq);
   auto fwdlattice_ = py::array_t<double>{{ns, nc}};
   auto bwdlattice_ = py::array_t<double>{{ns, nc}};
   auto xi_sum_ = py::array_t<double>{{with_xi_sum ? nq : 0, nc, nc}};
-  auto underflow_ = py::array_t<bool>{{nq}};
+  auto underflow_ = py::array_t<bool>(nq);
   auto lengths = lengths_.data();
   auto startprob = startprob_.data();
   auto transmat = transmat_.data();
@@ -684,21 +685,21 @@ std::tuple<py::array_t<double>, py::array_t<double>, py::array_t<double>,
   auto underflow = underflow_.mutable_data();
   {
     py::gil_scoped_release nogil;
-    auto nan = std::numeric_limits<double>::quiet_NaN();
-    auto sequence = [&](ssize_t s, ssize_t row, double* scaling) {
+    auto quiet_nan = std::numeric_limits<double>::quiet_NaN();
+    auto sequence = [&](ssize_t s, ssize_t row, double* scratch) {
       auto n = lengths[s];
       auto xi_s = xi ? xi + s * nc * nc : nullptr;
       underflow[s] = !estep_scaling_sequence(
-        startprob, transmat, frameprob + row * nc, n, nc, scaling,
+        startprob, transmat, frameprob + row * nc, n, nc, scratch,
         log_prob + s, fwd + row * nc, bwd + row * nc, xi_s);
       if (underflow[s]) {
         // forward_scaling would throw: NaN in every result of the sequence,
         // so that a result used by mistake shows.
-        log_prob[s] = nan;
-        std::fill_n(fwd + row * nc, n * nc, nan);
-        std::fill_n(bwd + row * nc, n * nc, nan);
+        log_prob[s] = quiet_nan;
+        std::fill_n(fwd + row * nc, n * nc, quiet_nan);
+        std::fill_n(bwd + row * nc, n * nc, quiet_nan);
         if (xi_s) {
-          std::fill_n(xi_s, nc * nc, nan);
+          std::fill_n(xi_s, nc * nc, quiet_nan);
         }
       }
     };

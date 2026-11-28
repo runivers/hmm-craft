@@ -1,0 +1,9 @@
+# pyright resolves the package's imports against these; pinned so that a
+# release elsewhere does not change the count
+# (scripts/check_pyright_baseline.py).
+pyright[nodejs]==1.1.414
+numpy==2.5.5
+scipy==1.18.1
+scikit-learn==1.9.1
+threadpoolctl==3.8.0
+pytest==9.2.0

@@ -5,8 +5,13 @@ name: ci
 # the sdist are built and tested by wheels.yml. The weekly run shows within a
 # week a new numpy, scipy or scikit-learn release that breaks the suite, or
 # under which this package's fits differ from hmmlearn 0.3.3's (both are
-# installed at the same versions). On a pull request, every commit must be
-# signed off. A manual run also measures, on ARM, what the compiler option
+# installed at the same versions). The types job runs pyright's basic mode
+# over the package and counts its errors per file and rule against
+# ci/pyright_baseline.json. The kernel-warnings job compiles the C++ kernel
+# with warnings as errors with GCC, clang, Apple clang and MSVC. The docs job
+# builds the documentation with Sphinx, running the gallery's examples, and
+# fails on any warning. On a pull request, every commit must be signed off. A
+# manual run also measures, on ARM, what the compiler option
 # -ffp-contract=off changes (contraction-arm, which gates nothing).
 
 on:
@@ -49,6 +54,149 @@ jobs:
       run: ruff format --check .
     - name: No style finding added (ruff, per-file counts)
       run: python3 -I scripts/check_ruff_baseline.py
+
+  types:
+    name: types (pyright)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      with:
+        persist-credentials: false
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+      with:
+        python-version: "3.12"
+    - name: Install pyright and the package's dependencies from the hashed lock
+      run: |
+        python3 -m pip install --require-hashes --only-binary :all: \
+          -r ci/type_requirements.txt
+    - name: No type error added (pyright basic, per-file counts)
+      run: python3 -I scripts/check_pyright_baseline.py
+
+  # Both modules of the C++ kernel compiled with warnings as errors by the
+  # compiler of each cell: -Wall -Wextra -Werror for GCC and clang, -W4 -WX
+  # for MSVC (cl takes - or / before an option; the - form keeps Git Bash
+  # from reading the value as a path). Python's and pybind11's headers are
+  # system headers (-isystem; -external:anglebrackets -external:W0), so a
+  # warning in them does not count; GCC and clang ignore a -I for a directory
+  # also given with -isystem. setuptools puts CXXFLAGS in place of the
+  # interpreter's flags on the C++ compile line and appends CPPFLAGS; cl reads
+  # _CL_ after its command line, so -W4 replaces setuptools' /W3. The release
+  # builds keep their flags: nothing built here is installed or uploaded, and
+  # the objects go to the runner's temporary directory, not build/. Then a
+  # parameter left unused is appended to ext/_emissionsc.cpp and the build
+  # must fail with this cell's compiler reporting it as an error: a build that
+  # passes means the flags no longer reach the compiler, and fails the job.
+  # The compilers are the runner images': a new one can report a warning in an
+  # unchanged tree.
+  kernel-warnings:
+    name: kernel warnings (${{ matrix.cell }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - {cell: gcc, os: ubuntu-24.04, planted: "-Werror=unused-parameter"}
+        - {cell: clang, os: ubuntu-24.04, planted: "-Werror,-Wunused-parameter"}
+        - {cell: apple-clang, os: macos-15, planted: "-Werror,-Wunused-parameter"}
+        - {cell: msvc, os: windows-2025, planted: "C4100: 'planted'"}
+    defaults:
+      run:
+        shell: bash
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+      with:
+        python-version: "3.12"
+    - name: Build requirements from the hashed lock
+      run: |
+        python -m pip install --only-binary :all: --require-hashes \
+          -r ci/build_requirements.txt
+        python -m pip freeze
+    - name: Compiler and flags of the cell
+      env:
+        CELL: ${{ matrix.cell }}
+      run: |
+        if [ "$CELL" = msvc ]; then
+          echo "_CL_=-W4 -WX -external:anglebrackets -external:W0" >> "$GITHUB_ENV"
+          exit 0
+        fi
+        if [ "$CELL" = clang ]; then
+          printf 'CC=clang\nCXX=clang++\n' >> "$GITHUB_ENV"
+          cxx=clang++
+        else
+          cxx=$(python -c 'import sysconfig; print(sysconfig.get_config_var("CXX"))')
+        fi
+        $cxx --version
+        pybind11=$(python -c 'import pybind11; print(pybind11.get_include())')
+        include=$(python -c 'import sysconfig; print(sysconfig.get_config_var("INCLUDEPY"))')
+        echo "CPPFLAGS=-isystem $pybind11 -isystem $include" >> "$GITHUB_ENV"
+        echo "CXXFLAGS=-O2 -DNDEBUG -Wall -Wextra -Werror" >> "$GITHUB_ENV"
+    - name: Both modules build with warnings as errors
+      run: |
+        python -c "import os; print(repr(os.environ.get('_CL_')))"
+        python setup.py build_ext -v --build-temp "$RUNNER_TEMP/kernel/temp" \
+          --build-lib "$RUNNER_TEMP/kernel/lib"
+    - name: A planted warning fails the build
+      env:
+        PLANTED: ${{ matrix.planted }}
+      run: |
+        printf '\nvoid planted_warning(int planted) {}\n' >> ext/_emissionsc.cpp
+        if python setup.py build_ext -v --build-temp "$RUNNER_TEMP/kernel/temp" \
+            --build-lib "$RUNNER_TEMP/kernel/lib" > "$RUNNER_TEMP/planted.log" 2>&1
+        then
+          cat "$RUNNER_TEMP/planted.log"
+          echo "::error::the planted warning did not fail the build"
+          exit 1
+        fi
+        cat "$RUNNER_TEMP/planted.log"
+        grep -F planted "$RUNNER_TEMP/planted.log" | grep -F -- "$PLANTED"
+
+  docs:
+    name: docs (sphinx)
+    # The documentation built as CONTRIBUTING.md describes: the build
+    # requirements, the package without build isolation, then Sphinx, its
+    # extensions and the package's dependencies from ci/docs_requirements.txt,
+    # compiled for Python 3.13, which the newest Sphinx requires. The
+    # gallery's examples run, and one that raises fails the build. -W makes
+    # every warning an error; --keep-going lists them all first. scikit-learn's
+    # inventory is downloaded with retries before the build. The build is not
+    # nitpicky: a misspelt Python name in backquotes is not reported.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+      with:
+        python-version: "3.13"
+    - name: Build requirements from the hashed lock
+      run: |
+        python -m pip install --only-binary :all: --require-hashes \
+          -r ci/build_requirements.txt
+    - name: The package, without build isolation
+      run: python -m pip install --no-build-isolation --no-deps .
+    - name: Sphinx and its extensions from the hashed lock
+      run: |
+        python -m pip install --only-binary :all: --require-hashes \
+          -r ci/docs_requirements.txt
+    - name: scikit-learn's inventory
+      run: |
+        curl --fail --location --retry 5 --retry-all-errors \
+          -o doc/source/sklearn-objects.inv \
+          https://scikit-learn.org/stable/objects.inv
+    - name: The documentation builds without a warning
+      run: sphinx-build -W --keep-going -b html doc/source "$RUNNER_TEMP/html"
 
   sign-off:
     if: github.event_name == 'pull_request'

@@ -6,13 +6,17 @@ name: instrumented
 # kernel with --coverage and no optimisation, runs the suite under
 # coverage.py, and fails when the Python total or the kernel's line coverage
 # falls below its floor in pyproject.toml; the reports are in the log and in
-# the run's "coverage-reports" artifact. The "sanitizers" job builds the
-# kernel with AddressSanitizer and UndefinedBehaviorSanitizer and runs the
-# suite; the first error either finds stops the run, with its report in the
-# log. The "thread-sanitizer" job builds the kernel with ThreadSanitizer,
-# which cannot be combined with AddressSanitizer in one build, and runs the
-# tests of the kernel's threads; the first data race it finds stops the run,
-# with its report in the log.
+# the run's "coverage-reports" artifact. On a pull request it also measures
+# the lines the pull request adds or changes and their branches, and fails
+# when fewer than 90% of those lines run or fewer than 85% of their branches
+# are taken, the Python package and the kernel each on its own
+# (scripts/check_diff_coverage.py); blank lines, comments and deleted lines do
+# not count. The "sanitizers" job builds the kernel with AddressSanitizer and
+# UndefinedBehaviorSanitizer and runs the suite; the first error either finds
+# stops the run, with its report in the log. The "thread-sanitizer" job
+# builds the kernel with ThreadSanitizer, which cannot be combined with
+# AddressSanitizer in one build, and runs the tests of the kernel's threads;
+# the first data race it finds stops the run, with its report in the log.
 
 on:
   pull_request:
@@ -89,6 +93,35 @@ jobs:
         mkdir -p "$RUNNER_TEMP/coverage-reports/kernel"
         python -I -m gcovr --root . --txt-summary \
           --html-details "$RUNNER_TEMP/coverage-reports/kernel/index.html"
+    - name: Lines and branches the pull request adds, limits in the script
+      # Pull requests only: a push has no base to measure against. The
+      # checkout is the merge of the pull request into its base, the tree the
+      # reports measured; the diff runs from where that merge leaves the base
+      # (the base itself), so its line numbers are the reports'. The base's
+      # copy of the script runs, so a pull request is measured by limits it
+      # does not change; the tree's copy runs only while the base has none.
+      if: >-
+        ${{ github.event_name == 'pull_request' && !cancelled()
+        && steps.suite.outcome != 'skipped' }}
+      env:
+        BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      run: |
+        base=$(git merge-base "$BASE_SHA" HEAD)
+        out="$RUNNER_TEMP/coverage-reports/diff"
+        mkdir -p "$out"
+        python -I -m coverage json --fail-under=0 -o "$out/python.json"
+        python -I -m gcovr --root . --fail-under-line 0 \
+          --json "$out/kernel.json"
+        pkg=$(python -I -c \
+          'import hmmcraft, os; print(os.path.dirname(hmmcraft.__file__))')
+        script=scripts/check_diff_coverage.py
+        if git cat-file -e "$base:$script" 2>/dev/null; then
+          git show "$base:$script" > "$RUNNER_TEMP/check_diff_coverage.py"
+          script="$RUNNER_TEMP/check_diff_coverage.py"
+        fi
+        python -I "$script" "$base" HEAD \
+          --python "$out/python.json" --map "$pkg=src/hmmcraft" \
+          --kernel "$out/kernel.json"
     - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
       if: ${{ !cancelled() && steps.suite.outcome != 'skipped' }}
       with:
