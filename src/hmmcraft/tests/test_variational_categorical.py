@@ -46,7 +46,7 @@ class TestVariationalCategorical:
         model = cls.get_beal_models()[0]
         sequences = []
         lengths = []
-        for i in range(N):
+        for _i in range(N):
             sequences.append(
                 model.sample(length, random_state=check_random_state(rs))[0]
             )
@@ -321,7 +321,7 @@ class TestVariationalCategorical:
         m1, m2, m3 = self.get_beal_models()
         sequences = []
         lengths = []
-        for i in range(7):
+        for _i in range(7):
             for m in [m1, m2, m3]:
                 sequences.append(m.sample(39, random_state=rs)[0])
                 lengths.append(len(sequences[-1]))
@@ -411,7 +411,7 @@ class TestVariationalCategorical:
         NumPy reads a boolean array as a mask over the symbols.
         """
         model = self._fitted(n_features, implementation)
-        with pytest.raises(ValueError, match="X must .*not booleans"):
+        with pytest.raises(ValueError, match=r"X must .*not booleans"):
             getattr(model, method)(np.array(X))
 
     @pytest.mark.parametrize("implementation", ["scaling", "log"])

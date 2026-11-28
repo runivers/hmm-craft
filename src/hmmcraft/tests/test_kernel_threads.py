@@ -99,7 +99,7 @@ def _threaded_block(
         ["underflow"] if implementation == "scaling" else []
     )
     assert len(results) == len(names)
-    return dict(zip(names, results))
+    return dict(zip(names, results, strict=False))
 
 
 @pytest.fixture
@@ -132,7 +132,7 @@ def requested_threads(monkeypatch):
 @pytest.mark.parametrize("data", ["dense", "zeros"])
 @pytest.mark.parametrize(
     "lengths",
-    [[1], [7], [1, 1, 1], SHORT_AND_LONG, SHORT_AND_LONG + [300]],
+    [[1], [7], [1, 1, 1], SHORT_AND_LONG, [*SHORT_AND_LONG, 300]],
     ids=["one-row", "one-sequence", "one-row-each", "short", "short-long"],
 )
 @pytest.mark.parametrize("n_components", [1, 2, 8, 11])
@@ -204,7 +204,7 @@ def test_estep_scaling_on_threads_flags_the_sequences_of_one_thread(
 @pytest.mark.parametrize("n_threads", [0, -1])
 @pytest.mark.parametrize("name", BLOCK_FUNCTIONS)
 def test_block_functions_refuse_fewer_than_one_thread(name, n_threads):
-    with pytest.raises(ValueError, match="^n_threads must be at least 1$"):
+    with pytest.raises(ValueError, match=r"^n_threads must be at least 1$"):
         getattr(_hmmc, name)(
             np.full(2, 0.5),
             np.full((2, 2), 0.5),
@@ -536,7 +536,7 @@ def test_the_block_transition_sums_are_not_left_on_the_model(
     monkeypatch.setattr(BaseHMM, name, failing)
     _, factory, X = _variant("GaussianHMM-diag")
     model = factory(2, implementation).set_params(n_threads=2)
-    with pytest.raises(RuntimeError, match="^stop$"):
+    with pytest.raises(RuntimeError, match=r"^stop$"):
         model.fit(X, LENGTHS)
     assert seen == [True]
     assert "_estep_xi_sum" not in vars(model)

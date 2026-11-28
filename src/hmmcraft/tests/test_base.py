@@ -1130,10 +1130,14 @@ _VARIATIONAL_TRANSITIONS = [
 ]
 CONVERTED.update(
     {
-        "VariationalCategoricalHMM": _VARIATIONAL_TRANSITIONS
-        + ["emissionprob_prior_", "emissionprob_posterior_", "emissionprob_"],
-        "VariationalGaussianHMM": _VARIATIONAL_TRANSITIONS
-        + [
+        "VariationalCategoricalHMM": [
+            *_VARIATIONAL_TRANSITIONS,
+            "emissionprob_prior_",
+            "emissionprob_posterior_",
+            "emissionprob_",
+        ],
+        "VariationalGaussianHMM": [
+            *_VARIATIONAL_TRANSITIONS,
             "means_prior_",
             "means_posterior_",
             "beta_prior_",

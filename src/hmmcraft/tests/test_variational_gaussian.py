@@ -36,7 +36,7 @@ def get_sequences(length, N, model, rs=None):
     sequences = []
     lengths = []
     rs = check_random_state(rs)
-    for i in range(N):
+    for _i in range(N):
         sequences.append(model.sample(length, random_state=rs)[0])
         lengths.append(len(sequences[-1]))
 

@@ -28,11 +28,13 @@ def _raise_import_error(name):
 def _module_names():
     """Return the names of the package's modules, the tests excluded."""
     names = [hmmcraft.__name__]
-    for info in pkgutil.walk_packages(
-        hmmcraft.__path__, "hmmcraft.", onerror=_raise_import_error
-    ):
-        if not (info.name + ".").startswith("hmmcraft.tests."):
-            names.append(info.name)
+    names.extend(
+        info.name
+        for info in pkgutil.walk_packages(
+            hmmcraft.__path__, "hmmcraft.", onerror=_raise_import_error
+        )
+        if not (info.name + ".").startswith("hmmcraft.tests.")
+    )
     return names
 
 

@@ -301,6 +301,7 @@ class BaseCategoricalHMM(_AbstractHMM):
             warnings.warn(
                 "Inputs of shape other than (n_samples, 1) are deprecated.",
                 DeprecationWarning,
+                stacklevel=1,
             )
             X = np.concatenate(X)[:, None]
         return self.emissionprob_[:, X.squeeze(1)].T
@@ -328,6 +329,7 @@ class BaseCategoricalHMM(_AbstractHMM):
                     "Inputs of shape other than (n_samples, 1) are "
                     "deprecated.",
                     DeprecationWarning,
+                    stacklevel=1,
                 )
                 X = np.concatenate(X)[:, None]
             np.add.at(stats["obs"].T, X.squeeze(1), posteriors)
@@ -816,8 +818,10 @@ class BaseMultinomialHMM(BaseHMM):
     def _generate_sample_from_state(self, state, random_state):
         try:
             (n_trials,) = np.unique(self.n_trials)
-        except ValueError:
-            raise ValueError("For sampling, a single n_trials must be given")
+        except ValueError as err:
+            raise ValueError(
+                "For sampling, a single n_trials must be given"
+            ) from err
         return multinomial.rvs(
             n=n_trials,
             p=self.emissionprob_[state, :],

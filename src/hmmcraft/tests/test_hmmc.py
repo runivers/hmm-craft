@@ -112,7 +112,7 @@ def test_emission_hook_with_too_few_columns_raises(implementation, method):
     kernel's shape error under either implementation, not a fallback.
     """
     h = _hooked(_OneColumnCategoricalHMM, implementation)
-    with pytest.raises(ValueError, match="^shape mismatch$"):
+    with pytest.raises(ValueError, match=r"^shape mismatch$"):
         getattr(h, method)(np.array([[0], [1]]))
 
 
@@ -234,6 +234,7 @@ def _per_sequence(implementation, start, trans, lattice, lengths):
                 np.concatenate(bwds),
                 np.stack(sums),
             ],
+            strict=False,
         )
     )
     if implementation == "scaling":
@@ -250,7 +251,7 @@ def _block(implementation, start, trans, lattice, lengths, with_xi_sum=True):
         ["underflow"] if implementation == "scaling" else []
     )
     assert len(results) == len(names)
-    return dict(zip(names, results))
+    return dict(zip(names, results, strict=False))
 
 
 def _assert_same_bytes(got, expected):
@@ -265,7 +266,7 @@ def _assert_same_bytes(got, expected):
 @pytest.mark.parametrize("data", ["dense", "zeros"])
 @pytest.mark.parametrize(
     "lengths",
-    [[1], [7], [1, 1, 1], SHORT_AND_LONG, SHORT_AND_LONG + [300]],
+    [[1], [7], [1, 1, 1], SHORT_AND_LONG, [*SHORT_AND_LONG, 300]],
     ids=["one-row", "one-sequence", "one-row-each", "short", "short-long"],
 )
 @pytest.mark.parametrize("n_components", [1, 2, 8, 11])

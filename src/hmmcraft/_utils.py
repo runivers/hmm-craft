@@ -8,33 +8,33 @@ import numpy as np
 def logdet(a):
     sign, logdet = np.linalg.slogdet(a)
     if (sign < 0).any():
-        warnings.warn("invalid value encountered in log", RuntimeWarning)
+        warnings.warn(
+            "invalid value encountered in log", RuntimeWarning, stacklevel=1
+        )
         return np.where(sign < 0, np.nan, logdet)
-    else:
-        return logdet
+    return logdet
 
 
 def split_X_lengths(X, lengths):
     if lengths is None:
         return [X]
-    else:
-        lengths = np.asarray(lengths)
-        if (
-            lengths.ndim != 1
-            or lengths.size == 0
-            or not np.issubdtype(lengths.dtype, np.integer)
-            or np.any(lengths <= 0)
-        ):
-            raise ValueError(
-                "lengths must be a non-empty array of positive integers"
-            )
-        n_samples = len(X)
-        if sum(int(length) for length in lengths) != n_samples:
-            raise ValueError(
-                f"lengths array {lengths} doesn't sum to {n_samples} samples"
-            )
-        cs = np.cumsum(lengths, dtype=np.intp)
-        return np.split(X, cs)[:-1]
+    lengths = np.asarray(lengths)
+    if (
+        lengths.ndim != 1
+        or lengths.size == 0
+        or not np.issubdtype(lengths.dtype, np.integer)
+        or np.any(lengths <= 0)
+    ):
+        raise ValueError(
+            "lengths must be a non-empty array of positive integers"
+        )
+    n_samples = len(X)
+    if sum(int(length) for length in lengths) != n_samples:
+        raise ValueError(
+            f"lengths array {lengths} doesn't sum to {n_samples} samples"
+        )
+    cs = np.cumsum(lengths, dtype=np.intp)
+    return np.split(X, cs)[:-1]
 
 
 # Copied from scikit-learn 0.19.
@@ -45,12 +45,12 @@ def _validate_covars(covars, covariance_type, n_components):
     if covariance_type == "spherical":
         if len(covars) != n_components:
             raise ValueError("'spherical' covars have length n_components")
-        elif np.any(covars <= 0):
+        if np.any(covars <= 0):
             raise ValueError("'spherical' covars must be positive")
     elif covariance_type == "tied":
         if covars.shape[0] != covars.shape[1]:
             raise ValueError("'tied' covars must have shape (n_dim, n_dim)")
-        elif not np.allclose(covars, covars.T) or np.any(
+        if not np.allclose(covars, covars.T) or np.any(
             linalg.eigvalsh(covars) <= 0
         ):
             raise ValueError(
@@ -61,7 +61,7 @@ def _validate_covars(covars, covariance_type, n_components):
             raise ValueError(
                 "'diag' covars must have shape (n_components, n_dim)"
             )
-        elif np.any(covars <= 0):
+        if np.any(covars <= 0):
             raise ValueError("'diag' covars must be positive")
     elif covariance_type == "full":
         if len(covars.shape) != 3 or covars.shape[1] != covars.shape[2]:

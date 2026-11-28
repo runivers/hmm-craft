@@ -1,3 +1,5 @@
+"""Log densities of the multivariate normal for each covariance type."""
+
 import numpy as np
 from scipy import linalg
 
@@ -131,8 +133,10 @@ def _cholesky_log_det(cv, nf, min_covar):
         # few observations, we need to reinitialize this components
         try:
             cv_chol = linalg.cholesky(cv + min_covar * np.eye(nf), lower=True)
-        except linalg.LinAlgError:
-            raise ValueError("'covars' must be symmetric, positive-definite")
+        except linalg.LinAlgError as err:
+            raise ValueError(
+                "'covars' must be symmetric, positive-definite"
+            ) from err
 
     # In place on a copy: numpy < 2.0.2 with AVX-512 picks its log loop by
     # where the output lies near the input, unless the two coincide.
@@ -151,7 +155,7 @@ def _log_multivariate_normal_density_full(
     """
     _, nf = means.shape
     log_prob = []
-    for c, (mu, cv) in enumerate(zip(means, covars)):
+    for c, (mu, cv) in enumerate(zip(means, covars, strict=False)):
         if factors is not None:
             cv_chol, cv_log_det = factors[c]
         else:

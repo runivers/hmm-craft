@@ -519,6 +519,7 @@ class GaussianHMM(_emissions.BaseGaussianHMM, BaseHMM):
     means_ = _ConvertedAttribute(np.asarray)
 
     def __setstate__(self, state):
+        """Restore the model from a pickle, defaulting ``covars_floor``."""
         # A model pickled before covars_floor existed has no such entry.
         state.setdefault("covars_floor", None)
         super().__setstate__(state)

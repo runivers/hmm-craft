@@ -53,7 +53,7 @@ ns = [2, 3, 4, 5, 6]
 for n in ns:
     best_ll = None
     best_model = None
-    for i in range(10):
+    for _i in range(10):
         h = GaussianHMM(n, n_iter=200, tol=1e-4, random_state=rs)
         h.fit(X)
         score = h.score(X)

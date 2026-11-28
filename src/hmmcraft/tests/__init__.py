@@ -17,15 +17,15 @@ def make_covar_matrix(
     prng = check_random_state(random_state)
     if covariance_type == "spherical":
         return (mincv + mincv * prng.random_sample((n_components,))) ** 2
-    elif covariance_type == "tied":
+    if covariance_type == "tied":
         return make_spd_matrix(n_features, random_state=prng) + mincv * np.eye(
             n_features
         )
-    elif covariance_type == "diag":
+    if covariance_type == "diag":
         return (
             mincv + mincv * prng.random_sample((n_components, n_features))
         ) ** 2
-    elif covariance_type == "full":
+    if covariance_type == "full":
         return np.array(
             [
                 (
@@ -35,6 +35,7 @@ def make_covar_matrix(
                 for x in range(n_components)
             ]
         )
+    return None
 
 
 def normalized(X, axis=None):

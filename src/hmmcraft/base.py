@@ -1,3 +1,5 @@
+"""Base classes of the hidden Markov models and the convergence monitor."""
+
 import functools
 import itertools
 import logging
@@ -222,11 +224,12 @@ class ConvergenceMonitor:
         self.iter = 0
 
     def __repr__(self):
+        """Return the monitor's attributes, one per line, sorted by name."""
         class_name = self.__class__.__name__
         params = sorted(dict(vars(self), history=list(self.history)).items())
         return (
             f"{class_name}(\n"
-            + "".join(map("    {}={},\n".format, *zip(*params)))
+            + "".join(map("    {}={},\n".format, *zip(*params, strict=False)))
             + ")"
         )
 
@@ -790,7 +793,7 @@ class _AbstractHMM(BaseEstimator):
             )
         ]
 
-        for t in range(n_samples - 1):
+        for _t in range(n_samples - 1):
             currstate = (
                 transmat_cdf[currstate] > random_state.rand()
             ).argmax()
@@ -874,7 +877,7 @@ class _AbstractHMM(BaseEstimator):
             raise
         self.monitor_._reset()
 
-        for iter in range(self.n_iter):
+        for _iter in range(self.n_iter):
             stats, curr_logprob = self._do_estep(X, lengths)
 
             # Compute lower bound before updating model parameters
@@ -1266,12 +1269,11 @@ class _AbstractHMM(BaseEstimator):
             An array where the (i, j)-th element corresponds to the posterior
             probability of transitioning between the i-th to j-th states.
         """
-        stats = {
+        return {
             "nobs": 0,
             "start": np.zeros(self.n_components),
             "trans": np.zeros((self.n_components, self.n_components)),
         }
-        return stats
 
     # True only while _do_estep accumulates a sequence it computed with the
     # log functions under implementation="scaling"; never kept on an instance.
@@ -1528,7 +1530,7 @@ class _AbstractHMM(BaseEstimator):
                     lattice = np.ascontiguousarray(hook(X), dtype=np.float64)
                 else:
                     parts = []
-                    for sub_X, kept in zip(sub_Xs, values):
+                    for sub_X, kept in zip(sub_Xs, values, strict=False):
                         vars(self)["_estep_values"] = kept
                         try:
                             parts.append(
@@ -1972,6 +1974,13 @@ _BaseHMM = BaseHMM  # Backcompat name, will be deprecated in the future.
 
 
 class VariationalBaseHMM(_AbstractHMM):
+    """
+    Base class for Hidden Markov Models learned via Variational Bayes.
+
+    Its subclasses document the parameters, the Dirichlet priors
+    ``startprob_prior`` and ``transmat_prior`` included.
+    """
+
     def __init__(
         self,
         n_components=1,
@@ -2172,8 +2181,7 @@ class VariationalBaseHMM(_AbstractHMM):
             != __class__._compute_subnorm_log_likelihood.__get__(self)
         ):
             return np.exp(self._compute_subnorm_log_likelihood(X))
-        else:
-            raise NotImplementedError("Must be overridden in subclass")
+        raise NotImplementedError("Must be overridden in subclass")
 
     def _compute_subnorm_log_likelihood(self, X):
         if (
@@ -2181,8 +2189,7 @@ class VariationalBaseHMM(_AbstractHMM):
             != __class__._compute_subnorm_likelihood.__get__(self)
         ):
             return np.log(self._compute_subnorm_likelihood(X))
-        else:
-            raise NotImplementedError("Must be overridden in subclass")
+        raise NotImplementedError("Must be overridden in subclass")
 
     def _accumulate_sufficient_statistics_scaling(
         self, stats, X, lattice, posteriors, fwdlattice, bwdlattice

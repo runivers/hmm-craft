@@ -311,7 +311,7 @@ class TestCategoricalHMM:
         """
         h = self.new_hmm(implementation)
         h.emissionprob_ = np.array(emissionprob)
-        with pytest.raises(ValueError, match="X must .*not booleans"):
+        with pytest.raises(ValueError, match=r"X must .*not booleans"):
             getattr(h, method)(np.array(X))
 
     @pytest.mark.parametrize("implementation", ["scaling", "log"])
