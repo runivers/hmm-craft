@@ -1,5 +1,7 @@
+import copy
 import decimal
 import itertools
+import re
 import warnings
 
 import numpy as np
@@ -1390,6 +1392,24 @@ REFUSED_PARAMETERS = [
     ),
     (
         "VariationalCategoricalHMM",
+        "startprob_prior_",
+        0.5,
+        "startprob_prior_ must have length n_components",
+    ),
+    (
+        "VariationalCategoricalHMM",
+        "startprob_posterior_",
+        [6.0],
+        "startprob_posterior_ must have length n_components",
+    ),
+    (
+        "VariationalCategoricalHMM",
+        "transmat_prior_",
+        [1.0, 2.0],
+        r"transmat_prior_ must have shape \(n_components, n_components\)",
+    ),
+    (
+        "VariationalCategoricalHMM",
         "emissionprob_",
         [[1.2, -0.1, -0.1], [0.5, 0.3, 0.2]],
         "emissionprob_ must not have negative entries",
@@ -1436,6 +1456,9 @@ REFUSED_IDS = [
     "VariationalCategoricalHMM-negative-transmat_",
     "VariationalCategoricalHMM-inf-startprob_",
     "VariationalCategoricalHMM-nan-emissionprob_",
+    "VariationalCategoricalHMM-scalar-startprob_prior_",
+    "VariationalCategoricalHMM-short-startprob_posterior_",
+    "VariationalCategoricalHMM-row-transmat_prior_",
     "VariationalCategoricalHMM-negative-emissionprob_",
     "VariationalGaussianHMM-negative-startprob_",
     "VariationalGaussianHMM-nan-transmat_",
@@ -1482,10 +1505,33 @@ FIT_ONLY_VALUES = [
     ("VariationalGaussianHMM", "beta_posterior_", [np.nan, 10.0]),
     ("VariationalGaussianHMM", "beta_posterior_", [np.inf, 10.0]),
     ("VariationalGaussianHMM", "scale_prior_", [[np.nan, 1e-3], [1e-3, 1e-3]]),
+    ("VariationalGaussianHMM", "startprob_prior_", 0.5),
+    ("VariationalGaussianHMM", "startprob_prior_", [0.5]),
+    ("VariationalGaussianHMM", "startprob_posterior_", [6.0]),
+    ("VariationalGaussianHMM", "transmat_prior_", [1.0, 2.0]),
+    ("VariationalGaussianHMM", "transmat_prior_", [[1.0], [2.0]]),
+    ("VariationalGaussianHMM", "transmat_posterior_", [1.0, 1.0]),
+    ("VariationalCategoricalHMM", "startprob_prior_", [[0.5], [0.5]]),
+    ("VariationalCategoricalHMM", "startprob_posterior_", [[6.0], [4.0]]),
 ]
+
+
+def _shape_id(attr, value):
+    """
+    ``-shape-<dims>`` for a start or transition prior or posterior not of
+    its two-state shape, ``-shape-scalar`` for a number; ``""`` otherwise.
+    """
+    documented = {"startprob": (2,), "transmat": (2, 2)}
+    shape = np.shape(value)
+    if documented.get(attr.split("_")[0], shape) == shape:
+        return ""
+    return "-shape-" + ("x".join(map(str, shape)) or "scalar")
+
+
 FIT_ONLY_IDS = [
     f"{name}-{attr}"
     + ("-inf" if np.isinf(np.asarray(value, dtype=float)).any() else "")
+    + _shape_id(attr, value)
     for name, attr, value in FIT_ONLY_VALUES
 ]
 
@@ -1585,19 +1631,57 @@ FIT_REFUSED = [
 ]
 
 
+def _wrong_shape(name, attr, value):
+    """
+    The row of ``FIT_REFUSED_SHAPES`` for a start or transition prior or
+    posterior of a two-state model given with another shape: the message
+    of the shape test ``fit`` runs, or the one of the length or shape test
+    a ``VariationalCategoricalHMM`` also runs on every prediction.
+    """
+    shape = np.shape(value)
+    documented = (2,) if attr.startswith("startprob") else (2, 2)
+    message = f"{attr} must have shape {documented}, actual shape: {shape}"
+    if name == "VariationalCategoricalHMM":
+        if documented == (2, 2):
+            message = f"{attr} must have shape (n_components, n_components)"
+        elif not shape or shape[0] != 2:
+            message = f"{attr} must have length n_components"
+    return name, attr, value, f"^{re.escape(message)}$"
+
+
+FIT_REFUSED_SHAPES = [
+    _wrong_shape(name, attr, value)
+    for name in VARIATIONAL_NAMES
+    for attr, value in [
+        ("startprob_prior_", 0.5),
+        ("startprob_prior_", [0.5]),
+        ("startprob_prior_", [[0.5], [0.5]]),
+        ("startprob_posterior_", 6.0),
+        ("startprob_posterior_", [6.0]),
+        ("startprob_posterior_", [[6.0], [4.0]]),
+        ("transmat_prior_", [1.0, 2.0]),
+        ("transmat_prior_", [[1.0], [2.0]]),
+        ("transmat_prior_", [[1.0, 2.0]]),
+        ("transmat_posterior_", [1.0, 1.0]),
+    ]
+]
+
+
 @pytest.mark.parametrize(
     "name, attr, value, match",
-    FIT_REFUSED,
-    ids=[f"{n}-{a}" for n, a, _, _ in FIT_REFUSED],
+    FIT_REFUSED + FIT_REFUSED_SHAPES,
+    ids=[f"{n}-{a}" for n, a, _, _ in FIT_REFUSED]
+    + [f"{n}-{a}{_shape_id(a, v)}" for n, a, v, _ in FIT_REFUSED_SHAPES],
 )
-def test_variational_fit_refuses_a_non_finite_prior_or_posterior(
+def test_variational_fit_refuses_an_invalid_prior_or_posterior(
     name, attr, value, match
 ):
     """
     ``fit`` refuses a NaN or infinite prior or posterior of a variational
-    model, naming it, before its first iteration. The model keeps the
-    ``n_features`` the call set, as after any refused fit whose kept
-    emission parameters give that number: two features, three symbols.
+    model, or a start or transition one of another shape, naming it, before
+    its first iteration. The model keeps the ``n_features`` the call set,
+    as after any refused fit whose kept emission parameters give that
+    number: two features, three symbols.
     """
     h, X = _hand_built(name)
     setattr(h, attr, value)
@@ -1607,6 +1691,64 @@ def test_variational_fit_refuses_a_non_finite_prior_or_posterior(
     assert h.n_features == expected
     assert h._n_features_from_emissions() == expected
     assert list(h.monitor_.history) == []
+
+
+@pytest.mark.parametrize(
+    "attr, form",
+    [("startprob_prior_", 1.0), ("transmat_prior_", [1.0])],
+    ids=["startprob_prior_-scalar", "transmat_prior_-shape-1"],
+)
+def test_variational_gaussian_fit_accepts_the_one_state_forms(attr, form):
+    """
+    With one state, a ``VariationalGaussianHMM`` fits a
+    ``startprob_prior_`` given as a number and a ``transmat_prior_`` of
+    shape ``(1,)`` as it fits the documented shapes: every fitted array,
+    the history and the score have the same bytes.
+    """
+    _, X = _hand_built("VariationalGaussianHMM")
+    fitted = vhmm.VariationalGaussianHMM(1, n_iter=3, random_state=0).fit(X)
+    fitted.init_params = ""
+    documented = copy.deepcopy(fitted)
+    given = copy.deepcopy(fitted)
+    # The default prior, 1 / n_components, at the documented shape.
+    assert getattr(documented, attr).tolist() == (
+        [1.0] if attr == "startprob_prior_" else [[1.0]]
+    )
+    setattr(given, attr, form)
+    documented.fit(X)
+    given.fit(X)
+    assert np.shape(getattr(given, attr)) == np.shape(form)
+    expected = _fit_state(documented)
+    del expected[attr]
+    state = _fit_state(given)
+    del state[attr]
+    assert state == expected
+    assert _as_bytes(given.score(X)) == _as_bytes(documented.score(X))
+
+
+@pytest.mark.parametrize("name", VARIATIONAL_NAMES)
+def test_variational_fit_expands_a_scalar_constructor_prior(name):
+    """
+    The constructor's ``startprob_prior`` and ``transmat_prior`` given as
+    numbers are expanded by ``fit``'s start to the documented shapes: the
+    fit has the bytes of the one given the same priors as full arrays.
+    """
+    _, X = _hand_built(name)
+    cls = getattr(vhmm, name)
+    numbers = cls(
+        2, startprob_prior=2.0, transmat_prior=3.0, n_iter=3, random_state=0
+    ).fit(X)
+    arrays = cls(
+        2,
+        startprob_prior=np.full(2, 2.0),
+        transmat_prior=np.full((2, 2), 3.0),
+        n_iter=3,
+        random_state=0,
+    ).fit(X)
+    assert numbers.startprob_prior_.shape == (2,)
+    assert numbers.transmat_prior_.shape == (2, 2)
+    assert _fit_state(numbers) == _fit_state(arrays)
+    assert _as_bytes(numbers.score(X)) == _as_bytes(arrays.score(X))
 
 
 def _variational_gaussian(covariance_type):

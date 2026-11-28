@@ -7,8 +7,8 @@ The changes of hmm-craft, a fork of hmmlearn, come first. The entries from
 Unreleased
 ~~~~~~~~~~
 
-- Changed: a ``VariationalGaussianHMM`` fit with an infinite ``beta_posterior_`` and no ``"m"`` in
-  ``params``, whose lower bound was NaN, raises a ``ValueError`` naming it; see DIFFERENCES.md.
+- Changed: a variational ``fit`` raises ``ValueError``, naming the array, for a start or transition
+  prior or posterior of a wrong shape or an infinite ``beta_posterior_`` it does not update.
 
 Version 0.5.0
 ~~~~~~~~~~~~~

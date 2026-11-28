@@ -735,8 +735,8 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
             posterior has the wrong shape.
         """
         # The shapes of the start and transition priors and posteriors are
-        # not tested here, as they never were for this model: one that
-        # broadcasts fits and predicts.
+        # tested by fit alone (_store_checked): a prediction does not read
+        # them.
 
         if self.covariance_type not in COVARIANCE_TYPES:
             raise ValueError(f"{self.covariance_type} is invalid")

@@ -5,7 +5,7 @@
     "reportOptionalSubscript": 3
   },
   "src/hmmcraft/base.py": {
-    "reportArgumentType": 11,
+    "reportArgumentType": 9,
     "reportAttributeAccessIssue": 27,
     "reportCallIssue": 1,
     "reportIndexIssue": 2
