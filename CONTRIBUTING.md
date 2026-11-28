@@ -88,6 +88,28 @@ Report a security problem as described in `SECURITY.md`, not in an issue.
    `python -I scripts/check_pyright_baseline.py --update` and commit it.
    `--update --allow-rise` may raise it, only in a commit that changes
    `ci/type_requirements.txt` and the baseline and nothing else.
+
+   CI also compiles both modules of the C++ kernel with warnings as errors,
+   with GCC, clang, Apple clang (`-Wall -Wextra -Werror`) and MSVC (`-W4
+   -WX`). Python's and pybind11's headers are passed as system headers, so a
+   warning in them does not count. With GCC or clang, after `pip install
+   --require-hashes -r ci/build_requirements.txt`:
+
+       work=$(mktemp -d)
+       pybind11=$(python -c 'import pybind11; print(pybind11.get_include())')
+       include=$(python -c \
+         'import sysconfig; print(sysconfig.get_config_var("INCLUDEPY"))')
+       CPPFLAGS="-isystem $pybind11 -isystem $include" \
+         CXXFLAGS="-O2 -DNDEBUG -Wall -Wextra -Werror" \
+         python setup.py build_ext \
+         --build-temp "$work/temp" --build-lib "$work/lib"
+
+   The objects go to a temporary directory, not `build/`, which a later `pip
+   install .` would reuse. With MSVC, set
+   `_CL_=-W4 -WX -external:anglebrackets -external:W0` instead, as the job
+   does (cl takes `-` or `/` before an option). A warning is fixed in the
+   code; where a fix would change what the kernel computes, it is silenced on
+   its line with the reason in a comment, never by dropping a flag.
 4. Sign off every commit with `git commit -s`. The line `Signed-off-by: Your
    Name <you@example.com>` certifies the
    [Developer Certificate of Origin](https://developercertificate.org/): you
