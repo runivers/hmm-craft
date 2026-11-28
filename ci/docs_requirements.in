@@ -1,0 +1,12 @@
+# The documentation build: Sphinx and its extensions, matplotlib for the
+# gallery, and the package's dependencies, pinned so that a release elsewhere
+# does not add a warning (sphinx-build -W). Mirrors the docs extra and the
+# dependencies of pyproject.toml (scripts/test_floor_constraints.py).
+sphinx==9.2.0
+sphinx-gallery==0.22.1
+pydata-sphinx-theme==0.24.0
+matplotlib==3.11.2
+numpy==2.5.5
+scipy==1.18.1
+scikit-learn==1.9.1
+threadpoolctl==3.8.0

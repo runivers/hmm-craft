@@ -5,6 +5,8 @@ A floor is never declared on a cell that has not run: the floor cell installs
 exactly the pins of ``ci/floor_constraints.txt``, so each minimum in
 ``pyproject.toml`` must equal its pin there. The pinned build requirements of
 ``ci/build_requirements.txt`` must satisfy what ``[build-system]`` asks for.
+The documentation lock names the docs extra and the runtime dependencies, each
+pinned at a version the declaration allows.
 
 Run with ``python -m pytest scripts/test_floor_constraints.py``.
 """
@@ -84,3 +86,35 @@ def test_pinned_build_requirement_satisfies_the_declared_one(requirement):
     name = canonicalize_name(requirement.name)
     assert name in pins, f"{name} is required to build but not pinned"
     assert requirement.specifier.contains(pins[name]), (name, pins[name])
+
+
+DOCS_IN = ROOT / "ci" / "docs_requirements.in"
+DOCS_TXT = ROOT / "ci" / "docs_requirements.txt"
+
+
+def _docs_requirements():
+    """Return the docs extra and the runtime dependencies, as requirements."""
+    project = _pyproject()["project"]
+    texts = project["optional-dependencies"]["docs"] + project["dependencies"]
+    return [Requirement(text) for text in texts]
+
+
+def _docs_in():
+    """Return ``{name: version}`` for the ``.in`` file's exact pins."""
+    assert DOCS_IN.exists(), "ci/docs_requirements.in is missing"
+    return _pins(DOCS_IN)
+
+
+@pytest.mark.parametrize("requirement", _docs_requirements(), ids=str)
+def test_docs_lock_pins_each_docs_and_runtime_requirement(requirement):
+    name = canonicalize_name(requirement.name)
+    direct = _docs_in()
+    assert name in direct, f"{name} is declared but not in the docs lock"
+    assert requirement.specifier.contains(direct[name]), (name, direct[name])
+    assert DOCS_TXT.exists(), "ci/docs_requirements.txt is missing"
+    assert _pins(DOCS_TXT).get(name) == direct[name]
+
+
+def test_docs_lock_names_only_the_docs_extra_and_the_dependencies():
+    expected = {canonicalize_name(r.name) for r in _docs_requirements()}
+    assert set(_docs_in()) == expected

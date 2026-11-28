@@ -27,8 +27,18 @@ autodoc_default_options = {
     "special-members": "__init__",
 }
 
+# scikit-learn's inventory is looked for first in this directory, as
+# sklearn-objects.inv (untracked), then at
+# https://scikit-learn.org/stable/objects.inv. CI downloads it there, with
+# retries, before the build, so that a passing network failure does not fail
+# the -W build; a local build fetches it as before unless a copy is present.
+# The methods the models inherit from scikit-learn refer to its glossary
+# through it.
 intersphinx_mapping = {
-    "sklearn": ("https://scikit-learn.org/stable/", None),
+    "sklearn": (
+        "https://scikit-learn.org/stable/",
+        ("sklearn-objects.inv", None),
+    ),
 }
 
 napoleon_use_ivar = True

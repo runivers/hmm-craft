@@ -8,10 +8,11 @@ name: ci
 # installed at the same versions). The types job runs pyright's basic mode
 # over the package and counts its errors per file and rule against
 # ci/pyright_baseline.json. The kernel-warnings job compiles the C++ kernel
-# with warnings as errors with GCC, clang, Apple clang and MSVC. On a pull
-# request, every commit must be signed off. A manual run also measures, on
-# ARM, what the compiler option -ffp-contract=off changes (contraction-arm,
-# which gates nothing).
+# with warnings as errors with GCC, clang, Apple clang and MSVC. The docs job
+# builds the documentation with Sphinx, running the gallery's examples, and
+# fails on any warning. On a pull request, every commit must be signed off. A
+# manual run also measures, on ARM, what the compiler option
+# -ffp-contract=off changes (contraction-arm, which gates nothing).
 
 on:
   pull_request:
@@ -156,6 +157,46 @@ jobs:
         fi
         cat "$RUNNER_TEMP/planted.log"
         grep -F planted "$RUNNER_TEMP/planted.log" | grep -F -- "$PLANTED"
+
+  docs:
+    name: docs (sphinx)
+    # The documentation built as CONTRIBUTING.md describes: the build
+    # requirements, the package without build isolation, then Sphinx, its
+    # extensions and the package's dependencies from ci/docs_requirements.txt,
+    # compiled for Python 3.13, which the newest Sphinx requires. The
+    # gallery's examples run, and one that raises fails the build. -W makes
+    # every warning an error; --keep-going lists them all first. scikit-learn's
+    # inventory is downloaded with retries before the build. The build is not
+    # nitpicky: a misspelt Python name in backquotes is not reported.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+      with:
+        python-version: "3.13"
+    - name: Build requirements from the hashed lock
+      run: |
+        python -m pip install --only-binary :all: --require-hashes \
+          -r ci/build_requirements.txt
+    - name: The package, without build isolation
+      run: python -m pip install --no-build-isolation --no-deps .
+    - name: Sphinx and its extensions from the hashed lock
+      run: |
+        python -m pip install --only-binary :all: --require-hashes \
+          -r ci/docs_requirements.txt
+    - name: scikit-learn's inventory
+      run: |
+        curl --fail --location --retry 5 --retry-all-errors \
+          -o doc/source/sklearn-objects.inv \
+          https://scikit-learn.org/stable/objects.inv
+    - name: The documentation builds without a warning
+      run: sphinx-build -W --keep-going -b html doc/source "$RUNNER_TEMP/html"
 
   sign-off:
     if: github.event_name == 'pull_request'

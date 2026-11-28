@@ -110,6 +110,25 @@ Report a security problem as described in `SECURITY.md`, not in an issue.
    does (cl takes `-` or `/` before an option). A warning is fixed in the
    code; where a fix would change what the kernel computes, it is silenced on
    its line with the reason in a comment, never by dropping a flag.
+
+   CI also builds the documentation with Sphinx and fails on any warning; the
+   examples in `examples/` run as part of the build. In an environment of its
+   own, with Python 3.13, which the newest Sphinx requires:
+
+       pip install --require-hashes --only-binary :all: \
+         -r ci/build_requirements.txt
+       pip install --no-build-isolation --no-deps .
+       pip install --require-hashes --only-binary :all: \
+         -r ci/docs_requirements.txt
+       sphinx-build -W --keep-going -b html doc/source doc/build/html
+
+   `-D plot_gallery=0` skips running the examples. The methods the models
+   inherit from scikit-learn link to its glossary through its Sphinx
+   inventory. CI downloads the inventory with retries to
+   `doc/source/sklearn-objects.inv` before the build; a local build fetches it
+   as before unless a copy is present there (the file is not tracked). A
+   reference to a missing label, document or glossary term fails the build; a
+   misspelt Python name in backquotes does not.
 4. Sign off every commit with `git commit -s`. The line `Signed-off-by: Your
    Name <you@example.com>` certifies the
    [Developer Certificate of Origin](https://developercertificate.org/): you
