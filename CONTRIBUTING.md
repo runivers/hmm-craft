@@ -43,6 +43,36 @@ Report a security problem as described in `SECURITY.md`, not in an issue.
        python -m coverage run -m pytest --pyargs hmmcraft.tests doc
        python -m coverage report
 
+   On a pull request CI also measures the lines the pull request adds or
+   changes, and their branches, in the Python package and in the C++ kernel
+   (`ext/`). It fails when fewer than 90% of the added lines that a report
+   measures run, or fewer than 85% of their branches are taken, the Python
+   package and the kernel each on its own; blank lines, comments, docstrings
+   and deleted lines are not measured and do not count, and a pull request
+   that adds no measured line passes. A line the pull request changes counts
+   as added, also when only its style changed. To run the same
+   check, with the suite already run under coverage.py and the kernel built
+   with `--coverage` as `.github/workflows/instrumented.yml` does:
+
+       python -m coverage json --fail-under=0 -o python.json
+       python -m gcovr --root . --fail-under-line 0 --json kernel.json
+       pkg=$(python -c "import hmmcraft, os; \
+           print(os.path.dirname(hmmcraft.__file__))")
+       python scripts/check_diff_coverage.py \
+           "$(git merge-base main HEAD)" HEAD \
+           --python python.json --map "$pkg=src/hmmcraft" \
+           --kernel kernel.json
+
+   Code that no test can reach may be excluded with the tools' own markers:
+   `# pragma: no cover` (a line) and `# pragma: no branch` (a branch) for
+   coverage.py, `GCOVR_EXCL_LINE`, `GCOVR_EXCL_START` / `GCOVR_EXCL_STOP` (a
+   range) and `GCOVR_EXCL_BR_LINE` (a line's branches) for gcovr. They are for
+   unreachable code only; code that is hard to test gets a test. Each use
+   gives its reason on the marker's line or on the comment line above it. A
+   `# pragma: no cover` on a line that opens a block excludes the whole
+   block. An excluded line counts nowhere, the totals included; the check
+   prints each excluded line a pull request adds.
+
 3. Keep every Python line under 80 characters, as upstream does. CI also runs
    `ruff check .` (pyflakes, syntax errors, a docstring on every public
    module, class and function of the package, and ruff's bugbear, numpy,
