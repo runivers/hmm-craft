@@ -9,11 +9,11 @@ repository, through [trusted publishing](https://docs.pypi.org/trusted-publisher
 
 | Workflow | Runs on | Does |
 |---|---|---|
-| `ci.yml` | pull request, push to `main`, manual, weekly | The style rules (no Python line of 80 characters or more, `ruff check`, no style finding added), then the suite and the bit-equality check against hmmlearn 0.3.3 in two cells: `floor` (the declared minimum versions) and `latest` (the newest wheels). On a pull request, `sign-off` checks that every commit except a merge carries a `Signed-off-by` line with its author's or its committer's address (`scripts/check_signoff.py`, the base branch's copy); Dependabot's commits are exempt. The weekly run shows a new release of NumPy, SciPy or scikit-learn that breaks the suite, or under which the fits differ from hmmlearn 0.3.3's; both packages are installed at the same versions, so a release that changes both fits alike is not seen. A manual run also starts `contraction-arm`, a measurement that gates nothing: on Linux aarch64 and macOS arm64, `scripts/measure_contraction.sh` builds hmmlearn 0.3.3 with and without `-ffp-contract=off` and this package, compares their results and uploads them. |
+| `ci.yml` | pull request, push to `main`, manual, weekly | The style rules (no Python line of 80 characters or more, `ruff check`, no style finding added), `types (pyright)` (no type error added), then the suite and the bit-equality check against hmmlearn 0.3.3 in two cells: `floor` (the declared minimum versions) and `latest` (the newest wheels). On a pull request, `sign-off` checks that every commit except a merge carries a `Signed-off-by` line with its author's or its committer's address (`scripts/check_signoff.py`, the base branch's copy); Dependabot's commits are exempt. The weekly run shows a new release of NumPy, SciPy or scikit-learn that breaks the suite, or under which the fits differ from hmmlearn 0.3.3's; both packages are installed at the same versions, so a release that changes both fits alike is not seen. A manual run also starts `contraction-arm`, a measurement that gates nothing: on Linux aarch64 and macOS arm64, `scripts/measure_contraction.sh` builds hmmlearn 0.3.3 with and without `-ffp-contract=off` and this package, compares their results and uploads them. |
 | `instrumented.yml` | pull request, push to `main`, manual, weekly | Three jobs, each with the newest NumPy, SciPy and scikit-learn wheels; nothing they build is published. `coverage` builds the C++ kernel with `--coverage` and without optimisation, runs the suite under coverage.py, and reports line and branch coverage of the Python package (tests left out) and of `ext/` (gcovr). It fails when the Python total or the kernel's line coverage is below its floor in `pyproject.toml` (`[tool.coverage.report]`, `[tool.gcovr]`); the kernel's branch coverage has no floor. A floor is raised by hand and lowered only in a commit that says why. Reports: the log and the run's `coverage-reports` artifact. `sanitizers` builds the kernel with AddressSanitizer and UndefinedBehaviorSanitizer and runs the suite; an invalid memory access or undefined behaviour in the kernel that the sanitizers detect stops the suite and fails the job, with the report in the log. Floating-point checks are off: the kernel takes the logarithm of zero on purpose. `thread-sanitizer` builds the kernel with ThreadSanitizer, which cannot be combined with AddressSanitizer in one build, and runs the tests of the kernel's threads (`src/hmmcraft/tests/test_kernel_threads.py`); a data race between the threads that ThreadSanitizer detects stops the run and fails the job, with the report in the log. |
 | `wheels.yml` | pull request, manual, weekly, and called by `release.yml` | cibuildwheel builds the wheels and tests each one from the installed wheel; one job builds the sdist, installs it and runs the suite. A pull request builds the Linux x86_64 wheels only; the other runs build all 20. |
 | `release.yml` | a pushed tag `v<version>` | Calls `wheels.yml` for everything, then publishes after the maintainer approves the `pypi` environment. |
-| `pins.yml` | manual, weekly | `scripts/check_pins.py` compares each pin of `ci/build_requirements.txt`, `ci/tool_requirements.txt`, `ci/coverage_requirements.txt` and `ci/lint_requirements.txt` with the newest final, unyanked release on PyPI and fails naming each older pin, with the command that updates it; `ci/floor_constraints.txt` is not read. It does not run on a pull request, which a release elsewhere must not turn red; its unit tests run in `ci.yml`. |
+| `pins.yml` | manual, weekly | `scripts/check_pins.py` compares each pin of `ci/build_requirements.txt`, `ci/tool_requirements.txt`, `ci/coverage_requirements.txt`, `ci/lint_requirements.txt` and `ci/type_requirements.txt` with the newest final, unyanked release on PyPI and fails naming each older pin, with the command that updates it; `ci/floor_constraints.txt` is not read. It does not run on a pull request, which a release elsewhere must not turn red; its unit tests run in `ci.yml`. |
 
 The wheels are CPython 3.12 to 3.15 (GIL builds) for Linux x86_64 and aarch64
 (`manylinux_2_28`, built on native runners), macOS arm64 and x86_64, and Windows
@@ -34,8 +34,10 @@ on a machine with Python 3.12 and a network connection.
   `ci/tool_requirements.txt` pins `build`, which makes the sdist.
   `ci/coverage_requirements.txt` pins coverage.py and gcovr for the `coverage`
   job; neither the release build nor the sdist job installs it.
-  `ci/lint_requirements.txt` pins ruff for the `style` job. All four are
-  regenerated from their `.in` files with the command in their first lines.
+  `ci/lint_requirements.txt` pins ruff for the `style` job.
+  `ci/type_requirements.txt` pins pyright, the node it runs on, and the
+  numeric stack and pytest whose types it reads, for the `types` job. All five
+  are regenerated from their `.in` files with the command in their first lines.
   The command's `--no-header` drops those lines, so they are put back by hand.
   It keeps the versions already in the file, so a pin that is not in the `.in`
   file moves only when `--upgrade-package <name>` is added. `pins.yml` fails
@@ -59,6 +61,21 @@ on a machine with Python 3.12 and a network connection.
   follow ruff's defaults, so a ruff upgrade adds no rule; it can still find
   more under a listed rule. The baseline never rises: the commit that moves
   to a newer ruff fixes what it finds, or the pin stays.
+- **Type check** runs in `ci.yml`'s `types` job, not in `style`. pyright's
+  basic mode runs over `src/hmmcraft` (`[tool.pyright]` in `pyproject.toml`)
+  from the hashed `ci/type_requirements.txt`, which holds pyright with its node
+  (`nodejs-wheel-binaries`); nothing is downloaded when it runs.
+  `scripts/check_pyright_baseline.py` first compares each pin of the lock with
+  the installed version, then counts the errors per file and rule and compares
+  them with `ci/pyright_baseline.json`: a count that rises, or a new file or
+  rule, fails; a count that falls fails too until the baseline is lowered with
+  `python -I scripts/check_pyright_baseline.py --update`, which refuses while
+  any count is above the baseline. The numeric stack and pytest are pinned so
+  that a release elsewhere does not move the count. A newer pyright or numpy
+  stub can report errors that no change to the code removes, so
+  `--update --allow-rise` may raise the baseline, in a commit that changes
+  `ci/type_requirements.txt` and the baseline and nothing else; the diff of
+  the baseline shows each rise.
 - **The floor** is `ci/floor_constraints.txt`. The `floor` cell installs exactly
   those versions from binary wheels and checks that `numpy`, `scipy`,
   `scikit-learn` and `threadpoolctl` are the declared minimums.

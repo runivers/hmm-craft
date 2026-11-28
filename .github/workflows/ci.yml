@@ -5,7 +5,9 @@ name: ci
 # the sdist are built and tested by wheels.yml. The weekly run shows within a
 # week a new numpy, scipy or scikit-learn release that breaks the suite, or
 # under which this package's fits differ from hmmlearn 0.3.3's (both are
-# installed at the same versions). On a pull request, every commit must be
+# installed at the same versions). The types job runs pyright's basic mode
+# over the package and counts its errors per file and rule against
+# ci/pyright_baseline.json. On a pull request, every commit must be
 # signed off. A manual run also measures, on ARM, what the compiler option
 # -ffp-contract=off changes (contraction-arm, which gates nothing).
 
@@ -49,6 +51,24 @@ jobs:
       run: ruff format --check .
     - name: No style finding added (ruff, per-file counts)
       run: python3 -I scripts/check_ruff_baseline.py
+
+  types:
+    name: types (pyright)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      with:
+        persist-credentials: false
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+      with:
+        python-version: "3.12"
+    - name: Install pyright and the package's dependencies from the hashed lock
+      run: |
+        python3 -m pip install --require-hashes --only-binary :all: \
+          -r ci/type_requirements.txt
+    - name: No type error added (pyright basic, per-file counts)
+      run: python3 -I scripts/check_pyright_baseline.py
 
   sign-off:
     if: github.event_name == 'pull_request'

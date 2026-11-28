@@ -69,6 +69,25 @@ Report a security problem as described in `SECURITY.md`, not in an issue.
    The formatting commit is listed in `.git-blame-ignore-revs`; `git config
    blame.ignoreRevsFile .git-blame-ignore-revs` makes local `git blame` skip
    it.
+
+   CI also runs pyright, a type checker, in its basic mode over
+   `src/hmmcraft` (`[tool.pyright]` in `pyproject.toml`) and fails when a
+   file has more errors of a rule than `ci/pyright_baseline.json` records, or
+   fewer. The package has no type annotations, and the baseline holds the
+   errors of the tree when the check was added. With the versions CI uses, in
+   an environment of their own:
+
+       pip install --require-hashes --only-binary :all: \
+         -r ci/type_requirements.txt
+       python -I scripts/check_pyright_baseline.py
+
+   The script uses the Python that runs it, for pyright and for the packages
+   it reads, and stops if that environment does not match the lock. A new
+   error is fixed in the code; a `# type: ignore` comment is not used. After
+   fixing errors, lower the baseline with
+   `python -I scripts/check_pyright_baseline.py --update` and commit it.
+   `--update --allow-rise` may raise it, only in a commit that changes
+   `ci/type_requirements.txt` and the baseline and nothing else.
 4. Sign off every commit with `git commit -s`. The line `Signed-off-by: Your
    Name <you@example.com>` certifies the
    [Developer Certificate of Origin](https://developercertificate.org/): you

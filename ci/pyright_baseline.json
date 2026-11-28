@@ -1,0 +1,123 @@
+{
+  "src/hmmcraft/_emissions.py": {
+    "reportArgumentType": 39,
+    "reportAttributeAccessIssue": 62,
+    "reportOptionalSubscript": 3
+  },
+  "src/hmmcraft/base.py": {
+    "reportArgumentType": 11,
+    "reportAttributeAccessIssue": 27,
+    "reportCallIssue": 1,
+    "reportIndexIssue": 2
+  },
+  "src/hmmcraft/hmm.py": {
+    "reportArgumentType": 8,
+    "reportAttributeAccessIssue": 9,
+    "reportCallIssue": 2,
+    "reportIndexIssue": 5,
+    "reportOperatorIssue": 8,
+    "reportOptionalOperand": 2
+  },
+  "src/hmmcraft/stats.py": {
+    "reportAttributeAccessIssue": 1
+  },
+  "src/hmmcraft/tests/test_base.py": {
+    "reportArgumentType": 9,
+    "reportAttributeAccessIssue": 76,
+    "reportCallIssue": 5
+  },
+  "src/hmmcraft/tests/test_categorical_hmm.py": {
+    "reportArgumentType": 1
+  },
+  "src/hmmcraft/tests/test_deprecated_numpy_use.py": {
+    "reportAttributeAccessIssue": 1
+  },
+  "src/hmmcraft/tests/test_emissions.py": {
+    "reportArgumentType": 28,
+    "reportAttributeAccessIssue": 6
+  },
+  "src/hmmcraft/tests/test_emissionsc.py": {
+    "reportAttributeAccessIssue": 1
+  },
+  "src/hmmcraft/tests/test_estep_blocks.py": {
+    "reportArgumentType": 29,
+    "reportAttributeAccessIssue": 15,
+    "reportIndexIssue": 1
+  },
+  "src/hmmcraft/tests/test_gaussian_hmm.py": {
+    "reportArgumentType": 19,
+    "reportAttributeAccessIssue": 8,
+    "reportCallIssue": 2,
+    "reportIndexIssue": 1,
+    "reportOptionalMemberAccess": 5
+  },
+  "src/hmmcraft/tests/test_gaussian_hmm_min_covar.py": {
+    "reportIndexIssue": 1
+  },
+  "src/hmmcraft/tests/test_gaussian_hmm_prior_shapes.py": {
+    "reportArgumentType": 1,
+    "reportAttributeAccessIssue": 1,
+    "reportCallIssue": 1,
+    "reportIndexIssue": 2
+  },
+  "src/hmmcraft/tests/test_gaussian_hmm_spherical_shape.py": {
+    "reportArgumentType": 4,
+    "reportCallIssue": 1,
+    "reportOptionalMemberAccess": 2
+  },
+  "src/hmmcraft/tests/test_gmm_hmm.py": {
+    "reportArgumentType": 1,
+    "reportAttributeAccessIssue": 11
+  },
+  "src/hmmcraft/tests/test_gmm_hmm_new.py": {
+    "reportArgumentType": 10,
+    "reportAttributeAccessIssue": 5,
+    "reportCallIssue": 6,
+    "reportIndexIssue": 1,
+    "reportOperatorIssue": 2
+  },
+  "src/hmmcraft/tests/test_gmm_hmm_prior_shapes.py": {
+    "reportIndexIssue": 10
+  },
+  "src/hmmcraft/tests/test_hmmc.py": {
+    "reportAttributeAccessIssue": 1
+  },
+  "src/hmmcraft/tests/test_kernel_threads.py": {
+    "reportAttributeAccessIssue": 1,
+    "reportCallIssue": 1,
+    "reportOptionalMemberAccess": 6
+  },
+  "src/hmmcraft/tests/test_multinomial_hmm.py": {
+    "reportAttributeAccessIssue": 2,
+    "reportOptionalMemberAccess": 1
+  },
+  "src/hmmcraft/tests/test_poisson_hmm.py": {
+    "reportArgumentType": 3,
+    "reportCallIssue": 3
+  },
+  "src/hmmcraft/tests/test_sequence_lengths.py": {
+    "reportArgumentType": 1,
+    "reportAttributeAccessIssue": 1,
+    "reportCallIssue": 1
+  },
+  "src/hmmcraft/tests/test_stats.py": {
+    "reportArgumentType": 3,
+    "reportAttributeAccessIssue": 1
+  },
+  "src/hmmcraft/tests/test_variational_categorical.py": {
+    "reportAttributeAccessIssue": 2,
+    "reportIndexIssue": 2
+  },
+  "src/hmmcraft/tests/test_variational_gaussian.py": {
+    "reportAttributeAccessIssue": 17,
+    "reportOptionalMemberAccess": 5
+  },
+  "src/hmmcraft/vhmm.py": {
+    "reportArgumentType": 39,
+    "reportAttributeAccessIssue": 12,
+    "reportCallIssue": 21,
+    "reportIndexIssue": 12,
+    "reportOperatorIssue": 2,
+    "reportOptionalSubscript": 2
+  }
+}
