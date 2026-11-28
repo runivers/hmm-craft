@@ -55,9 +55,7 @@
     "reportIndexIssue": 1
   },
   "src/hmmcraft/tests/test_gaussian_hmm_prior_shapes.py": {
-    "reportArgumentType": 1,
     "reportAttributeAccessIssue": 1,
-    "reportCallIssue": 1,
     "reportIndexIssue": 2
   },
   "src/hmmcraft/tests/test_gaussian_hmm_spherical_shape.py": {

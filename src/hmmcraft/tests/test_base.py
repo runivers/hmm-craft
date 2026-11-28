@@ -1513,6 +1513,9 @@ FIT_ONLY_VALUES = [
     ("VariationalGaussianHMM", "transmat_posterior_", [1.0, 1.0]),
     ("VariationalCategoricalHMM", "startprob_prior_", [[0.5], [0.5]]),
     ("VariationalCategoricalHMM", "startprob_posterior_", [[6.0], [4.0]]),
+    ("GaussianHMM", "covars_prior", [[[1.0]], [[1.0]]]),
+    ("GaussianHMM", "covars_weight", [1.0, 2.0]),
+    ("GaussianHMM", "means_prior", [[[0.0, 0.0]]]),
 ]
 
 
@@ -1541,9 +1544,9 @@ FIT_ONLY_IDS = [
 )
 def test_prediction_does_not_test_what_only_fit_reads(name, attr, value):
     """
-    A prediction does not read the priors and posteriors of a variational
-    model, so an invalid value there is not refused: every prediction has
-    the bytes of the same model without it.
+    A prediction does not read a model's priors and, for a variational
+    model, posteriors, so an invalid value there is not refused: every
+    prediction has the bytes of the same model without it.
     """
     expected, X = _hand_built(name)
     h, _ = _hand_built(name)

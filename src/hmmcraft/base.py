@@ -1124,10 +1124,13 @@ class _AbstractHMM(BaseEstimator):
             )
 
     @staticmethod
-    def _check_shape(name, value, shape, also=()):
+    def _check_shape(name, value, shape, also=(), broadcast=False):
         """
         Check that an array has the given shape, or one of the shapes in
         ``also``, which the message does not name.
+
+        With ``broadcast``, a shape passes when ``np.broadcast_to`` takes
+        it to one of them without adding an axis.
 
         Raises
         ------
@@ -1135,10 +1138,22 @@ class _AbstractHMM(BaseEstimator):
             If ``value`` has another shape.
         """
         actual = np.shape(value)
-        if actual != shape and actual not in also:
-            raise ValueError(
-                f"{name} must have shape {shape}, actual shape: {actual}"
-            )
+        if not broadcast:
+            if actual != shape and actual not in also:
+                raise ValueError(
+                    f"{name} must have shape {shape}, actual shape: {actual}"
+                )
+            return
+        for target in (shape, *also):
+            try:
+                # More axes than the target broadcast to more axes.
+                if np.broadcast_shapes(actual, target) == target:
+                    return
+            except ValueError:
+                pass
+        raise ValueError(
+            f"{name} must broadcast to shape {shape}, actual shape: {actual}"
+        )
 
     def _check(self):
         """

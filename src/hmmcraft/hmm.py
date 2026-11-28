@@ -54,6 +54,39 @@ def _covars_floor_value(covars_floor):
     return value
 
 
+def _check_prior_number(name, value, max_ndim, covariance_type=None):
+    """
+    Raise ValueError unless the prior *value* is a number: one element, in
+    at most *max_ndim* dimensions, the most the M-step line it enters keeps
+    valid.
+    """
+    if np.size(value) == 1 and np.ndim(value) <= max_ndim:
+        return
+    where = (
+        f' with covariance_type="{covariance_type}"' if covariance_type else ""
+    )
+    raise ValueError(
+        f"{name} must be a number{where}, actual shape: {np.shape(value)}"
+    )
+
+
+def _check_prior_symmetric(name, value, shape, covariance_type):
+    """
+    Raise ValueError unless *value*, broadcast to *shape*, is symmetric in
+    its last two axes as np.allclose tests it, the test the ``covars_``
+    setter applies.
+    """
+    b = np.broadcast_to(value, shape)
+    # np.allclose's subtraction can overflow: the test adds no
+    # floating-point report, and a NaN is left to the fit.
+    with np.errstate(all="ignore"):
+        if np.allclose(b, b.swapaxes(-1, -2), equal_nan=True):
+            return
+    raise ValueError(
+        f'{name} must be symmetric with covariance_type="{covariance_type}"'
+    )
+
+
 def _covars_pass_on_stack(covars):  # shape and finiteness already tested
     """
     Return True when every covariance matrix in the float64 stack *covars*
@@ -433,6 +466,20 @@ class GaussianHMM(_emissions.BaseGaussianHMM, BaseHMM):
             added to the posterior mass the covariance update divides by,
             when it is positive, so the default, 1, has no effect.
 
+            :meth:`fit` tests the priors ``params`` lets the M-step read
+            (``means_prior`` and ``means_weight`` with "m" or "c", the
+            others with "c") and raises ValueError for one that does not
+            broadcast, as ``np.broadcast_to`` does and without an added
+            axis, to ``(n_components, n_features)``, or for a "full"
+            ``covars_prior`` to ``(n_components, n_features, n_features)``
+            and a "tied" one to ``(n_features, n_features)`` or
+            ``(1, n_features, n_features)``; a "full" or "tied"
+            ``covars_prior`` must also be symmetric as ``np.allclose``
+            tests it.  ``covars_weight``, and ``means_weight`` with "full"
+            or "tied" and "c" in ``params``, must have one element, in at
+            most two dimensions (three for a "full" or "tied"
+            ``covars_weight``).
+
         algorithm : {"viterbi", "map"}, optional
             Decoder algorithm.
 
@@ -584,6 +631,68 @@ class GaussianHMM(_emissions.BaseGaussianHMM, BaseHMM):
         super()._store_checked()
         # fit leaves the number of features means_ gives.
         self.n_features = self._n_features_from_emissions()
+        self._check_priors()
+
+    def _check_priors(self):
+        """
+        Raise ValueError for a prior the M-step reads under ``params`` that
+        is not of a form the constructor documents.
+        """
+        # The M-step reads the priors at these shapes; numpy broadcasts
+        # others to a wrong model or to an error that names nothing. A
+        # prior the M-step does not read is not tested; one it reads is
+        # tested whatever n_iter is.
+        reads_means = "m" in self.params or "c" in self.params
+        reads_covars = "c" in self.params
+        if not reads_means:
+            return
+        nc, nf = self.n_components, self.n_features
+        covariance_type = self.covariance_type
+        full_or_tied = covariance_type in ("full", "tied")
+        self._check_shape(
+            "means_prior", self.means_prior, (nc, nf), broadcast=True
+        )
+        if full_or_tied and reads_covars:
+            # A count multiplying each state's outer product: one element
+            # (an array of equal entries is refused as any other), in at
+            # most two dimensions, with "m" in params or not.
+            _check_prior_number(
+                "means_weight", self.means_weight, 2, covariance_type
+            )
+        else:
+            self._check_shape(
+                "means_weight", self.means_weight, (nc, nf), broadcast=True
+            )
+        if not reads_covars:
+            return
+        if covariance_type == "full":
+            shape = (nc, nf, nf)
+            self._check_shape(
+                "covars_prior", self.covars_prior, shape, broadcast=True
+            )
+            _check_prior_symmetric(
+                "covars_prior", self.covars_prior, shape, covariance_type
+            )
+        elif covariance_type == "tied":
+            # (1, nf, nf) gives the covariance of (nf, nf) with a leading
+            # axis that every reader of the model accepts.
+            self._check_shape(
+                "covars_prior",
+                self.covars_prior,
+                (nf, nf),
+                also=[(1, nf, nf)],
+                broadcast=True,
+            )
+            _check_prior_symmetric(
+                "covars_prior", self.covars_prior, (1, nf, nf), covariance_type
+            )
+        else:
+            self._check_shape(
+                "covars_prior", self.covars_prior, (nc, nf), broadcast=True
+            )
+        _check_prior_number(
+            "covars_weight", self.covars_weight, 3 if full_or_tied else 2
+        )
 
     def _get_n_features(self):
         # A means_ of a valid shape gives the number of features: n_features
