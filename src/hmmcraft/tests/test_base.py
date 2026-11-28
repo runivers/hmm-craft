@@ -1480,9 +1480,14 @@ FIT_ONLY_VALUES = [
     ),
     ("VariationalGaussianHMM", "dof_prior_", [-0.3, 2.0]),
     ("VariationalGaussianHMM", "beta_posterior_", [np.nan, 10.0]),
+    ("VariationalGaussianHMM", "beta_posterior_", [np.inf, 10.0]),
     ("VariationalGaussianHMM", "scale_prior_", [[np.nan, 1e-3], [1e-3, 1e-3]]),
 ]
-FIT_ONLY_IDS = [f"{name}-{attr}" for name, attr, _ in FIT_ONLY_VALUES]
+FIT_ONLY_IDS = [
+    f"{name}-{attr}"
+    + ("-inf" if np.isinf(np.asarray(value, dtype=float)).any() else "")
+    for name, attr, value in FIT_ONLY_VALUES
+]
 
 
 @pytest.mark.parametrize(
@@ -1604,15 +1609,40 @@ def test_variational_fit_refuses_a_non_finite_prior_or_posterior(
     assert list(h.monitor_.history) == []
 
 
+def _variational_gaussian(covariance_type):
+    """
+    The hand-built ``VariationalGaussianHMM`` with the given covariance
+    type: the ``diag`` model as built, or, for another type, the same model
+    without its degrees of freedom and scales, which ``fit`` computes for
+    that type from the data.
+    """
+    h, X = _hand_built("VariationalGaussianHMM")
+    assert isinstance(h, vhmm.VariationalGaussianHMM)
+    if covariance_type != "diag":
+        h.covariance_type = covariance_type
+        for name in (
+            "dof_prior_",
+            "dof_posterior_",
+            "scale_prior_",
+            "scale_posterior_",
+        ):
+            delattr(h, name)
+        h.random_state = 0
+    return h, X
+
+
+@pytest.mark.parametrize(
+    "covariance_type", ["spherical", "diag", "full", "tied"]
+)
 @pytest.mark.parametrize("value", [np.inf, -np.inf])
-def test_infinite_beta_posterior_is_not_refused_by_fit(value):
+def test_infinite_beta_posterior_is_not_refused_by_fit(value, covariance_type):
     """
     ``fit`` with ``"m"`` in ``params`` replaces ``beta_posterior_`` in its
     first M-step: an infinite one is not refused; only the first bound,
     computed before that step, is NaN, and the fit gives finite parameters
     and later bounds.
     """
-    h, X = _hand_built("VariationalGaussianHMM")
+    h, X = _variational_gaussian(covariance_type)
     h.beta_posterior_ = np.array([value, 10.0])
     h.n_iter = 3
     # The first bound takes the log-determinant of a NaN matrix. LAPACK's
@@ -1627,6 +1657,37 @@ def test_infinite_beta_posterior_is_not_refused_by_fit(value):
     assert np.isfinite(list(h.monitor_.history)[1:]).all()
     assert np.isfinite(h.means_posterior_).all()
     assert np.isfinite(h.beta_posterior_).all()
+
+
+KEPT_BETA_POSTERIOR = [
+    (covariance_type, params, [np.inf, 10.0], "must contain only finite")
+    for covariance_type in ["spherical", "diag", "full", "tied"]
+    for params in ["stc", "st"]
+] + [("diag", "st", [np.nan, 10.0], "must not contain NaN")]
+
+
+@pytest.mark.parametrize(
+    "covariance_type, params, value, match",
+    KEPT_BETA_POSTERIOR,
+    ids=[
+        f"{c}-{p}-{'nan' if np.isnan(v).any() else 'inf'}"
+        for c, p, v, _ in KEPT_BETA_POSTERIOR
+    ],
+)
+def test_variational_fit_refuses_an_infinite_beta_posterior_it_keeps(
+    covariance_type, params, value, match
+):
+    """
+    Without ``"m"`` in ``params`` the fit keeps ``beta_posterior_``, so an
+    infinite entry is refused, naming it, before the first iteration, for
+    every covariance type; a NaN is refused as NaN.
+    """
+    h, X = _variational_gaussian(covariance_type)
+    h.params = params
+    h.beta_posterior_ = np.array(value)
+    with pytest.raises(ValueError, match=f"beta_posterior_ {match}"):
+        h.fit(X)
+    assert list(h.monitor_.history) == []
 
 
 @pytest.mark.parametrize("name, attr", CONVERTED_CASES, ids=CONVERTED_IDS)

@@ -4,6 +4,12 @@ hmm-craft Changelog
 The changes of hmm-craft, a fork of hmmlearn, come first. The entries from
 "Version 0.3.3" down are hmmlearn's own history, kept as written.
 
+Unreleased
+~~~~~~~~~~
+
+- Changed: a ``VariationalGaussianHMM`` fit with an infinite ``beta_posterior_`` and no ``"m"`` in
+  ``params``, whose lower bound was NaN, raises a ``ValueError`` naming it; see DIFFERENCES.md.
+
 Version 0.5.0
 ~~~~~~~~~~~~~
 

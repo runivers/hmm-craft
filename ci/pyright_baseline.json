@@ -23,7 +23,7 @@
   },
   "src/hmmcraft/tests/test_base.py": {
     "reportArgumentType": 9,
-    "reportAttributeAccessIssue": 76,
+    "reportAttributeAccessIssue": 58,
     "reportCallIssue": 5
   },
   "src/hmmcraft/tests/test_categorical_hmm.py": {

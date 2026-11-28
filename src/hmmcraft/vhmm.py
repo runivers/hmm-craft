@@ -813,9 +813,13 @@ class VariationalGaussianHMM(BaseGaussianHMM, VariationalBaseHMM):
             "scale_posterior_",
         ):
             self._check_finite(name, getattr(self, name))
-        # With "m" in params the first M-step replaces beta_posterior_,
-        # and an infinite value gives a finite fit.
+        # A NaN beta_posterior_ is refused whatever params holds. With "m"
+        # in params the first M-step replaces it, and an infinite value
+        # gives a finite fit; without "m" the fit keeps it, and an
+        # infinite value makes every lower bound NaN.
         self._check_not_nan("beta_posterior_", self.beta_posterior_)
+        if "m" not in self.params:
+            self._check_finite("beta_posterior_", self.beta_posterior_)
 
     def _check_for_prediction(self):
         super()._check_for_prediction()
